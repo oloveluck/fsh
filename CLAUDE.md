@@ -32,6 +32,31 @@ but re-synthesised from SD constraints so a recompile refills severity/human/exp
 gofsh <file.json>` is the CLI. Invariants are consumed only as SD constraint sources — `compile-doc`
 skips standalone `fsh-invariant` output.
 
+## Real-IG corpus: IPS 2.0.1 (`tests/ig-ips-test.rkt`, `tests/ig-harness.rkt`)
+The International Patient Summary IG's own FSH sources (`tests/vendor/ips-2.0.1`, HL7/fhir-ips at tag
+2.0.1, 123 files / 274 entities) are compiled for R4 and compared with the PUBLISHED package
+(fhir-spec's `hl7.fhir.uv.ips.tgz` — SUSHI + IG Publisher output for the same sources), paired by
+(resourceType, id) after normalising publisher-only content (narrative, snapshots, dates, config
+metadata, version pins). Current: **0 compile errors; 114 resources paired; 76 exact; 82 with all
+published content; 321/440 differential elements** — ratcheted. This is the honest conformance
+number; the 22 golden pairs below are hand-authored and far easier.
+It drove these fixes: STAR lexing after trailing whitespace / blank lines; `40` lexed as TIME;
+keyword names in paths (`system`); triple-quoted strings (trim + dedent); unknown string escapes
+kept verbatim; per-entity error isolation (`compile-doc/errors`); `Usage: #inline` instances embedded,
+not emitted; numeric-looking instance names; InstanceOf/Parent by name, id or url and profile
+chains; local parents' canonical + base type; inherited `mapping`; extensions on primitives
+(`_display`); soft indexing per path prefix and named slices in instances; aliases in codes;
+`Reference(name)` -> `Type/id` (ids from `* id =` rules too, first wins); schema-aware carets
+(`caret.rkt` typed mode: repeating elements, `[+]`/`[=]`, `extension[url]`, typed values); ValueSet
+filters / valueSet includes / versions / per-system concept merging; local names in bindings,
+`only` types and target profiles; root `.` paths; rule-by-rule parsing of long entities (IPS's
+Composition profile: 105 s -> instant). `fsh-fhir-version` (and `raco fsh --fhir-version 4.0.1`)
+selects the target version; directories compile recursively.
+Known gaps (each a measurable diff in the corpus): ActorDefinition->Basic conversion and the
+ImplementationGuide resource (publisher/config, out of scope); core CodeSystem names
+(`from system ConditionCategoryCodes`); named-slice ORDER in instances (profile order, not first
+mention); some slicing/constraint details in differentials (119 elements).
+
 Conformance: `fsh/tests/golden-test.rkt` runs the vendored SUSHI **golden corpus** (`.fsh`+`.json`
 pairs) through a tolerant deep-subset comparator (expected ⊆ actual; list items matched
 content-independently so differential `element` arrays line up by path) — forward **22/22**;
@@ -56,5 +81,5 @@ profile decompiler is slice-aware (`id->fsh-rel` inverts id↔path, reconstructs
 carets) — so all 22 pairs round-trip. **Reslicing** (a slice of a slice — ids join with `/`, e.g.
 `component:Lab/Chem`; `element-loc`'s `id-seg` and the `contains` handler are reslice-aware, as is the
 decompiler's `base-id-of`) and **multi-discriminator** slicing both compile and round-trip
-(`fsh/tests/features-test.rkt`). The FSH lang is now feature-complete for this slice — nothing is
-deferred.
+(`fsh/tests/features-test.rkt`). The golden pairs are HAND-AUTHORED to match SUSHI's documented
+output; the IPS corpus above is the real measure, and it shows the gaps that remain.

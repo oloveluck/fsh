@@ -1,6 +1,6 @@
 # fsh — FHIR Shorthand for Racket
 
-A from-scratch FHIR Shorthand compiler (the SUSHI authoring language) and its reverse (GoFSH-style FHIR → FSH): profiles, extensions, logical models, instances, value sets, code systems, rule sets, mappings and slicing, targeting R5. Golden corpus 22/22 forward and round-trip.
+A from-scratch FHIR Shorthand compiler (the SUSHI authoring language) and its reverse (GoFSH-style FHIR → FSH): profiles, extensions, logical models, instances, value sets, code systems, rule sets, mappings and slicing, for R4 or R5. Measured on a real IG: the International Patient Summary 2.0.1 compiles from its own FSH sources with no errors, and 76 of its 114 published resources come out identical (82 with all published content present); `CLAUDE.md` lists the known gaps.
 
 Part of **fhir — FHIR as a family of Racket `#lang`s** ([oloveluck/fhir](https://github.com/oloveluck/fhir)).
 Collection `fsh`. `#lang fsh` — a `.fsh` file is a module; `racket file` prints the compiled JSON.
@@ -22,7 +22,8 @@ Depends on `fhir` (the R5 tower; snapshots additionally need `fhir-spec`), `fhir
 ```
 
 ```sh
-raco fsh input/fsh/ -o out/      # compile a folder SUSHI-style (or one file)
+raco fsh input/fsh/ -o out/      # compile a folder SUSHI-style, recursively (or one file)
+raco fsh input/fsh/ --fhir-version 4.0.1 --canonical http://example.org/fhir   # an R4 IG
 raco fsh profile.fsh --snapshot  # also emit snapshots (needs: raco pkg install fhir-spec)
 raco fsh --decompile StructureDefinition-x.json
 ```
