@@ -37,8 +37,8 @@ The International Patient Summary IG's own FSH sources (`tests/vendor/ips-2.0.1`
 2.0.1, 123 files / 274 entities) are compiled for R4 and compared with the PUBLISHED package
 (fhir-spec's `hl7.fhir.uv.ips.tgz` — SUSHI + IG Publisher output for the same sources), paired by
 (resourceType, id) after normalising publisher-only content (narrative, snapshots, dates, config
-metadata, version pins). Current: **0 compile errors; 114 resources paired; 76 exact; 82 with all
-published content; 321/440 differential elements** — ratcheted. This is the honest conformance
+metadata, version pins). Current: **0 compile errors; 114 resources paired; 78 exact; 84 with all
+published content; 324/440 differential elements** — ratcheted. This is the honest conformance
 number; the 22 golden pairs below are hand-authored and far easier.
 It drove these fixes: STAR lexing after trailing whitespace / blank lines; `40` lexed as TIME;
 keyword names in paths (`system`); triple-quoted strings (trim + dedent); unknown string escapes
@@ -52,10 +52,13 @@ filters / valueSet includes / versions / per-system concept merging; local names
 `only` types and target profiles; root `.` paths; rule-by-rule parsing of long entities (IPS's
 Composition profile: 105 s -> instant). `fsh-fhir-version` (and `raco fsh --fhir-version 4.0.1`)
 selects the target version; directories compile recursively.
+Also: bare names of core/dependency CodeSystems and ValueSets resolve through the SD index's canonical
+lookup (`from system ConditionCategoryCodes`, bindings to `SNOMEDCTBodyStructures`); an instance's
+named slices take positions in the InstanceOf profile's declaration order (local profiles, inherited
+through Parent chains).
 Known gaps (each a measurable diff in the corpus): ActorDefinition->Basic conversion and the
-ImplementationGuide resource (publisher/config, out of scope); core CodeSystem names
-(`from system ConditionCategoryCodes`); named-slice ORDER in instances (profile order, not first
-mention); some slicing/constraint details in differentials (119 elements).
+ImplementationGuide resource (publisher/config, out of scope); some slicing/constraint details in
+differentials (116 elements).
 
 Conformance: `fsh/tests/golden-test.rkt` runs the vendored SUSHI **golden corpus** (`.fsh`+`.json`
 pairs) through a tolerant deep-subset comparator (expected ⊆ actual; list items matched

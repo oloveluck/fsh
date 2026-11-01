@@ -26,7 +26,7 @@
          (only-in fhir/serialize/jsexpr-util drop-false)
          (only-in fhirpath/parser/parse parse-fhirpath)
          (only-in fhir/sd/snapshot generate-snapshot)
-         (only-in fhir/sd/sd-index resolve-sd-raw sd-index-available?))
+         (only-in fhir/sd/sd-index resolve-sd-raw resolve-canonical-raw sd-index-available?))
 
 (provide (contract-out
           [canonical-base (parameter/c string?)]
@@ -117,6 +117,20 @@
                 (hash-set! memo e js)
                 js]))
   (define (inline? e) (and (fsh-instance? e) (equal? (assoc-ref (fsh-instance-metadata e) 'usage) "#inline")))
+  ;; profile name/id -> (hash element-path -> slice names in declaration order), parents first
+  (define own-slice-orders
+    (for*/hash ([e (in-list entities)] #:when (fsh-profile? e)
+                [k (in-list (remove-duplicates (list (fsh-profile-name e) (or (assoc-ref (fsh-profile-metadata e) 'id) (fsh-profile-name e)))))])
+      (values k (for/fold ([h (hash)]) ([r (in-list (fsh-profile-rules e))] #:when (rule-contains? r))
+                  (hash-update h (rule-contains-path r)
+                               (lambda (l) (append l (for/list ([it (in-list (rule-contains-items r))])
+                                                       (or (contains-item-named-as it) (contains-item-name it)))))
+                               '())))))
+  (define (slice-orders-of name [fuel 16])
+    (define own (hash-ref own-slice-orders name (hash)))
+    (define parent (let ([p (hash-ref profiles name #f)]) (and p (car p))))
+    (define inherited (if (and parent (> fuel 0) (hash-ref own-slice-orders parent #f)) (slice-orders-of parent (sub1 fuel)) (hash)))
+    (for/fold ([h inherited]) ([(k v) (in-hash own)]) (hash-update h k (lambda (l) (append l v)) '())))
   ;; this document's ValueSets / CodeSystems: name and id -> canonical URL
   (define local-canonicals
     (for*/hash ([e (in-list entities)] #:when (or (fsh-valueset? e) (fsh-codesystem? e))
@@ -136,6 +150,7 @@
   (define compiled
     (parameterize ([current-instance-resolver resolve-instance] [current-instance-ref instance-ref]
                    [current-aliases aliases] [current-profiles profiles]
+                   [current-slice-orders slice-orders-of]
                    [current-local-canonical (lambda (n) (hash-ref local-canonicals n #f))])
     (for*/list ([e (in-list entities)]
                 #:unless (or (fsh-alias? e) (fsh-ruleset? e) (fsh-param-ruleset? e)
@@ -437,7 +452,13 @@
 ;; a ValueSet reference in a binding: alias, then this document's ValueSets, else as written
 (define (valueset-url n)
   (define r (resolve-alias n (current-aliases)))
-  (or ((current-local-canonical) r) r))
+  (or ((current-local-canonical) r) (external-canonical "ValueSet" r) r))
+
+;; external-canonical : kind name -> url | #f   a bare NAME (not a url) of a CodeSystem / ValueSet in
+;; the core/dependency packages the SD index sees (`from system ConditionCategoryCodes`)
+(define (external-canonical kind n)
+  (and (string? n) (not (regexp-match? #rx"[:/]" n)) (sd-index-available?)
+       (let ([r (resolve-canonical-raw kind n)]) (and r (hash-ref r 'url #f)))))
 
 ;; ---- Extension auto-scaffolding (SUSHI-style) ----------------------------------------------
 ;; a top-level `extension` (type-characteristics can-bind) + a `context` of Element
@@ -516,7 +537,9 @@
 (define (build-instance-json e resource-type aliases)
   (define base (hasheq 'resourceType (symbol->string resource-type) 'id (fsh-instance-name e)))
   (define assigns (for/list ([r (in-list (fsh-instance-rules e))] #:when (rule-assign? r)) r))
-  (define paths (resolve-soft-indices (for/list ([r (in-list assigns)]) (fsh-path-steps (parse-fsh-path (rule-assign-path r))))))
+  (define of (assoc-ref (fsh-instance-metadata e) 'instanceOf))
+  (define paths (resolve-soft-indices (for/list ([r (in-list assigns)]) (fsh-path-steps (parse-fsh-path (rule-assign-path r))))
+                                      #:slice-order (if of ((current-slice-orders) of) (hash))))
   (for/fold ([js base]) ([r (in-list assigns)] [steps (in-list paths)])
     (assign js resource-type steps (resolve (rule-assign-value r) aliases))))
 
@@ -527,9 +550,25 @@
 ;; `[=]` reuses it, an explicit `[n]` sets it. In an Instance a SLICE NAME (`section[problems]`)
 ;; denotes one element of the array: its first mention takes the next index, later mentions reuse it.
 ;; Rules are processed in order.
-(define (resolve-soft-indices paths)
+(define (resolve-soft-indices paths #:slice-order [slice-order (hash)])
   (define counters (make-hash))
   (define slices (make-hash))                       ; (key . slice-name) -> index
+  ;; a top-level array's named slices take positions in the PROFILE's declaration order (SUSHI), so
+  ;; allocate them up front: the slices this instance uses, profile order first, then any others
+  (define used (make-hash))                         ; key -> slice names, first mention order
+  (for ([steps (in-list paths)] #:when (pair? steps))
+    (define st (car steps))
+    (for ([b (in-list (fsh-step-brackets st))] #:when (eq? (fsh-bracket-kind b) 'slice))
+      (define key (string-append "." (fsh-step-name st)))
+      (unless (member (fsh-bracket-value b) (hash-ref used key '()))
+        (hash-update! used key (lambda (l) (append l (list (fsh-bracket-value b)))) '()))))
+  (for ([(key names) (in-hash used)])
+    (define declared (hash-ref slice-order (substring key 1) '()))
+    (define ordered (append (filter (lambda (n) (member n names)) declared)
+                            (filter (lambda (n) (not (member n declared))) names)))
+    (when (pair? declared)
+      (for ([n (in-list ordered)] [i (in-naturals)]) (hash-set! slices (cons key n) i))
+      (hash-set! counters key (sub1 (length ordered)))))
   (for/list ([steps (in-list paths)])
     (let loop ([steps steps] [prefix ""] [acc '()])
       (cond
@@ -682,7 +721,8 @@
 ;; (name or id -> canonical URL), as SUSHI does.
 (define (vs-body->jsexpr body aliases)
   (define tree (cons 'root body))
-  (define (canon n) (let ([r (resolve-alias n aliases)]) (or ((current-local-canonical) r) r)))
+  (define (canon n [kind "CodeSystem"])
+    (let ([r (resolve-alias n aliases)]) (or ((current-local-canonical) r) (external-canonical kind r) r)))
   (define (split-version u) (match (regexp-match #px"^([^|]*)[|](.*)$" u) [(list _ a v) (values a v)] [#f (values u #f)]))
   (define from-system
     (for/or ([n (in-list (find-nodes tree 'vsFromSystem))])
@@ -690,7 +730,7 @@
   (define value-sets
     (for*/list ([n (in-list (find-nodes tree 'vsFromValueset))]
                 [x (in-list (cdr n))] #:when (and (pair? x) (eq? (car x) 'name)))
-      (canon (cadr x))))
+      (canon (cadr x) "ValueSet")))
   (define filters
     (for/list ([d (in-list (find-nodes tree 'vsFilterDefinition))])
       (match-define (list _ (list 'name prop) (list 'vsFilterOperator op) val ...) d)
@@ -832,6 +872,8 @@
 
 ;; current-aliases : the document's Alias table (set by compile-doc/errors) — carets resolve through it
 (define current-aliases (make-parameter (hash)))
+;; current-slice-orders : profile name/id -> (hash element-path -> slice names in declaration order)
+(define current-slice-orders (make-parameter (lambda (_) (hash))))
 ;; current-profiles : the document's Profiles/Extensions by name/id/url -> (cons parent id)
 (define current-profiles (make-parameter (hash)))
 
