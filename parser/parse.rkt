@@ -10,7 +10,8 @@
 (require brag/support
          racket/contract
          racket/match
-         (only-in racket/list append*)
+         (only-in racket/list append* take last)
+         (only-in racket/string string-split string-replace)
          (prefix-in g: "grammar.rkt")
          "lexer.rkt"
          "ast.rkt")
@@ -54,7 +55,86 @@
   (define reals (filter real-tok? toks))
   (cond
     [(param-ruleset? reals) (capture-param-ruleset reals)]
-    [else (lower-entity (parse-reals reals))]))
+    [else (apply-indentation (lower-entity (parse-reals reals))
+                             (for/list ([t (in-list reals)] #:when (eq? (ttype t) 'STAR)) (star-indent t)))]))
+
+;; ---- indented rules (FSH 2.0 "path context") ------------------------------------------------
+;; A rule indented under another continues its path: under `* extension[a][0]`, an indented
+;; `* extension[b].valueString = "x"` means `extension[a][0].extension[b].valueString`. Each level is
+;; two spaces; the context is the nearest preceding rule one level up. A context's `[+]` reads as
+;; `[=]` for its children (they continue the element it just added). Concept and code-caret rules take
+;; the parent's codes (`* #a` / `  * #b` = `* #a #b`, a child concept).
+;; star-indent : STAR token -> columns before the `*` on its line
+(define (star-indent t)
+  (define line (last (string-split (string-append (tval t) "|") "\n")))
+  (string-length (car (regexp-match #px"^[ \t]*" line))))
+
+;; apply-indentation : entity (listof indent) -> entity   one indent per rule, in order
+(define (apply-indentation e indents)
+  (define (fix rules)
+    (if (or (andmap zero? indents) (not (= (length rules) (length indents)))) rules (contextualize rules indents)))
+  (match e
+    [(fsh-profile n m r) (fsh-profile n m (fix r))]
+    [(fsh-extension n m r) (fsh-extension n m (fix r))]
+    [(fsh-logical n m r) (fsh-logical n m (fix r))]
+    [(fsh-resource n m r) (fsh-resource n m (fix r))]
+    [(fsh-instance n m r) (fsh-instance n m (fix r))]
+    [(fsh-valueset n m r) (fsh-valueset n m (fix r))]
+    [(fsh-codesystem n m r) (fsh-codesystem n m (fix r))]
+    [(fsh-mapping n m r) (fsh-mapping n m (fix r))]
+    [(fsh-ruleset n r) (fsh-ruleset n (fix r))]
+    [_ e]))
+
+;; contextualize : rules indents -> rules   stack entries are (list level path codes)
+(define (contextualize rules indents)
+  (let loop ([rs rules] [is indents] [stack '()] [acc '()])
+    (cond
+      [(null? rs) (reverse acc)]
+      [else
+       (define level (quotient (car is) 2))
+       (define live (filter (lambda (s) (< (car s) level)) stack))
+       (define ctx (for/first ([s (in-list live)] #:when (= (car s) (sub1 level))) s))
+       (define r (if ctx (in-context (car rs) (cadr ctx) (caddr ctx)) (car rs)))
+       (loop (cdr rs) (cdr is) (cons (list level (context-path r) (rule-codes r)) live) (cons r acc))])))
+
+(define (join-path ctx p)
+  (cond [(not ctx) p]
+        [(or (not p) (string=? p "") (string=? p ".")) ctx]
+        [(string=? ctx "") p]
+        [else (string-append ctx "." p)]))
+;; a rule's path as context for the rules under it ([+] -> [=])
+(define (context-path r)
+  (define p (rule-path* r))
+  (and p (string-replace p "[+]" "[=]")))
+(define (rule-path* r)
+  (match r
+    [(rule-card p _ _) p] [(rule-flag p _ _) p] [(rule-binding p _ _) p] [(rule-assign p _ _) p]
+    [(rule-contains p _) p] [(rule-only p _) p] [(rule-obeys p _) p] [(rule-caret p _ _) p]
+    [(rule-mapping p _ _ _) p] [(rule-insert p _) p] [(rule-add-element p _ _ _ _ _) p]
+    [(rule-add-cr-element p _ _ _ _ _) p] [(rule-path p) p] [_ #f]))
+(define (rule-codes r)
+  (match r [(concept-rule cs _ _) cs] [(rule-code-caret cs _ _) cs] [(rule-code-insert cs _) cs] [_ #f]))
+(define (in-context r ctx codes)
+  (define (j p) (join-path ctx p))
+  (define (jc cs) (if codes (append codes cs) cs))
+  (match r
+    [(rule-card p c f) (rule-card (j p) c f)]
+    [(rule-flag p ps f) (rule-flag (j p) (map j ps) f)]
+    [(rule-binding p v st) (rule-binding (j p) v st)]
+    [(rule-assign p v x) (rule-assign (j p) v x)]
+    [(rule-contains p items) (rule-contains (j p) items)]
+    [(rule-only p ts) (rule-only (j p) ts)]
+    [(rule-obeys p is) (rule-obeys (j p) is)]
+    [(rule-caret p cp v) (rule-caret (j p) cp v)]
+    [(rule-mapping p t c cd) (rule-mapping (j p) t c cd)]
+    [(rule-insert p ref) (rule-insert (j p) ref)]
+    [(rule-add-element p c f t sh d) (rule-add-element (j p) c f t sh d)]
+    [(rule-add-cr-element p c f ref sh d) (rule-add-cr-element (j p) c f ref sh d)]
+    [(rule-path p) (rule-path (j p))]
+    [(concept-rule cs d df) (concept-rule (jc cs) d df)]
+    [(rule-code-caret cs cp v) (rule-code-caret (jc cs) cp v)]
+    [(rule-code-insert cs ref) (rule-code-insert (jc cs) ref)]
+    [_ r]))
 
 ;; parse-reals : entity tokens -> its datum (entity (<kind> header-item … rule …))
 ;; brag's CFG parser is superlinear in input length, and real IGs have entities with hundreds of rules
@@ -68,8 +148,14 @@
     [(<= (length (cdr groups)) rules-per-parse) (g:parse-to-datum reals)]
     [else
      (define header (car groups))
-     (match-define (list 'entity inner) (g:parse-to-datum header))
-     (define n (length inner))
+     ;; a RuleSet's header alone (`RuleSet: Name`) is not a valid parse — the grammar wants a rule —
+     ;; so its header items are counted from header + the first rule, which adds one rule node
+     (define-values (inner n)
+       (with-handlers ([exn:fail? (lambda (_)
+                                    (match-define (list 'entity one) (g:parse-to-datum (append header (cadr groups))))
+                                    (values (take one (sub1 (length one))) (sub1 (length one))))])
+         (match-define (list 'entity inner) (g:parse-to-datum header))
+         (values inner (length inner))))
      (list 'entity
            (append inner
                    (append* (for/list ([grp (in-list (cdr groups))])

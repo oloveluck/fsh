@@ -1,0 +1,10 @@
+mCODE (minimal Common Oncology Data Elements) 4.0.0 — the IG's own FSH sources.
+
+Upstream: https://github.com/HL7/fhir-mCODE-ig at tag 4.0.0
+  commit 543477b5585f2dcc717820a2bea141ea85f03012 (retrieved 2026-11-01)
+  copied verbatim: input/fsh/ (57 files) and sushi-config.yaml
+License: CC0-1.0 (sushi-config.yaml `license`; the published package says the same)
+
+Compared against the PUBLISHED package hl7.fhir.us.mcode 4.0.0 (fhir-spec's
+hl7.fhir.us.mcode-4.0.0.tgz), whose dependencies — US Core 6.1.0 and genomics-reporting 2.0.0, read
+from sushi-config.yaml — are vendored in fhir-spec too. Driven by tests/ig-mcode-test.rkt.

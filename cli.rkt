@@ -7,6 +7,8 @@
 ;;;       JSON files named <resourceType>-<id>.json in <outdir> (default: ./fsh-generated next to the
 ;;;       input). --snapshot also emits StructureDefinition snapshots (needs the fhir-spec package).
 ;;;       --fhir-version picks the target (default 5.0.0): 4.0.1 compiles an R4 IG against the R4 tower.
+;;;       A sushi-config.yaml beside the sources (or one/two levels up) supplies canonical, fhirVersion
+;;;       and dependencies (packages located in fhir-spec as <id>-<version>.tgz); flags override it.
 ;;;   raco fsh --decompile <file.json>...   the reverse direction (GoFSH-style): print FSH text
 ;;; Exit codes: 0 ok · 1 FSH error · 2 usage.
 
@@ -16,6 +18,8 @@
          (only-in fhir/sd/sd-index sd-index-available? current-sd-packages)
          (only-in fhir/spec-package spec-package-path)
          (only-in fsh/compile fsh->fhir emit-snapshot? canonical-base fsh-fhir-version)
+         (only-in fsh/ig-config read-ig-config ig-config-canonical ig-config-fhir-version ig-config-dependencies
+                  dependency-packages)
          (only-in fsh/decompile fhir->fsh))
 
 (provide compile-path decompile-files)
@@ -31,8 +35,25 @@
         [(file-exists? src) (list (if (path? src) src (string->path src)))]
         [else (eprintf "fsh: no such file or directory: ~a\n" src) (exit 2)]))
 
-;; compile-path : path-string (or/c path-string #f) boolean (or/c string #f) -> void
-(define (compile-path src out snapshot? canonical [fhir-version "5.0.0"])
+;; find-config : path -> path|#f   the project's sushi-config.yaml: next to the sources or one/two
+;; levels up (SUSHI projects keep FSH in input/fsh/)
+(define (find-config src)
+  (define dir (simplify-path (if (directory-exists? src) src (or (path-only src) (current-directory)))))
+  (for/or ([d (list dir (build-path dir 'up) (build-path dir 'up 'up))])
+    (define f (simplify-path (build-path d "sushi-config.yaml")))
+    (and (file-exists? f) f)))
+
+;; compile-path : path-string (or/c path-string #f) boolean (or/c string #f) (or/c string #f) -> void
+;; a sushi-config.yaml supplies the canonical, the FHIR version and the DEPENDENCY packages (their
+;; profiles/extensions/value sets resolve Parent and InstanceOf) unless the flags say otherwise
+(define (compile-path src out snapshot? canonical* [fhir-version* #f])
+  (define cfg (let ([f (find-config src)]) (and f (read-ig-config f))))
+  (define canonical (or canonical* (and cfg (ig-config-canonical cfg))))
+  (define fhir-version (or fhir-version* (and cfg (ig-config-fhir-version cfg)) "5.0.0"))
+  (define-values (dep-packages missing) (dependency-packages (if cfg (ig-config-dependencies cfg) '())))
+  (for ([d (in-list missing)])
+    (eprintf "fsh: dependency ~a ~a not found (looked for ~a-~a.tgz in fhir-spec); its profiles will not resolve\n"
+             (car d) (cdr d) (car d) (cdr d)))
   ;; one tower per process: register the one this compile targets
   (define r4? (regexp-match? #rx"^4[.]" fhir-version))
   (dynamic-require (if r4? 'fhir/r4/schemas 'fhir/r5/schemas) #f)
@@ -49,7 +70,7 @@
                    [fsh-fhir-version fhir-version]
                    [current-sd-packages
                     (let ([core (spec-package-path (if r4? "hl7.fhir.r4.core.tgz" "hl7.fhir.r5.core.tgz") #:optional? #t)])
-                      (and core (list core)))])
+                      (append dep-packages (if core (list core) '())))])
       (fsh->fhir text)))
   (define outdir
     (or out (build-path (if (directory-exists? src) src (or (path-only (car files)) (current-directory)))
@@ -78,7 +99,7 @@
     [(null? args) (usage)]
     [(equal? (car args) "--decompile") (if (pair? (cdr args)) (decompile-files (cdr args)) (usage))]
     [else
-     (let loop ([as args] [src #f] [out #f] [snapshot? #f] [canonical #f] [fv "5.0.0"])
+     (let loop ([as args] [src #f] [out #f] [snapshot? #f] [canonical #f] [fv #f])
        (cond
          [(null? as) (if src (compile-path src out snapshot? canonical fv) (usage))]
          [(and (equal? (car as) "-o") (pair? (cdr as))) (loop (cddr as) src (cadr as) snapshot? canonical fv)]

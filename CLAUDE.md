@@ -68,6 +68,30 @@ Known gaps (each a measurable diff in the corpus): ActorDefinition->Basic conver
 ImplementationGuide resource (publisher/config, out of scope); 45 differential elements (a few
 `min`s, one slice-child order, logical-model root `short`); 5 Bundle narratives.
 
+## Real-IG corpus 2: mCODE 4.0.0, with IG dependencies (`tests/ig-mcode-test.rkt`)
+mCODE's own FSH (`tests/vendor/mcode-4.0.0`, HL7/fhir-mCODE-ig at tag 4.0.0, 57 files) against the
+published `hl7.fhir.us.mcode-4.0.0.tgz`. mCODE builds on US Core 6.1.0 and Genomics Reporting 2.0.0:
+`fsh/ig-config.rkt` reads `canonical`/`fhirVersion`/`dependencies` from sushi-config.yaml and locates
+each dependency in fhir-spec (`<id>-<version>.tgz`); the packages go ahead of core in
+`current-sd-packages`. `raco fsh <dir>` does the same when it finds a sushi-config.yaml (next to the
+sources or up to two levels up); flags override it, missing dependencies are reported.
+Current: **0 compile errors; 349 paired; 173 exact; 249 with all published content; 277/501 differential
+elements** — ratcheted. It drove: profiles of DEPENDENCY packages for Parent and InstanceOf (`external-sd`:
+base type, canonical, `meta.profile`), aliases on InstanceOf and along Parent chains; SUSHI's required
+values (`assign-required`: an element the InstanceOf profile requires with fixed[x]/pattern[x] is
+assigned when absent; a required slice gets its pattern; a named slice the instance uses gets its
+required children and, for extensions, its `url` — constraints from the profile chain, local
+differentials over the dependency's snapshot); indented rules (FSH 2.0 path context, `parse.rkt`
+`apply-indentation`: two spaces per level, a context's `[+]` reads `[=]` for its children, concept rules
+take the parent's codes; path-only rules advance soft indices); parameterized RuleSet bodies re-texted
+with their quotes, codes and STAR lines intact; RuleSets parsed rule by rule (their header alone is not a
+parse); a bare four-digit `6000` is a NUMBER (FSHLexer.g4), stringified when assigned to a string-typed
+primitive; `descendant-of` filters emit FHIR's `descendent-of`; an Extension that sets `^context` gets no
+default Element context; `Usage: #definition` canonical resources get `<canonical>/<Type>/<id>` as url.
+The harness also drops the OIDs the IG Publisher assigns to conformance resources.
+Remaining (measured): 28 profiles whose differential lacks elements SUSHI writes (mostly genomics and
+performance-status profiles), required values deeper than the top level, a few instance details.
+
 Conformance: `fsh/tests/golden-test.rkt` runs the vendored SUSHI **golden corpus** (`.fsh`+`.json`
 pairs) through a tolerant deep-subset comparator (expected ⊆ actual; list items matched
 content-independently so differential `element` arrays line up by path) — forward **22/22**;

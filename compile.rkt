@@ -24,7 +24,7 @@
          (only-in fhir/model/registry type-schema-of)
          (only-in fhir/model/schema type-schema-fields type-schema-parent schema-field-name schema-field-choice-base)
          (only-in fhir/model/registry type-registered?)
-         (only-in fhir/model/schema ftype-tag ftype-type-name)
+         (only-in fhir/model/schema ftype-tag ftype-type-name ftype-prim-code)
          (only-in fhir/serialize/jsexpr-util drop-false)
          (only-in fhirpath/parser/parse parse-fhirpath)
          (only-in fhir/sd/snapshot generate-snapshot)
@@ -127,6 +127,24 @@
                 (hash-set! memo e js)
                 js]))
   (define (inline? e) (and (fsh-instance? e) (equal? (assoc-ref (fsh-instance-metadata e) 'usage) "#inline")))
+  ;; this document's Profiles compiled on demand (name/id/url -> StructureDefinition jsexpr), for the
+  ;; required values an Instance inherits from its InstanceOf profile
+  (define profile-entities
+    (for*/hash ([e (in-list entities)] #:when (fsh-profile? e)
+                [id (in-value (or (assoc-ref (fsh-profile-metadata e) 'id) (fsh-profile-name e)))]
+                [k (in-list (remove-duplicates (list (fsh-profile-name e) id (string-append (canonical-base) "/StructureDefinition/" id))))])
+      (values k e)))
+  (define profile-memo (make-hash))
+  (define (resolve-profile-sd key)
+    (define e (hash-ref profile-entities key #f))
+    (cond [(not e) #f]
+          [(hash-has-key? profile-memo e) (hash-ref profile-memo e)]
+          [else (hash-set! profile-memo e #f)
+                (define sd (with-handlers ([exn:fail? (lambda (_) #f)])
+                             (parameterize ([emit-snapshot? #f])
+                               (compile-entity (expand-entity-inserts e rulesets param-rulesets) aliases profiles invariants))))
+                (hash-set! profile-memo e sd)
+                sd]))
   ;; profile name/id -> (hash element-path -> slice names in declaration order), parents first
   (define own-slice-orders
     (for*/hash ([e (in-list entities)] #:when (fsh-profile? e)
@@ -153,12 +171,13 @@
   (define (instance-ref name)
     (define e (hash-ref instances name #f))
     (and e (let* ([m (fsh-instance-metadata e)]
-                  [of (assoc-ref m 'instanceOf)]
+                  [of (let ([o (assoc-ref m 'instanceOf)]) (and o (resolve-alias o aliases)))]
                   [base (and of (instance-base of profiles))])
              (and base (string-append base "/" (instance-id e))))))
   ;; Invariants are consumed only as SD constraint sources (like SUSHI) — not emitted standalone.
   (define compiled
     (parameterize ([current-instance-resolver resolve-instance] [current-instance-ref instance-ref]
+                   [current-profile-sd resolve-profile-sd]
                    [current-aliases aliases] [current-profiles profiles]
                    [current-slice-orders slice-orders-of]
                    [current-local-canonical (lambda (n) (hash-ref local-canonicals n #f))])
@@ -221,10 +240,22 @@
   ;; padding a STAR would let the WS lexer eat the newline the STAR rule needs.
   (define text (apply string-append "RuleSet: __expand"
                       (for/list ([t (in-list body)])
-                        (define v (substitute (cdr t) subst))
+                        (define raw (let ([x (cdr t)]) (if (code-tok? x) (code-tok-text x) x)))
+                        (define v (requote (car t) (substitute raw subst)))
                         (if (eq? (car t) 'STAR) v (string-append " " v)))))
   (define ds (parse-fsh-doc text))
   (if (and (pair? ds) (fsh-ruleset? (car ds))) (fsh-ruleset-rules (car ds)) '()))
+
+;; requote : token-type string -> string   a body token's value back as source text: the lexer
+;; strips the quotes of strings and units (`"Not used in this profile"` re-lexed bare would be words)
+(define (requote type v)
+  (case type
+    [(STRING) (string-append "\"" (regexp-replace* #rx"[\\\"]" v "\\\\&") "\"")]
+    [(MULTILINE_STRING) (string-append "\"\"\"" v "\"\"\"")]
+    [(UNIT) (string-append "'" v "'")]
+    ;; a STAR's lexeme can carry the comment lines before it (`// note\n* `): keep only its own line
+    [(STAR) (string-append "\n" (last (string-split (string-append v " ") "\n")))]
+    [else v]))
 
 (define (substitute s subst)
   (for/fold ([s s]) ([kv (in-list subst)])
@@ -263,9 +294,9 @@
   ;; constrained type is found by following the Parent chain down to a base resource type
   (define local-parent (hash-ref (current-profiles) parent #f))
   (define base-type (if ext? "Extension" (instance-base parent (current-profiles))))
-  (define parent-url (if local-parent
-                         (string-append (canonical-base) "/StructureDefinition/" (cdr local-parent))
-                         (sd-url parent)))
+  (define parent-url (cond [local-parent (string-append (canonical-base) "/StructureDefinition/" (cdr local-parent))]
+                           [(external-sd parent) => (lambda (sd) (hash-ref sd 'url))]
+                           [else (sd-url parent)]))
   (define id (or (assoc-ref meta 'id) name))
   (define self-url (string-append (canonical-base) "/StructureDefinition/" id))
   (define-values (elems0 order0) (fold-sd-rules base-type rules invariants self-url))
@@ -295,7 +326,12 @@
                         ;; SUSHI carries the base definition's mapping declarations into the profile
                         'mapping (inherited-mappings base-type)
                         'differential (and (pair? diff) (hasheq 'element diff)))))
-  (maybe-snapshot (apply-carets (hash-set (if ext? (add-extension-header base) base) 'abstract #f) rules)))
+  (define own-context? (for/or ([r (in-list rules)])
+                         (and (rule-caret? r) (member (rule-caret-path r) '(#f "" "."))
+                              (regexp-match? #rx"^\\^?context" (rule-caret-caret-path r)))))
+  (define base* (let ([b (if ext? (add-extension-header base (not own-context?)) base)])
+                  (if (hash-ref b 'context #f) b (hash-remove b 'context))))
+  (maybe-snapshot (apply-carets (hash-set base* 'abstract #f) rules)))
 
 ;; ---- Logical / Resource -> StructureDefinition (specialization, addElement) ----------------
 (define (compile-logical-resource e)
@@ -581,9 +617,10 @@
 
 ;; ---- Extension auto-scaffolding (SUSHI-style) ----------------------------------------------
 ;; a top-level `extension` (type-characteristics can-bind) + a `context` of Element
-(define (add-extension-header sd)
+(define (add-extension-header sd [default-context? #t])
   (hash-set* sd
-             'context (list (hasheq 'type "element" 'expression "Element"))
+             ;; the default context (Element) only when the Extension sets none itself (`^context[+]…`)
+             'context (if default-context? (list (hasheq 'type "element" 'expression "Element")) (hash-ref sd 'context #f))
              'extension (list (hasheq 'url "http://hl7.org/fhir/StructureDefinition/structuredefinition-type-characteristics"
                                       'valueCode "can-bind"))))
 
@@ -633,33 +670,79 @@
 ;; ---- Instance -> a plain resource ----------------------------------------------------------
 (define (compile-instance e aliases profiles)
   (define meta (fsh-instance-metadata e))
-  (define type-str (assoc-ref meta 'instanceOf))
+  ;; InstanceOf may be an Alias (`Alias: USCorePatient = http://…/us-core-patient`)
+  (define type-str (resolve-alias (assoc-ref meta 'instanceOf) aliases))
   ;; resolve InstanceOf to a base resource type: a base type stays; a local profile -> its parent
   (define base (instance-base type-str profiles))
   (define t (string->symbol base))
-  (define js (build-instance-json e t aliases))
+  (define js (let* ([j (build-instance-json e t aliases)]
+                    [j (if (type-registered? (string->symbol type-str))
+                           j
+                           (assign-required j (profile-elements type-str) (slice-positions e aliases)))])
+               (definitional-url j (assoc-ref meta 'usage))))
   ;; stamp meta.profile when InstanceOf named a profile (not a base type), using the profile's id-URL
   (define prof (and (not (type-registered? (string->symbol type-str))) (hash-ref profiles type-str #f)))
-  (if prof
-      (inject-meta-profile js (string-append (canonical-base) "/StructureDefinition/" (cdr prof)))
+  (cond
+    [prof (inject-meta-profile js (string-append (canonical-base) "/StructureDefinition/" (cdr prof)))]
+    ;; InstanceOf a dependency's profile: SUSHI stamps that profile's canonical
+    [(external-sd type-str) => (lambda (sd) (inject-meta-profile js (hash-ref sd 'url)))]
+    [else js]))
+
+;; definitional-url : jsexpr usage -> jsexpr   a `Usage: #definition` instance of a canonical resource
+;; (CapabilityStatement, OperationDefinition, …) gets SUSHI's url <canonical>/<Type>/<id>
+(define (definitional-url js usage)
+  (define type (hash-ref js 'resourceType))
+  (if (and (equal? usage "#definition") (not (hash-has-key? js 'url)) (hash-ref js 'id #f) (has-element? type "url"))
+      (hash-set js 'url (string-append (canonical-base) "/" type "/" (hash-ref js 'id)))
       js))
+(define (has-element? type field)
+  (define sd (and (sd-index-available?) (resolve-sd-raw type)))
+  (and (hash? sd)
+       (for/or ([e (in-list (hash-ref (hash-ref sd 'snapshot (hash)) 'element '()))])
+         (equal? (hash-ref e 'id #f) (string-append type "." field)))))
 
 ;; follows the Parent chain (a profile of a profile of …) to the base resource type; bounded so a
 ;; cyclic Parent cannot loop
 (define (instance-base type-str profiles [fuel 16])
   (cond [(type-registered? (string->symbol type-str)) type-str]
         [(and (> fuel 0) (hash-ref profiles type-str #f))
-         => (lambda (p) (instance-base (let ([par (car p)]) (if (hash-ref profiles par #f) par (last-url-seg par)))
+         => (lambda (p) (instance-base (let ([par (resolve-alias (car p) (current-aliases))])
+                                        (if (or (hash-ref profiles par #f) (external-sd par)) par (last-url-seg par)))
                                        profiles (sub1 fuel)))]
+        ;; a profile from a dependency package (US Core, genomics-reporting …): its constrained type
+        [(external-sd type-str) => (lambda (sd) (hash-ref sd 'type type-str))]
         [else type-str]))
+
+;; external-sd : name|id|url -> StructureDefinition jsexpr | #f   a PROFILE (not a base type) from the
+;; packages in current-sd-packages — the IG's dependencies, then core
+(define (external-sd n)
+  (and (sd-index-available?)
+       (not (type-registered? (string->symbol n)))
+       (let ([sd (resolve-sd-raw n)])
+         (and (hash? sd) (equal? (hash-ref sd 'derivation #f) "constraint") sd))))
+
+;; slice-positions : instance aliases -> (hash (cons field index) -> slice-name)   where each
+;; top-level named slice the instance mentions (`component[systolic]`) was placed
+(define (slice-positions e aliases)
+  (define assigns (for/list ([r (in-list (fsh-instance-rules e))] #:when (or (rule-assign? r) (rule-path? r))) r))
+  (define of (let ([o (assoc-ref (fsh-instance-metadata e) 'instanceOf)]) (and o (resolve-alias o aliases))))
+  (define orig (for/list ([r (in-list assigns)]) (fsh-path-steps (parse-fsh-path (if (rule-path? r) (rule-path-path r) (rule-assign-path r))))))
+  (define resolved (resolve-soft-indices orig #:slice-order (if of ((current-slice-orders) of) (hash))))
+  (for*/hash ([(o r) (in-parallel orig resolved)]
+              #:when (and (pair? o) (pair? r))
+              [b (in-list (fsh-step-brackets (car o)))] #:when (eq? (fsh-bracket-kind b) 'slice)
+              [rb (in-list (fsh-step-brackets (car r)))] #:when (eq? (fsh-bracket-kind rb) 'index))
+    (values (cons (fsh-step-name (car o)) (fsh-bracket-value rb)) (fsh-bracket-value b))))
 
 (define (build-instance-json e resource-type aliases)
   (define base (hasheq 'resourceType (symbol->string resource-type) 'id (fsh-instance-name e)))
-  (define assigns (for/list ([r (in-list (fsh-instance-rules e))] #:when (rule-assign? r)) r))
-  (define of (assoc-ref (fsh-instance-metadata e) 'instanceOf))
-  (define paths (resolve-soft-indices (for/list ([r (in-list assigns)]) (fsh-path-steps (parse-fsh-path (rule-assign-path r))))
+  ;; path-only rules (`* extension[x][+]`, the context of indented rules) assign nothing but still
+  ;; advance soft indices, so they take part in index resolution
+  (define assigns (for/list ([r (in-list (fsh-instance-rules e))] #:when (or (rule-assign? r) (rule-path? r))) r))
+  (define of (let ([o (assoc-ref (fsh-instance-metadata e) 'instanceOf)]) (and o (resolve-alias o aliases))))
+  (define paths (resolve-soft-indices (for/list ([r (in-list assigns)]) (fsh-path-steps (parse-fsh-path (if (rule-path? r) (rule-path-path r) (rule-assign-path r)))))
                                       #:slice-order (if of ((current-slice-orders) of) (hash))))
-  (for/fold ([js base]) ([r (in-list assigns)] [steps (in-list paths)])
+  (for/fold ([js base]) ([r (in-list assigns)] [steps (in-list paths)] #:when (rule-assign? r))
     (assign js resource-type steps (resolve (rule-assign-value r) aliases))))
 
 ;; resolve-soft-indices : (listof (listof fsh-step)) -> same, with every `[+]`/`[=]` and every
@@ -773,6 +856,7 @@
   (let ([lst (extend lst (add1 i))]) (for/list ([x (in-list lst)] [j (in-naturals)]) (if (= j i) v x))))
 (define (extend lst n) (append lst (make-list (max 0 (- n (length lst))) #f)))
 
+(define json-number-primitives '("integer" "decimal" "positiveInt" "unsignedInt" "boolean"))
 (define (ftype->type ftype)
   (case (ftype-tag ftype) [(type) (ftype-type-name ftype)] [else 'object]))
 
@@ -781,6 +865,8 @@
   (define tag (ftype-tag ftype))
   (match* (tag v)
     [('prim (struct fsh-code (c _))) (strip# c)]
+    ;; a number assigned to a primitive whose JSON form is a string (date `2020`, string `42`)
+    [('prim (? number? n)) #:when (not (member (ftype-prim-code ftype) json-number-primitives)) (number->string n)]
     [(_ (struct fsh-code (c d)))
      (define-values (sys code) (split-code c))
      (case (and (eq? tag 'type) (ftype-type-name ftype))
@@ -795,6 +881,100 @@
     ;; `* contained[0] = Med1`) embeds that instance (https://hl7.org/fhir/uv/shorthand/reference.html#assignments-with-resources)
     [('resource (? string? s)) (or ((current-instance-resolver) s) s)]
     [(_ (? boolean? b)) b] [(_ (? number? n)) n] [(_ (? string? s)) s] [(_ _) v]))
+
+;; current-profile-sd : (parameter (string -> (or jsexpr #f)))   a local profile's compiled SD
+(define current-profile-sd (make-parameter (lambda (_) #f)))
+
+;; profile-elements : profile-name|id|url -> (hash element-id -> ElementDefinition jsexpr)
+;; the constraints an Instance of that profile inherits: a dependency profile's snapshot, overlaid by
+;; each local profile's differential down the Parent chain (the child's keys win)
+(define (profile-elements key [fuel 16])
+  (define k (resolve-alias key (current-aliases)))
+  (cond
+    [(or (<= fuel 0) (type-registered? (string->symbol k))) (hash)]
+    [((current-profile-sd) k)
+     => (lambda (sd)
+          (define parent (let ([p (hash-ref (current-profiles) k #f)]) (and p (car p))))
+          (define inherited (if parent (profile-elements parent (sub1 fuel)) (hash)))
+          (for/fold ([h inherited]) ([e (in-list (hash-ref (hash-ref sd 'differential (hash)) 'element '()))]
+                                     #:when (hash-ref e 'id #f))
+            (hash-update h (hash-ref e 'id) (lambda (old) (for/fold ([o old]) ([(kk v) (in-hash e)]) (hash-set o kk v))) e)))]
+    [(external-sd k)
+     => (lambda (sd)
+          (for/hash ([e (in-list (hash-ref (hash-ref sd 'snapshot (hash)) 'element '()))] #:when (hash-ref e 'id #f))
+            (values (hash-ref e 'id) e)))]
+    [else (hash)]))
+
+;; assign-required : jsexpr (hash id -> element) -> jsexpr
+;; SUSHI assigns an element's fixed[x]/pattern[x] when the profile REQUIRES the element (min >= 1)
+;; and the instance leaves it out; a required slice gets its pattern appended unless an entry
+;; already carries it. Top-level elements only (Observation.category, Observation.code).
+(define (assign-required js elements [positions (hash)])
+  (define type (hash-ref js 'resourceType))
+  (define js1 (fill-slice-children js elements positions))
+  (assign-required* js1 elements))
+;; a named slice the instance used gets its required children's fixed/pattern values
+(define (fill-slice-children js elements positions)
+  (define type (hash-ref js 'resourceType))
+  (for/fold ([js js]) ([(pos slice) (in-hash positions)])
+    (define field (string->symbol (car pos)))
+    (define lst (hash-ref js field #f))
+    (cond
+      [(not (and (list? lst) (< (cdr pos) (length lst)) (hash? (list-ref lst (cdr pos))))) js]
+      [else
+       (define prefix (string-append type "." (car pos) ":" slice "."))
+       ;; an extension slice's url is the canonical of the Extension it is typed with
+       (define slice-el (hash-ref elements (string-append type "." (car pos) ":" slice) #f))
+       (define ext-url (and slice-el (member (car pos) '("extension" "modifierExtension"))
+                            (let* ([ts (hash-ref slice-el 'type '())]
+                                   [pr (and (pair? ts) (hash-ref (car ts) 'profile '()))])
+                              (and (pair? pr) (car pr)))))
+       (define entry0 (let ([en (list-ref lst (cdr pos))])
+                        (if (and ext-url (not (hash-has-key? en 'url))) (hash-set en 'url ext-url) en)))
+       (define entry
+         (for/fold ([en entry0]) ([(id el) (in-hash elements)])
+           (define child (and (string-prefix? id prefix) (substring id (string-length prefix))))
+           (define v (required-value el))
+           (if (and child (regexp-match? #px"^[A-Za-z]+$" child) v (not (hash-has-key? en (string->symbol child))))
+               (hash-set en (string->symbol child) v)
+               en)))
+       (hash-set js field (for/list ([x (in-list lst)] [i (in-naturals)]) (if (= i (cdr pos)) entry x)))])))
+;; required-value : element -> jsexpr|#f   its fixed[x]/pattern[x] when the element is required
+(define (required-value e)
+  (define mn (hash-ref e 'min 0))
+  (and (number? mn) (>= mn 1)
+       (for/or ([(k v) (in-hash e)]) (and (regexp-match? #rx"^(fixed|pattern)" (symbol->string k)) v))))
+(define (assign-required* js elements)
+  (define type (hash-ref js 'resourceType))
+  (define rx (pregexp (string-append "^" (regexp-quote type) "[.]([A-Za-z]+)(?::([^.]+))?$")))
+  (for/fold ([js js]) ([(id e) (in-hash elements)])
+    (define m (regexp-match rx id))
+    (define value (for/or ([(k v) (in-hash e)])
+                    (and (regexp-match? #rx"^(fixed|pattern)" (symbol->string k)) v)))
+    (define req? (let ([mn (hash-ref e 'min 0)]) (and (number? mn) (>= mn 1))))
+    (cond
+      [(not (and m value req?)) js]
+      [(member (cadr m) '("extension" "modifierExtension" "id" "meta")) js]
+      [(caddr m)                                                ; a required slice
+       (define field (string->symbol (cadr m)))
+       (define cur (let ([v (hash-ref js field '())]) (if (list? v) v (list v))))
+       (if (ormap (lambda (x) (json-subset? value x)) cur) js (hash-set js field (append cur (list value))))]
+      [(hash-has-key? js (string->symbol (cadr m))) js]
+      [else
+       (define many? (let ([mx (hash-ref e 'max "1")]) (or (equal? mx "*") (and (string->number mx) (> (string->number mx) 1)))))
+       (define base-many? (and (not many?) (base-repeats? type (cadr m))))
+       (hash-set js (string->symbol (cadr m)) (if (or many? base-many?) (list value) value))])))
+
+(define (json-subset? a b)
+  (cond [(and (hash? a) (hash? b)) (for/and ([(k v) (in-hash a)]) (and (hash-has-key? b k) (json-subset? v (hash-ref b k))))]
+        [(and (list? a) (list? b)) (for/and ([x (in-list a)]) (ormap (lambda (y) (json-subset? x y)) b))]
+        [else (equal? a b)]))
+;; base-repeats? : type field -> boolean   the base resource's element repeats (max *)
+(define (base-repeats? type field)
+  (define sd (and (sd-index-available?) (resolve-sd-raw type)))
+  (and (hash? sd)
+       (for/or ([e (in-list (hash-ref (hash-ref sd 'snapshot (hash)) 'element '()))])
+         (and (equal? (hash-ref e 'id #f) (string-append type "." field)) (equal? (hash-ref e 'max #f) "*")))))
 
 ;; current-instance-resolver : (parameter (string -> (or jsexpr #f)))   name/id -> the compiled instance
 (define current-instance-resolver (make-parameter (lambda (_) #f)))
@@ -853,7 +1033,9 @@
   (define filters
     (for/list ([d (in-list (find-nodes tree 'vsFilterDefinition))])
       (match-define (list _ (list 'name prop) (list 'vsFilterOperator op) val ...) d)
-      (drop-false (hasheq 'property prop 'op op 'value (and (pair? val) (filter-value (car val)))))))
+      ;; FHIR's FilterOperator code is spelled `descendent-of`; FSH accepts `descendant-of` for it
+      (drop-false (hasheq 'property prop 'op (if (equal? op "descendant-of") "descendent-of" op)
+                          'value (and (pair? val) (filter-value (car val)))))))
   (define codes (find-nodes (cons 'root (find-nodes tree 'vsConceptComponent)) 'code))
   (define split (for/list ([c (in-list codes)]) (call-with-values (lambda () (split-code (code-text* (cadr c)))) cons)))
   (define sys+ver (or from-system (and (pair? split) (car (car split)) (canon (car (car split))))))

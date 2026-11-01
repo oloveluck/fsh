@@ -153,7 +153,10 @@
       (token 'CODE (code-tok lexeme))]
      [(:: (:? (:or "+" "-")) (:+ digit) "-" hh (:? (:: "-" hh (:? (:: "T" time-frag)))))
       (token 'DATETIME lexeme)]
-     [(:: digit digit digit digit (:? (:: "-" hh (:? (:: "-" hh (:? (:: "T" time-frag)))))))
+     ;; a bare four-digit `6000` is a NUMBER (FSHLexer.g4 declares NUMBER first, so it wins the tie);
+     ;; as a DATETIME every four-digit quantity (`6000 'cGy'`) failed to parse. A year assigned to a
+     ;; date element still compiles to "2020" (compile.rkt's coerce writes numbers as strings there)
+     [(:: digit digit digit digit (:: "-" hh (:? (:: "-" hh (:? (:: "T" time-frag))))))
       (token 'DATETIME lexeme)]
      ;; a TIME needs at least hh:mm — a bare two-digit `40` is a NUMBER (as in FSHLexer.g4, where
      ;; NUMBER wins the tie); otherwise every two-digit quantity (`40 'mg'`) failed to parse

@@ -6,7 +6,8 @@
 ;;; Resources are paired by (resourceType, id). Before comparing, both sides are normalised to drop
 ;;; what the IG Publisher (not SUSHI) adds or what comes from sushi-config.yaml, which this compiler
 ;;; does not read:
-;;;   top level   text, snapshot, date, version, publisher, contact, jurisdiction; meta except profile
+;;;   top level   text, snapshot, date, version, publisher, contact, jurisdiction; meta except profile;
+;;;               publisher-assigned OID identifiers on conformance resources
 ;;;   anywhere    structuredefinition-wg / -fmm / -standards-status / -normative-version extensions;
 ;;;               a `|<version>` pin on hl7.org/fhir canonicals; xml:lang/lang on narrative divs;
 ;;;               a compose component `version` the publisher pinned where ours has none
@@ -56,7 +57,20 @@
 (define drop-top '(text snapshot date version publisher contact jurisdiction))
 (define (publisher-ext? e) (and (hash? e) (regexp-match? publisher-ext (hash-ref e 'url ""))))
 
-(define (norm j #:top? [top? #t])
+;; the IG Publisher assigns conformance resources an OID identifier (urn:ietf:rfc:3986 urn:oid:…)
+;; from its oids.ini — not SUSHI output
+(define (publisher-oid? i) (and (hash? i) (equal? (hash-ref i 'system #f) "urn:ietf:rfc:3986")
+                                (regexp-match? #rx"^urn:oid:" (hash-ref i 'value ""))))
+(define conformance-types '("StructureDefinition" "ValueSet" "CodeSystem" "CapabilityStatement" "OperationDefinition"
+                            "SearchParameter" "ConceptMap" "NamingSystem" "ImplementationGuide"))
+(define (drop-publisher-oids j)
+  (cond [(and (hash? j) (member (hash-ref j 'resourceType #f) conformance-types) (list? (hash-ref j 'identifier #f)))
+         (define kept (filter (lambda (i) (not (publisher-oid? i))) (hash-ref j 'identifier)))
+         (if (null? kept) (hash-remove j 'identifier) (hash-set j 'identifier kept))]
+        [else j]))
+
+(define (norm j0 #:top? [top? #t])
+  (define j (if top? (drop-publisher-oids j0) j0))
   (cond
     [(hash? j)
      (for/hash ([(k v) (in-hash j)]
