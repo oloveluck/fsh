@@ -23,7 +23,7 @@
          (only-in fhir/model/registry type-registered?)
          (only-in fhir/model/schema ftype-tag ftype-type-name)
          (only-in fhir/serialize/jsexpr-util drop-false)
-         (only-in fhir/fhirpath/parser/parse parse-fhirpath)
+         (only-in fhirpath/parser/parse parse-fhirpath)
          (only-in fhir/sd/snapshot generate-snapshot))
 
 (provide (contract-out

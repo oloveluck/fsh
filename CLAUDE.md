@@ -1,11 +1,12 @@
-# CLAUDE.md — fhir-fsh
+# CLAUDE.md — fsh
 
 Conventions, HTDP design style, and the conformance ratchet table live in the main `fhir` repo's
-CLAUDE.md (`~/Projects/fhir`); this file holds only the notes for this package. Cross-directory
-imports use collection paths (`fhir/model/node`, never `../model/node.rkt`): the family of packages
-splices into the one `fhir` collection, so a directory can move between repos without edits.
+CLAUDE.md (`~/Projects/fhir`); this file holds only the notes for this package. This repo root IS the
+`fsh` collection (`(define collection "fsh")`): modules are `fsh/compile` etc., and imports of the
+foundation use collection paths (`fhir/model/node`, never a relative path into another package).
+The CLI is `cli.rkt` (`raco fsh`); the conformance runner(s) live in `tests/` behind `--tck`.
 
-## FHIR Shorthand lang (`#lang fhir/fsh`, `fsh/`)
+## FHIR Shorthand lang (`#lang fsh`, `fsh/`)
 A from-scratch FSH compiler (the SUSHI authoring DSL) built onto this repo's model. Layers: `parser/` (a `#lang brag` grammar + a stateful `br-parser-tools` lexer
 that emulates FSH's ANTLR pushMode/popMode via a mode-stack box + one lexer per mode; prefab AST with
 `lower-entity`; `path.rkt` sub-parses FSH paths; `parse.rkt` pre-splits a doc into entity chunks since
@@ -19,7 +20,7 @@ paths, per-element `id`; **no snapshot** — deferred); `=` assigns `patternX`, 
 profile url. Instance → a plain resource (schema-driven nesting; `meta.profile` stamped when
 `InstanceOf` is a local profile). ValueSet/CodeSystem → compose/concept (system pulled from `from
 system` or the code token; CodeSystem gets `count`). Whole-doc compile resolves `Alias`es and expands
-non-parameterized `insert RuleSet` first. `#lang fhir/fsh` (`fsh/base.rkt` custom `#%module-begin` +
+non-parameterized `insert RuleSet` first. `#lang fsh` (`fsh/base.rkt` custom `#%module-begin` +
 `fsh/lang/reader.rkt`'s `#:read-syntax` running `parse-fsh-doc`, emitting `(fsh-entity <ast>)` forms)
 makes a `.fsh` file a module providing `document`/`compiled`(jsexpr)/`resources`(typed nodes via
 `from-json`), printing JSON in `main`. `raco fhir fsh <dir>` batch-compiles a folder SUSHI-style.

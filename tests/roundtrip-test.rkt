@@ -12,10 +12,10 @@
          racket/list
          (only-in racket/port port->string)
          (only-in fhir/r5/schemas)                      ; register the R5 tower
-         (only-in fhir/fsh/compile fsh->fhir canonical-base)
-         (only-in fhir/fsh/decompile fhir->fsh)
-         (only-in fhir/fsh/parser/parse parse-fsh-doc)
-         (only-in fhir/fsh/print print-doc))
+         (only-in fsh/compile fsh->fhir canonical-base)
+         (only-in fsh/decompile fhir->fsh)
+         (only-in fsh/parser/parse parse-fsh-doc)
+         (only-in fsh/print print-doc))
 
 (define-runtime-path golden-dir "vendor/golden")
 

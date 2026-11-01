@@ -1,6 +1,6 @@
 #lang racket/base
 
-;;; base.rkt — the module language for #lang fhir/fsh.
+;;; base.rkt — the module language for #lang fsh.
 ;;;
 ;;; The reader (lang/reader.rkt) parses an FSH source file into entity ASTs and emits one
 ;;; (fsh-entity <prefab-ast>) form per entity, pointing them here. This custom #%module-begin

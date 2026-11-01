@@ -15,7 +15,7 @@
          json
          (only-in racket/port port->string)
          (only-in fhir/r5/schemas)                 ; register the R5 tower (resolve.rkt reads it)
-         (only-in fhir/fsh/compile fsh->fhir canonical-base))
+         (only-in fsh/compile fsh->fhir canonical-base))
 
 (define-runtime-path golden-dir "vendor/golden")
 

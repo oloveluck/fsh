@@ -5,8 +5,8 @@
 (require rackunit
          racket/list
          (only-in fhir/r5/schemas)
-         (only-in fhir/fsh/compile fsh->fhir canonical-base emit-snapshot?)
-         (only-in fhir/fsh/decompile fhir->fsh))
+         (only-in fsh/compile fsh->fhir canonical-base emit-snapshot?)
+         (only-in fsh/decompile fhir->fsh))
 
 (define (only r) (car r))
 (define (elements sd) (hash-ref (hash-ref sd 'differential) 'element))
