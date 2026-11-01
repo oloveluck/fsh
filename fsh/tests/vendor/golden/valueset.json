@@ -1,0 +1,22 @@
+{
+  "resourceType": "ValueSet",
+  "status": "active",
+  "name": "MyVS",
+  "id": "my-vs",
+  "title": "My Value Set",
+  "version": "0.1.0",
+  "url": "http://example.org/ValueSet/my-vs",
+  "compose": {
+    "include": [
+      {
+        "system": "http://loinc.org",
+        "concept": [
+          {
+            "code": "1234",
+            "display": "Example"
+          }
+        ]
+      }
+    ]
+  }
+}

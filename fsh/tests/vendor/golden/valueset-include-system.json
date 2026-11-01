@@ -1,0 +1,17 @@
+{
+  "resourceType": "ValueSet",
+  "status": "active",
+  "name": "AllLoincVS",
+  "id": "all-loinc-vs",
+  "title": "All LOINC Codes",
+  "description": "Every code from LOINC.",
+  "version": "0.1.0",
+  "url": "http://example.org/ValueSet/all-loinc-vs",
+  "compose": {
+    "include": [
+      {
+        "system": "http://loinc.org"
+      }
+    ]
+  }
+}

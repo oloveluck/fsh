@@ -1,0 +1,22 @@
+{
+  "resourceType": "CodeSystem",
+  "status": "active",
+  "content": "complete",
+  "name": "MyCS",
+  "id": "my-cs",
+  "title": "My Code System",
+  "version": "0.1.0",
+  "url": "http://example.org/CodeSystem/my-cs",
+  "concept": [
+    {
+      "code": "active",
+      "display": "Active",
+      "definition": "The thing is active"
+    },
+    {
+      "code": "inactive",
+      "display": "Inactive"
+    }
+  ],
+  "count": 2
+}

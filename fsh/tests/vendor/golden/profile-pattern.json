@@ -1,0 +1,36 @@
+{
+  "resourceType": "StructureDefinition",
+  "id": "pattern-observation",
+  "url": "http://example.org/StructureDefinition/pattern-observation",
+  "version": "0.1.0",
+  "name": "PatternObservation",
+  "title": "Pattern Observation",
+  "status": "active",
+  "fhirVersion": "5.0.0",
+  "kind": "resource",
+  "abstract": false,
+  "type": "Observation",
+  "baseDefinition": "http://hl7.org/fhir/StructureDefinition/Observation",
+  "derivation": "constraint",
+  "differential": {
+    "element": [
+      {
+        "id": "Observation.status",
+        "path": "Observation.status",
+        "patternCode": "final"
+      },
+      {
+        "id": "Observation.category",
+        "path": "Observation.category",
+        "patternCodeableConcept": {
+          "coding": [
+            {
+              "code": "vital-signs",
+              "system": "http://terminology.hl7.org/CodeSystem/observation-category"
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

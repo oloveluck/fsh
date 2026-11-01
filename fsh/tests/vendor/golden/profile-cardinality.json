@@ -1,0 +1,39 @@
+{
+  "resourceType": "StructureDefinition",
+  "id": "cardinality-patient",
+  "url": "http://example.org/StructureDefinition/cardinality-patient",
+  "version": "0.1.0",
+  "name": "CardinalityPatient",
+  "title": "Cardinality Patient",
+  "status": "active",
+  "fhirVersion": "5.0.0",
+  "kind": "resource",
+  "abstract": false,
+  "type": "Patient",
+  "baseDefinition": "http://hl7.org/fhir/StructureDefinition/Patient",
+  "derivation": "constraint",
+  "differential": {
+    "element": [
+      {
+        "id": "Patient.identifier",
+        "path": "Patient.identifier",
+        "min": 1
+      },
+      {
+        "id": "Patient.name",
+        "path": "Patient.name",
+        "min": 1
+      },
+      {
+        "id": "Patient.name.family",
+        "path": "Patient.name.family",
+        "min": 1
+      },
+      {
+        "id": "Patient.photo",
+        "path": "Patient.photo",
+        "max": "0"
+      }
+    ]
+  }
+}

@@ -1,0 +1,37 @@
+{
+  "resourceType": "CodeSystem",
+  "status": "active",
+  "content": "complete",
+  "name": "AnimalCS",
+  "id": "animal-cs",
+  "title": "Animal Code System",
+  "version": "0.1.0",
+  "url": "http://example.org/CodeSystem/animal-cs",
+  "concept": [
+    {
+      "code": "animal",
+      "display": "Animal",
+      "concept": [
+        {
+          "code": "mammal",
+          "display": "Mammal",
+          "concept": [
+            {
+              "code": "dog",
+              "display": "Dog"
+            },
+            {
+              "code": "cat",
+              "display": "Cat"
+            }
+          ]
+        },
+        {
+          "code": "bird",
+          "display": "Bird"
+        }
+      ]
+    }
+  ],
+  "count": 5
+}

@@ -1,0 +1,32 @@
+{
+  "resourceType": "StructureDefinition",
+  "id": "obeys-patient",
+  "url": "http://example.org/StructureDefinition/obeys-patient",
+  "version": "0.1.0",
+  "name": "ObeysPatient",
+  "title": "Obeys Patient",
+  "status": "active",
+  "fhirVersion": "5.0.0",
+  "kind": "resource",
+  "abstract": false,
+  "type": "Patient",
+  "baseDefinition": "http://hl7.org/fhir/StructureDefinition/Patient",
+  "derivation": "constraint",
+  "differential": {
+    "element": [
+      {
+        "id": "Patient",
+        "path": "Patient",
+        "constraint": [
+          {
+            "key": "pat-1",
+            "severity": "error",
+            "human": "Either a name or an identifier must be present",
+            "expression": "name.exists() or identifier.exists()",
+            "source": "http://example.org/StructureDefinition/obeys-patient"
+          }
+        ]
+      }
+    ]
+  }
+}

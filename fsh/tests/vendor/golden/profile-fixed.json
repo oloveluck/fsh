@@ -1,0 +1,29 @@
+{
+  "resourceType": "StructureDefinition",
+  "id": "fixed-patient",
+  "url": "http://example.org/StructureDefinition/fixed-patient",
+  "version": "0.1.0",
+  "name": "FixedPatient",
+  "title": "Fixed Patient",
+  "status": "active",
+  "fhirVersion": "5.0.0",
+  "kind": "resource",
+  "abstract": false,
+  "type": "Patient",
+  "baseDefinition": "http://hl7.org/fhir/StructureDefinition/Patient",
+  "derivation": "constraint",
+  "differential": {
+    "element": [
+      {
+        "id": "Patient.active",
+        "path": "Patient.active",
+        "fixedBoolean": true
+      },
+      {
+        "id": "Patient.gender",
+        "path": "Patient.gender",
+        "fixedCode": "female"
+      }
+    ]
+  }
+}

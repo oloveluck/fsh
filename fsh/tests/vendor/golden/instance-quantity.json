@@ -1,0 +1,20 @@
+{
+  "resourceType": "Observation",
+  "id": "QuantityObservation",
+  "status": "final",
+  "code": {
+    "coding": [
+      {
+        "code": "29463-7",
+        "system": "http://loinc.org",
+        "display": "Body weight"
+      }
+    ]
+  },
+  "valueQuantity": {
+    "value": 72.5,
+    "code": "kg",
+    "system": "http://unitsofmeasure.org",
+    "unit": "kilogram"
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "resourceType": "ValueSet",
+  "status": "active",
+  "name": "SomeColorsVS",
+  "id": "some-colors-vs",
+  "title": "Some Colors",
+  "version": "0.1.0",
+  "url": "http://example.org/ValueSet/some-colors-vs",
+  "compose": {
+    "include": [
+      {
+        "system": "http://example.org/CodeSystem/color-cs"
+      }
+    ],
+    "exclude": [
+      {
+        "system": "http://example.org/CodeSystem/color-cs",
+        "concept": [
+          {
+            "code": "blue"
+          }
+        ]
+      }
+    ]
+  }
+}

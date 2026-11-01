@@ -1,0 +1,52 @@
+{
+  "resourceType": "StructureDefinition",
+  "id": "alpha-model",
+  "url": "http://example.org/StructureDefinition/alpha-model",
+  "version": "0.1.0",
+  "name": "AlphaModel",
+  "title": "Alpha Model",
+  "status": "active",
+  "description": "A simple logical model.",
+  "fhirVersion": "5.0.0",
+  "kind": "logical",
+  "abstract": false,
+  "type": "http://example.org/StructureDefinition/alpha-model",
+  "baseDefinition": "http://hl7.org/fhir/StructureDefinition/Base",
+  "derivation": "specialization",
+  "differential": {
+    "element": [
+      {
+        "id": "alpha-model",
+        "path": "alpha-model",
+        "short": "Alpha Model",
+        "definition": "A simple logical model."
+      },
+      {
+        "id": "alpha-model.widget",
+        "path": "alpha-model.widget",
+        "short": "A widget name",
+        "definition": "A widget name",
+        "min": 1,
+        "max": "1",
+        "type": [
+          {
+            "code": "string"
+          }
+        ]
+      },
+      {
+        "id": "alpha-model.count",
+        "path": "alpha-model.count",
+        "short": "How many widgets",
+        "definition": "How many widgets",
+        "min": 0,
+        "max": "1",
+        "type": [
+          {
+            "code": "integer"
+          }
+        ]
+      }
+    ]
+  }
+}
