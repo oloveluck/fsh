@@ -9,6 +9,8 @@
 
 (require brag/support
          racket/contract
+         racket/match
+         (only-in racket/list append*)
          (prefix-in g: "grammar.rkt")
          "lexer.rkt"
          "ast.rkt")
@@ -52,7 +54,35 @@
   (define reals (filter real-tok? toks))
   (cond
     [(param-ruleset? reals) (capture-param-ruleset reals)]
-    [else (lower-entity (g:parse-to-datum reals))]))
+    [else (lower-entity (parse-reals reals))]))
+
+;; parse-reals : entity tokens -> its datum (entity (<kind> header-item … rule …))
+;; brag's CFG parser is superlinear in input length, and real IGs have entities with hundreds of rules
+;; (IPS's Composition profile: 105 s as one parse). A long entity is therefore parsed RULE BY RULE:
+;; the header alone, then header + each `*` rule group, keeping the rule nodes each parse adds.
+;; Same tree, linear cost.
+(define rules-per-parse 16)
+(define (parse-reals reals)
+  (define groups (star-groups reals))
+  (cond
+    [(<= (length (cdr groups)) rules-per-parse) (g:parse-to-datum reals)]
+    [else
+     (define header (car groups))
+     (match-define (list 'entity inner) (g:parse-to-datum header))
+     (define n (length inner))
+     (list 'entity
+           (append inner
+                   (append* (for/list ([grp (in-list (cdr groups))])
+                              (match-define (list 'entity one) (g:parse-to-datum (append header grp)))
+                              (list-tail one n)))))]))
+
+;; star-groups : tokens -> (cons header-tokens (listof rule-token-group)), split at STAR tokens
+(define (star-groups reals)
+  (let loop ([ts reals] [cur '()] [groups '()])
+    (cond
+      [(null? ts) (let ([all (reverse (cons (reverse cur) groups))]) all)]
+      [(eq? (ttype (car ts)) 'STAR) (loop (cdr ts) (list (car ts)) (cons (reverse cur) groups))]
+      [else (loop (cdr ts) (cons (car ts) cur) groups)])))
 
 (define (param-ruleset? reals)
   (and (pair? reals) (eq? (ttype (car reals)) 'KW_RULESET)

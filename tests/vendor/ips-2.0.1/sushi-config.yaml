@@ -1,0 +1,242 @@
+canonical: http://hl7.org/fhir/uv/ips
+fhirVersion: 4.0.1
+FSHOnly: false
+applyExtensionMetadataToRoot: false
+id: hl7.fhir.uv.ips
+name: InternationalPatientSummaryIG
+title: International Patient Summary Implementation Guide
+status: active
+extension:
+  - url: http://hl7.org/fhir/StructureDefinition/structuredefinition-wg
+    valueCode: pc
+  - url: http://hl7.org/fhir/StructureDefinition/structuredefinition-fmm
+    valueInteger: 3
+  - url: http://hl7.org/fhir/StructureDefinition/structuredefinition-standards-status
+    valueCode: trial-use
+license: CC0-1.0
+version: 2.0.1
+copyrightYear: 2020+
+releaseLabel: STU 2
+publisher:
+  name: HL7 International / Patient Care
+  url: http://www.hl7.org/Special/committees/patientcare
+jurisdiction: http://unstats.un.org/unsd/methods/m49/m49.htm#001 "World"
+dependencies:
+  hl7.fhir.uv.ipa:
+    version: 1.1.0
+    uri: http://hl7.org/fhir/uv/ipa/ImplementationGuide/hl7.fhir.uv.ipa
+  hl7.fhir.uv.extensions.r4:
+    version: 5.3.0
+    uri: http://hl7.org/fhir/extensions/ImplementationGuide/hl7.fhir.uv.extensions
+parameters:  # see https://confluence.hl7.org/display/FHIR/Implementation+Guide+Parameters
+  pin-canonicals: pin-all
+menu:
+  Home: index.html
+  Table of Contents: toc.html
+  General Principles and Design:
+    General Principles: General-Principles.html
+    Design Conventions: Design-Conventions.html
+    Must Support and Obligations: Must-Support-and-Obligations.html
+    Empty Sections & Missing Data: Empty-Sections-and-Missing-Data.html
+    Generation and Data Inclusion: Generation-and-Data-Inclusion.html
+    Privacy and Security Considerations: Privacy-and-Security-Considerations.html
+    Known Issues and Future Development: Known-Issues-and-Future-Development.html
+  The "IPS": Structure-of-the-International-Patient-Summary.html
+  FHIR Artifacts:
+    IPS Composition: StructureDefinition-Composition-uv-ips.html
+    IPS Library (Profiles): profiles.html
+    Actors: actors.html
+    CapabilityStatement: CapabilityStatement-ips-server.html
+    Operations: OperationDefinition-summary.html
+    Datatypes: Data-Types-Defined-in-this-Guide.html
+    Terminology: terminology.html
+    Model: StructureDefinition-IPSSectionsLM-mappings.html
+    Examples: examples.html
+  Support:
+    About: About.html
+    Downloads: downloads.html
+    Copyrights: copyrights.html
+  Change Log: changes.html
+resources:
+  Bundle/bundle-ips-all-sections:
+    name: 'Bundle - IPS with All Sections'
+    description: 'Bundle - IPS with All Sections'
+    exampleCanonical: http://hl7.org/fhir/uv/ips/StructureDefinition/Bundle-uv-ips
+  Bundle/IPS-examples-Bundle-01:
+    name: 'Bundle - IPS with Data'
+    description: 'Bundle - IPS with Data'
+    exampleCanonical: http://hl7.org/fhir/uv/ips/StructureDefinition/Bundle-uv-ips
+  Bundle/IPS-examples-Bundle-with-immunization:
+    name: 'Bundle - IPS with Required Sections and Immunization'
+    description: 'Bundle - IPS with Required Sections and Immunization'
+    exampleCanonical: http://hl7.org/fhir/uv/ips/StructureDefinition/Bundle-uv-ips
+  Bundle/bundle-no-info-required-sections:
+    name: 'Bundle - No Information in Required Sections'
+    description: 'Bundle - No Information in Required Sections'
+    exampleCanonical: http://hl7.org/fhir/uv/ips/StructureDefinition/Bundle-uv-ips
+  Bundle/bundle-minimal:
+    name: 'Bundle - Minimal Complete IPS'
+    description: 'Bundle - Minimal Complete IPS'
+    exampleCanonical: http://hl7.org/fhir/uv/ips/StructureDefinition/Bundle-uv-ips
+  Composition/composition-minimal:
+    name: 'Composition - Minimal Sections'
+    description: 'Composition - Minimal Sections'
+    exampleCanonical: http://hl7.org/fhir/uv/ips/StructureDefinition/Composition-uv-ips
+  Medication/eumfh-39-07-1:
+    name: 'Medication - Simvastatin 40 MG Disintegrating Oral Tablet'
+    description: 'Medication - Simvastatin 40 MG Disintegrating Oral Tablet'
+    exampleCanonical: http://hl7.org/fhir/uv/ips/StructureDefinition/Medication-uv-ips
+  MedicationStatement/eumfh-39-07-1:
+    name: 'MedicationStatement - Ongoing Simvastatin Treatment'
+    description: 'MedicationStatement - Ongoing Simvastatin Treatment'
+    exampleCanonical: http://hl7.org/fhir/uv/ips/StructureDefinition/MedicationStatement-uv-ips
+  MedicationRequest/eumfh-39-07-1-request:
+    name: 'MedicationRequest - Simvastatin Request'
+    description: 'MedicationRequest - Simvastatin Request'
+    exampleCanonical: http://hl7.org/fhir/uv/ips/StructureDefinition/MedicationRequest-uv-ips
+  Immunization/75680:
+    name: 'Immunization - Vaccin anti diphtérie-coqueluche-tétanos-poliomyélite (Luxembourg)'
+    description: 'Immunization - Vaccin anti diphtérie-coqueluche-tétanos-poliomyélite (Luxembourg)'
+    exampleCanonical: http://hl7.org/fhir/uv/ips/StructureDefinition/Immunization-uv-ips
+  AllergyIntolerance/eumfh-39-07-1:
+    name: 'AllergyIntolerance - No Known Allergies'
+    description: 'AllergyIntolerance - No Known Allergies'
+    exampleCanonical: http://hl7.org/fhir/uv/ips/StructureDefinition/AllergyIntolerance-uv-ips
+  AllergyIntolerance/allergyintolerance-with-abatement:
+    name: 'AllergyIntolerance - Resolved Allergy'
+    description: 'AllergyIntolerance - Resolved Allergy'
+    exampleCanonical: http://hl7.org/fhir/uv/ips/StructureDefinition/AllergyIntolerance-uv-ips
+  AllergyIntolerance/allergyintolerance-multiple-codings:
+    name: 'AllergyIntolerance - Multiple Codings'
+    description: 'AllergyIntolerance - Multiple Codings'
+    exampleCanonical: http://hl7.org/fhir/uv/ips/StructureDefinition/AllergyIntolerance-uv-ips
+  Condition/eumfh-39-07-1:
+    name: 'Condition - Acute Myeloid Leukemia'
+    description: 'Condition - Acute Myeloid Leukemia'
+    exampleCanonical: http://hl7.org/fhir/uv/ips/StructureDefinition/Condition-uv-ips
+  Procedure/eumfh-39-07-1:
+    name: 'Procedure: Surgical procedure'
+    description: 'Procedure: Surgical procedure'
+    exampleCanonical: http://hl7.org/fhir/uv/ips/StructureDefinition/Procedure-uv-ips
+  Procedure/procedure-missing-performed:
+    name: 'Procedure: Missing Data'
+    description: 'Procedure: Missing Data'
+    exampleCanonical: http://hl7.org/fhir/uv/ips/StructureDefinition/Procedure-uv-ips
+  Practitioner/eumfh-39-07:
+    name: 'Practitioner example'
+    description: 'Practitioner example'
+    exampleCanonical: http://hl7.org/fhir/uv/ips/StructureDefinition/Practitioner-uv-ips
+  PractitionerRole/simple-pr:
+    name: 'PractitionerRole - Minimal'
+    description: 'PractitionerRole - Minimal'
+    exampleCanonical: http://hl7.org/fhir/uv/ips/StructureDefinition/PractitionerRole-uv-ips
+  Patient/eumfh-39-07:
+    name: 'Patient: male patient'
+    description: 'Patient: male patient'
+    exampleCanonical: http://hl7.org/fhir/uv/ips/StructureDefinition/Patient-uv-ips
+  Patient/66033:
+    name: 'Patient: minimal example'
+    description: 'Patient: minimal example'
+    exampleCanonical: http://hl7.org/fhir/uv/ips/StructureDefinition/Patient-uv-ips
+  Patient/patient-example-female:
+    name: 'Patient: female patient'
+    description: 'Patient: female patient'
+    exampleCanonical: http://hl7.org/fhir/uv/ips/StructureDefinition/Patient-uv-ips
+  DeviceUseStatement/eumfh-70-275-1:
+    name: 'DeviceUseStatement - No Known Devices in Use'
+    description: 'DeviceUseStatement - No Known Devices in Use'
+    exampleCanonical: http://hl7.org/fhir/uv/ips/StructureDefinition/DeviceUseStatement-uv-ips
+  Device/eumfh-70-275-1:
+    name: 'Device - No Known Devices in Use'
+    description: 'Device - No Known Devices in Use'
+    exampleCanonical: http://hl7.org/fhir/uv/ips/StructureDefinition/Device-uv-ips
+  Device/ips-example-imaging-1:
+    name: 'Device - Device Observer'
+    description: 'Device - Device Observer'
+    exampleCanonical: http://hl7.org/fhir/uv/ips/StructureDefinition/Device-observer-uv-ips
+  Observation/ips-example-imaging-1:
+    name: 'Observation: imaging CT Abdomen W contrast IV'
+    description: 'Observation: imaging CT Abdomen W contrast IV'
+    exampleCanonical: http://hl7.org/fhir/uv/ips/StructureDefinition/Observation-results-radiology-uv-ips
+  Observation/ips-example-imaging-4:
+    name: 'Observation: imaging CT Abdomen W contrast IV, sub-observations'
+    description: 'Observation: imaging CT Abdomen W contrast IV,sub-observations'
+    exampleCanonical: http://hl7.org/fhir/uv/ips/StructureDefinition/Observation-results-radiology-uv-ips
+  Observation/ips-example-imaging-5:
+    name: 'Observation: imaging Chest X-ray - PA and lateral, with additional sub-observation including numeric range'
+    description: 'Observation: imaging Chest X-ray - PA and lateral, with additional sub-observation including numeric range'
+    exampleCanonical: http://hl7.org/fhir/uv/ips/StructureDefinition/Observation-results-radiology-uv-ips  
+  ImagingStudy/TII-ImagingStudy-5-1:
+    name: 'ImagingStudy - Referred DICOM Study'
+    description: 'ImagingStudy - Referred DICOM Study'
+    exampleCanonical: http://hl7.org/fhir/uv/ips/StructureDefinition/ImagingStudy-uv-ips
+  Organization/TII-Organization1:
+    name: 'Organization: example'
+    description: 'Organization: example'
+    exampleCanonical: http://hl7.org/fhir/uv/ips/StructureDefinition/Organization-uv-ips
+  Organization/simple-org:
+    name: 'Organization - Minimal Name Only'
+    description: 'Organization - Minimal Name Only'
+    exampleCanonical: http://hl7.org/fhir/uv/ips/StructureDefinition/Organization-uv-ips
+  Organization/lab-org-example:
+    name: 'Organization: lab example'
+    description: 'Best Hospital Lab Organization example'
+    exampleCanonical: http://hl7.org/fhir/uv/ips/StructureDefinition/Organization-uv-ips
+  Observation/pregnancy-edd-example:
+    name: 'Observation: pregnancy edd example'
+    description: 'Observation: pregnancy edd example'
+    exampleCanonical: http://hl7.org/fhir/uv/ips/StructureDefinition/Observation-pregnancy-edd-uv-ips
+  Observation/pregnancy-status-example:
+    name: 'Observation: pregnancy status example'
+    description: 'Observation: pregnancy status example'
+    exampleCanonical: http://hl7.org/fhir/uv/ips/StructureDefinition/Observation-pregnancy-status-uv-ips
+  Observation/pregnancy-outcome-example:
+    name: 'Observation: pregnancy outcome example'
+    description: 'Observation: pregnancy outcome example'
+    exampleCanonical: http://hl7.org/fhir/uv/ips/StructureDefinition/Observation-pregnancy-outcome-uv-ips
+  Observation/tobacco-use-example:
+    name: 'Observation: SH tobacco use example'
+    description: 'Observation: SH tobacco use example'
+    exampleCanonical: http://hl7.org/fhir/uv/ips/StructureDefinition/Observation-tobaccouse-uv-ips
+  Observation/alcohol-use-example:
+    name: 'Observation - Social History Alcohol Use'
+    description: 'Observation - Social History Alcohol Use'
+    exampleCanonical: http://hl7.org/fhir/uv/ips/StructureDefinition/Observation-alcoholuse-uv-ips
+  Specimen/specimen-example-1:
+    name: 'Specimen: example'
+    description: 'Specimen: example'
+    exampleCanonical: http://hl7.org/fhir/uv/ips/StructureDefinition/Specimen-uv-ips
+  Observation/serum-creatinine-adult:
+    name: 'Observation: serum creatinine example'
+    description: 'Observation: serum creatinine example'
+    exampleCanonical: http://hl7.org/fhir/uv/ips/StructureDefinition/Observation-results-laboratory-pathology-uv-ips
+  Observation/hemoglobin:
+    name: 'Observation: hemoglobin example'
+    description: 'Observation: hemoglobin example'
+    exampleCanonical: http://hl7.org/fhir/uv/ips/StructureDefinition/Observation-results-laboratory-pathology-uv-ips
+  Observation/urine-wbc-range:
+    name: 'Observation: urine wbc range example'
+    description: 'Observation: urine wbc range example'
+    exampleCanonical: http://hl7.org/fhir/uv/ips/StructureDefinition/Observation-results-laboratory-pathology-uv-ips
+  Observation/pathology-cancer:
+    name: 'Observation: estrogen receptor in tissue example'
+    description: 'Observation: estrogen receptor in tissue example'
+    exampleCanonical: http://hl7.org/fhir/uv/ips/StructureDefinition/Observation-results-laboratory-pathology-uv-ips
+  Observation/pathology-suppressed-data:
+    name: 'Observation: pathology suppressed example'
+    description: 'Observation: pathology suppressed example'
+    exampleCanonical: http://hl7.org/fhir/uv/ips/StructureDefinition/Observation-results-laboratory-pathology-uv-ips  
+  DiagnosticReport/hemoglobin:
+    name: 'DiagnosticReport - Hemoglobin'
+    description: 'DiagnosticReport - Hemoglobin'
+    exampleCanonical: http://hl7.org/fhir/uv/ips/StructureDefinition/DiagnosticReport-uv-ips
+  Flag/546482:
+    name: 'Flag - Alert of Patient Immunocompromised'
+    description: 'Flag - Alert of Patient Immunocompromised'
+    exampleCanonical: http://hl7.org/fhir/uv/ips/StructureDefinition/Flag-alert-uv-ips
+  ActorDefinition/Consumer:
+    exampleBoolean: false
+  ActorDefinition/Creator:
+    exampleBoolean: false
+  ActorDefinition/Server:
+    exampleBoolean: false

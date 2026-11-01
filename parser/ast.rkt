@@ -78,7 +78,16 @@
 ;; -------------------------------------------------------------------
 ;; lowering
 ;; -------------------------------------------------------------------
-(define (lower-entity datum)
+;; names and path segments are TEXT even when they lex as NUMBER/DATETIME/TIME (`Instance: 75680`,
+;; `Id: 2024`): normalise every (name x) / (path x) node to a string before lowering
+(define (textual-names d)
+  (match d
+    [(list (and tag (or 'name 'path)) (? number? n)) (list tag (number->string n))]
+    [(? list?) (map textual-names d)]
+    [_ d]))
+
+(define (lower-entity datum0)
+  (define datum (textual-names datum0))
   (match datum
     [(list 'entity inner) (lower-entity inner)]
 

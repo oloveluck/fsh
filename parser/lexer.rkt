@@ -14,6 +14,7 @@
          (prefix-in : br-parser-tools/lex-sre)
          racket/string
          racket/contract
+         (only-in racket/list last)
          (only-in "ast.rkt" code-tok))
 
 (provide
@@ -38,11 +39,30 @@
 
 ;; ---- value helpers --------------------------------------------------
 (define (trim-quotes s) (substring s 1 (sub1 (string-length s))))
-(define (trim-multiline s) (substring s 3 (- (string-length s) 3)))
+;; a triple-quoted string: the body without the delimiters, a whitespace-only first and last line
+;; dropped, and the common indentation of the remaining lines removed (SUSHI's semantics)
+(define (trim-multiline s)
+  (define body (substring s 3 (- (string-length s) 3)))
+  (define lines (regexp-split #rx"\r?\n" body))
+  (define (blank? l) (regexp-match? #px"^[ \t]*$" l))
+  (define trimmed
+    (let* ([ls (if (and (pair? lines) (pair? (cdr lines)) (blank? (car lines))) (cdr lines) lines)]
+           [ls (if (and (pair? ls) (pair? (cdr ls)) (blank? (last ls))) (reverse (cdr (reverse ls))) ls)])
+      ls))
+  (define indent
+    (for/fold ([m #f]) ([l (in-list trimmed)] #:unless (blank? l))
+      (define n (string-length (car (regexp-match #px"^[ \t]*" l))))
+      (if m (min m n) n)))
+  (string-join (for/list ([l (in-list trimmed)])
+                 (cond [(blank? l) ""]
+                       [(and indent (>= (string-length l) indent)) (substring l indent)]
+                       [else l]))
+               "\n"))
 (define (unescape s)
   (regexp-replace* #px"\\\\(.)" s
-    (lambda (_ c) (case c [("n") "\n"] [("t") "\t"] [("r") "\r"]
-                          [("\"") "\""] [("\\") "\\"] [else c]))))
+    ;; only the escapes FSH defines; any other `\x` is kept verbatim (markdown `\|` in descriptions)
+    (lambda (all c) (case c [("n") "\n"] [("t") "\t"] [("r") "\r"]
+                          [("\"") "\""] [("\\") "\\"] [else all]))))
 ;; trim surrounding whitespace and a trailing "(" (for RuleSet/insert references)
 (define (clean-ref s)
   (string-trim (regexp-replace #px"\\(\\s*$" (string-trim s) "")))
@@ -62,7 +82,11 @@
      [(eof) (void)]
      [block-comment   (token 'COMMENT lexeme #:skip? #t)]
      ;; STAR: a rule line — newline (or line comment) + ws + '*' + space. Must precede WS.
-     [(:: (:or nl line-comment) (:* hs) "*" (:or #\space #\u00A0)) (token 'STAR lexeme)]
+     ;; Trailing spaces before the newline and BLANK lines after it belong to the STAR too: the WS
+     ;; rule below is greedy, so a bare `(:* hs)` here let WS swallow " \n" / "\n\n" (newline
+     ;; included) and strand the `*` as a SEQUENCE — any rule after a line with trailing whitespace,
+     ;; or after a blank line, failed to parse. Longest match now always prefers STAR.
+     [(:: (:* hs) (:or nl line-comment) (:* anyws) "*" (:or #\space #\u00A0)) (token 'STAR lexeme)]
      [line-comment    (token 'COMMENT lexeme #:skip? #t)]
      [(:+ anyws)      (token 'WS lexeme #:skip? #t)]
 
@@ -131,7 +155,9 @@
       (token 'DATETIME lexeme)]
      [(:: digit digit digit digit (:? (:: "-" hh (:? (:: "-" hh (:? (:: "T" time-frag)))))))
       (token 'DATETIME lexeme)]
-     [(:: hh (:? (:: ":" hh (:? (:: ":" hh (:? (:: "." (:+ digit)))))))
+     ;; a TIME needs at least hh:mm — a bare two-digit `40` is a NUMBER (as in FSHLexer.g4, where
+     ;; NUMBER wins the tie); otherwise every two-digit quantity (`40 'mg'`) failed to parse
+     [(:: hh ":" hh (:? (:: ":" hh (:? (:: "." (:+ digit)))))
           (:? (:or "Z" (:: (:or "+" "-") hh ":" hh))))
       (token 'TIME lexeme)]
      [(:: (:? (:or "+" "-")) (:+ digit) (:? (:: "." (:+ digit)))

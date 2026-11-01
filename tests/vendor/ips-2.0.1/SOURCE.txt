@@ -1,0 +1,12 @@
+IPS 2.0.1 FSH sources — the International Patient Summary IG, vendored verbatim.
+
+  repo:     https://github.com/HL7/fhir-ips
+  tag:      2.0.1 (tarball HL7-fhir-ips-df27097)
+  path:     input/fsh/ (all .fsh files) + sushi-config.yaml
+  fetched:  2026-11-01
+  license:  CC0-1.0 (sushi-config.yaml `license`)
+
+The oracle is the PUBLISHED package hl7.fhir.uv.ips#2.0.1 (fhir-spec/hl7.fhir.uv.ips.tgz): the IG
+Publisher's output for exactly these sources, i.e. what SUSHI produced, plus publisher-added content
+(snapshots, narrative, dates, publisher metadata) that the comparison ignores. See
+tests/ig-fsh-test.rkt for what is compared.
