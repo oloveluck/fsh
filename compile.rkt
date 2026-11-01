@@ -15,12 +15,14 @@
 (require racket/match
          racket/string
          racket/contract
-         (only-in racket/list append-map make-list last filter-map remove-duplicates)
+         (only-in racket/list append-map make-list last filter-map remove-duplicates index-of)
          "parser/ast.rkt"
          "parser/path.rkt"
          "caret.rkt"
          (only-in "parser/parse.rkt" parse-fsh-doc)
          (only-in "resolve.rkt" element-fhir-type field-info)
+         (only-in fhir/model/registry type-schema-of)
+         (only-in fhir/model/schema type-schema-fields type-schema-parent schema-field-name schema-field-choice-base)
          (only-in fhir/model/registry type-registered?)
          (only-in fhir/model/schema ftype-tag ftype-type-name)
          (only-in fhir/serialize/jsexpr-util drop-false)
@@ -86,12 +88,20 @@
                              (cons (or (assoc-ref (entity-meta e) 'parent)
                                        (if (fsh-extension? e) "Extension" "DomainResource"))
                                    id))))
+  ;; an Invariant's fields come from its keywords (`Severity:`) OR from assignment rules
+  ;; (`* severity = #error`, `* expression = "…"`) — both forms are FSH
   (define invariants (for/hash ([e (in-list entities)] #:when (fsh-invariant? e))
                        (define m (fsh-invariant-metadata e))
+                       (define (rule-val k)
+                         (for/or ([r (in-list (fsh-invariant-rules e))])
+                           (match r [(rule-assign (== k) v _) (match v [(struct fsh-code (c _)) c] [_ v])] [_ #f])))
+                       (define (field k [rk (symbol->string k)]) (or (assoc-ref m k) (rule-val rk)))
                        (values (fsh-invariant-name e)
-                               (hasheq 'severity (strip# (or (assoc-ref m 'severity) "#error"))
-                                       'human (assoc-ref m 'description)
-                                       'expression (assoc-ref m 'expression)))))
+                               (drop-false
+                                (hasheq 'severity (strip# (or (field 'severity) "#error"))
+                                        'human (or (field 'description) (rule-val "human"))
+                                        'expression (field 'expression)
+                                        'xpath (field 'xpath))))))
   ;; Instances by name and id, compiled on demand (memoised, cycle-guarded) so one instance can be
   ;; embedded in another; `Usage: #inline` instances are ONLY embedded, never emitted on their own.
   ;; an instance's id: `Id:`, else an `* id = "…"` rule, else its name
@@ -261,7 +271,7 @@
   (define-values (elems0 order0) (fold-sd-rules base-type rules invariants self-url))
   (define-values (elems order)
     (if ext? (add-extension-scaffold elems0 order0 self-url meta) (values elems0 order0)))
-  (define diff (for/list ([k (in-list (reverse order))]) (hash-ref elems k)))
+  (define diff (snapshot-order base-type (for/list ([k (in-list (reverse order))]) (hash-ref elems k))))
   (define base (drop-false
                 (hasheq 'resourceType "StructureDefinition"
                         'id id
@@ -272,7 +282,13 @@
                         'description (assoc-ref meta 'description)
                         'status "active"
                         'fhirVersion (fsh-fhir-version)
-                        'kind (if ext? "complex-type" "resource")
+                        ;; a profile shares its base's kind: Coding/CodeableConcept profiles are complex-type
+                        'kind (cond [ext? "complex-type"]
+                                    [(let ([b (and (sd-index-available?) (resolve-sd-raw base-type))])
+                                       (and (hash? b) (hash-ref b 'kind #f)))]
+                                    [(and (type-registered? (string->symbol base-type))
+                                          (not (char-upper-case? (string-ref base-type 0)))) "primitive-type"]
+                                    [else "resource"])
                         'type base-type
                         'baseDefinition parent-url
                         'derivation "constraint"
@@ -317,18 +333,38 @@
                         'severity (and inv (hash-ref inv 'severity #f))
                         'human (and inv (hash-ref inv 'human #f))
                         'expression (and inv (hash-ref inv 'expression #f))
+                        'xpath (and inv (hash-ref inv 'xpath #f))
                         'source self-url)))
   (define element-counters (make-hash))      ; element id -> soft-index counters for its carets
   (for/fold ([elems (hash)] [order '()]) ([r (in-list rules)])
     (define p (rule-path-of r))
     (define-values (rid rpath rslice)
       (if (string? p) (element-loc base-type p) (values #f #f #f)))
+    (define-values (elems* order*)
+      (if (and rid (regexp-match? #px"\\[x\\]:" rid) (not (rule-only? r)))
+          (let-values ([(e o) (ensure-choice-parents elems order rid)])
+            ;; a type slice SUSHI creates restricts the choice to that one type: min 0, the base max
+            (if (hash-has-key? e rid)
+                (values e o)
+                (upd e o rid rpath rslice
+                     (lambda (h) (choice-slice-defaults h base-type rpath rslice)))))
+          (values elems order)))
+    (let ([elems elems*] [order order*])
     (match r
       [(rule-card p card flags) (upd elems order rid rpath rslice (lambda (h) (apply-card (apply-flags h flags) card)))]
       [(rule-flag p _ flags)    (upd elems order rid rpath rslice (lambda (h) (apply-flags h flags)))]
       [(rule-binding p vs str)  (upd elems order rid rpath rslice (lambda (h) (hash-set h 'binding (drop-false (hasheq 'strength (and str (symbol->string str)) 'valueSet (and vs (valueset-url vs)))))))]
-      [(rule-only p types)      (upd elems order rid rpath rslice (lambda (h) (hash-set h 'type (map type->jsexpr types))))]
-      [(rule-assign p v exact?) (upd elems order rid rpath rslice (lambda (h) (apply-pattern h base-type p v exact?)))]
+      [(rule-only p types)
+       ;; types in the base element's order (SUSHI), unknown ones after
+       (define base-codes (or (base-type-codes base-type rpath) '()))
+       (define (rank t) (or (index-of base-codes (hash-ref t 'code)) 1000))
+       (define new-types (sort (map type->jsexpr types) < #:key rank))
+       ;; an `only` naming exactly the base element's types narrows nothing: SUSHI emits no element
+       (if (and (not (hash-has-key? elems rid)) (equal? (base-type-codes base-type rpath) (map (lambda (t) (hash-ref t 'code)) new-types))
+                (andmap (lambda (t) (= (hash-count t) 1)) new-types))
+           (values elems order)
+           (upd elems order rid rpath rslice (lambda (h) (hash-set h 'type new-types))))]
+      [(rule-assign p v exact?) (upd elems order rid rpath rslice (lambda (h) (apply-pattern h base-type p (resolve v (current-aliases)) exact?)))]
       [(rule-caret p cp v)      (if p (upd elems order rid rpath rslice
                                            (lambda (h) (typed-caret-set h cp v 'ElementDefinition
                                                                         (hash-ref! element-counters rid make-hash))))
@@ -342,16 +378,34 @@
                                    'type (and (pair? types) (map type->jsexpr types)))))]
       [(rule-contains p items)
        (define slice-min (for/sum ([it (in-list items)]) (card-lo (contains-item-card it))))
+       (define ext? (regexp-match? #rx"[.](modifierE|e)xtension$" rpath))
        (define-values (e1 o1) (upd elems order rid rpath rslice
-                                   (lambda (h) (if (> slice-min 0) (hash-set h 'min slice-min) h))))
+                                   (lambda (h)
+                                     (let* ([h (if (> slice-min 0) (hash-set h 'min slice-min) h)]
+                                            ;; SUSHI slices extensions by url when `contains` names them
+                                            [h (if (and ext? (not (hash-has-key? h 'slicing))) (hash-set h 'slicing url-slicing) h)])
+                                       h))))
        (for/fold ([elems e1] [order o1]) ([it (in-list items)])
          (define sn (or (contains-item-named-as it) (contains-item-name it)))
          ;; reslicing: when the contains target is itself a slice, sub-slice ids join with "/"
          (define sub-id (if rslice (string-append rid "/" sn) (string-append rid ":" sn)))
          (define sub-name (if rslice (string-append rslice "/" sn) sn))
+         ;; `extension contains <ext> named <slice>`: the slice is typed Extension, profiled by that
+         ;; extension's canonical (a local Extension's url, an alias, or a url as written)
+         (define ext-profile
+           (and ext? (contains-item-named-as it)
+                (let* ([n (resolve-alias (contains-item-name it) (current-aliases))]
+                       [local (hash-ref (current-profiles) n #f)])
+                  (cond [local (local-profile-url local)]
+                        [(regexp-match? #rx"^https?:" n) n]
+                        [else (external-canonical "StructureDefinition" n)]))))
          (upd elems order sub-id rpath sub-name
-              (lambda (h) (apply-card (apply-flags h (contains-item-flags it)) (contains-item-card it)))))]
-      [_ (values elems order)])))
+              (lambda (h)
+                (let ([h (apply-card (apply-flags h (contains-item-flags it)) (contains-item-card it))])
+                  (if (and ext-profile (not (hash-has-key? h 'type)))
+                      (hash-set h 'type (list (hasheq 'code "Extension" 'profile (list ext-profile))))
+                      h)))))]
+      [_ (values elems order)]))))
 
 ;; set only the keys whose value is non-#f (a drop-false-aware multi hash-set)
 (define (hash-set* h . kvs)
@@ -387,9 +441,68 @@
   (cond
     [(null? steps) (values base-type base-type #f)]
     [else
-     (define id (string-append base-type "." (string-join (map id-seg steps) ".")))
-     (define path (string-append base-type "." (string-join (map path-seg steps) ".")))
-     (values id path (step-slice (last steps)))]))
+     ;; walk the path with the schema's types so a type-specific choice name (`valueQuantity`) becomes
+     ;; the type slice SUSHI emits: id `value[x]:valueQuantity`, path `value[x]`, sliceName valueQuantity
+     (define-values (id-segs path-segs last-slice)
+       (for/fold ([ids '()] [paths '()] [slice #f] [type (string->symbol base-type)]
+                  #:result (values (reverse ids) (reverse paths) slice))
+                 ([st (in-list steps)])
+         (define name (string->symbol (fsh-step-name st)))
+         (define cb (and type (null? (fsh-step-brackets st)) (choice-base-of type name)))
+         (define-values (_k ftype) (if type (field-info type name) (values #f (vector 'unknown))))
+         (define next (and (eq? (ftype-tag ftype) 'type) (ftype-type-name ftype)))
+         (if cb
+             (values (cons (format "~a[x]:~a" cb name) ids) (cons (format "~a[x]" cb) paths) (symbol->string name) next)
+             (values (cons (id-seg st) ids) (cons (path-seg st) paths) (step-slice st) next))))
+     (values (string-append base-type "." (string-join id-segs "."))
+             (string-append base-type "." (string-join path-segs "."))
+             last-slice)]))
+
+;; choice-base-of : type member -> "value" when `member` (valueQuantity) is an expanded choice
+;; member of `type` (searching the type's generated ancestors), else #f
+(define (choice-base-of type member)
+  (let loop ([t type])
+    (define sch (and t (type-schema-of t)))
+    (cond [(not sch) #f]
+          [(for/or ([f (in-list (type-schema-fields sch))] #:when (eq? (schema-field-name f) member))
+             (schema-field-choice-base f))
+           => symbol->string]
+          [else (loop (type-schema-parent sch))])))
+
+;; choice-slice-defaults : element base-type choice-path slice-name -> element with min/max/type
+(define (choice-slice-defaults h base-type path slice)
+  (define codes (or (base-type-codes base-type path) '()))
+  (define base-prefix (regexp-replace #rx"\\[x\\]$" (last (string-split path ".")) ""))
+  (define suffix (and slice (> (string-length slice) (string-length base-prefix)) (substring slice (string-length base-prefix))))
+  ;; the slice name's type suffix matches one of the base types (Quantity; dateTime for DateTime)
+  (define code (and suffix (for/or ([c (in-list codes)]) (and (string-ci=? c suffix) c))))
+  (define bmax (base-max base-type path))
+  (hash-set* h 'min 0 'max (or bmax "1") 'type (and code (list (hasheq 'code code)))))
+
+(define (base-element base-type path)
+  (define sd (and (sd-index-available?) (resolve-sd-raw base-type)))
+  (define els (and (hash? sd) (let ([sn (hash-ref sd 'snapshot #f)]) (and (hash? sn) (hash-ref sn 'element #f)))))
+  (and (list? els) (findf (lambda (e) (equal? (hash-ref e 'path #f) path)) els)))
+(define (base-max base-type path) (let ([e (base-element base-type path)]) (and e (hash-ref e 'max #f))))
+
+;; base-type-codes : base-type element-path -> (listof type code) | #f   from the base snapshot
+(define (base-type-codes base-type path)
+  (define sd (and (sd-index-available?) (resolve-sd-raw base-type)))
+  (define els (and (hash? sd) (let ([sn (hash-ref sd 'snapshot #f)]) (and (hash? sn) (hash-ref sn 'element #f)))))
+  (define el (and (list? els) (findf (lambda (e) (equal? (hash-ref e 'path #f) path)) els)))
+  (and el (for/list ([t (in-list (hash-ref el 'type '()))]) (hash-ref t 'code #f))))
+
+;; the type-slicing a choice element gets when one of its types is constrained by name (SUSHI)
+(define type-slicing (hasheq 'discriminator (list (hasheq 'type "type" 'path "$this")) 'ordered #f 'rules "open"))
+(define url-slicing (hasheq 'discriminator (list (hasheq 'type "value" 'path "url")) 'ordered #f 'rules "open"))
+
+;; ensure-choice-parents : elems order id -> elems order   for each `x[x]:name` segment in `id`, the
+;; `x[x]` element exists and carries the type slicing
+(define (ensure-choice-parents elems order id)
+  (for/fold ([elems elems] [order order]) ([m (in-list (regexp-match-positions* #px"\\[x\\]:" id))])
+    (define pid (substring id 0 (+ (car m) 3)))
+    (define ppath (regexp-replace* #px":[^.]+" pid ""))
+    (upd elems order pid ppath #f (lambda (h) (if (hash-has-key? h 'slicing) h (hash-set h 'slicing type-slicing))))))
 
 ;; the path field of any SD rule (or #f for path-less SD-level caret / root obeys)
 (define (rule-path-of r)
@@ -442,7 +555,13 @@
        (cond [(hash-ref (current-profiles) n #f)
               => (lambda (p) (hasheq 'code (instance-base n (current-profiles))
                                      'profile (list (local-profile-url p))))]
-             [(regexp-match? #px"^https?:" n) (hasheq 'code (last-url-seg n) 'profile (list n))]
+             [(regexp-match? #px"^https?:" n)
+              ;; a profile by url: its code is the profile's base type (core vitalsigns -> Observation)
+              (define sd (and (sd-index-available?) (resolve-canonical-raw "StructureDefinition" n)))
+              (hasheq 'code (or (and sd (hash-ref sd 'type #f)) (last-url-seg n)) 'profile (list n))]
+             [(and (sd-index-available?) (not (type-registered? (string->symbol n)))
+                   (resolve-canonical-raw "StructureDefinition" n))
+              => (lambda (sd) (hasheq 'code (hash-ref sd 'type) 'profile (list (hash-ref sd 'url))))]
              [else (hasheq 'code n)])]))
 (define (target-urls inner)
   (for/list ([s (in-list (regexp-split #px"\\s+or\\s+" (string-trim inner)))])
@@ -872,6 +991,44 @@
 
 ;; current-aliases : the document's Alias table (set by compile-doc/errors) — carets resolve through it
 (define current-aliases (make-parameter (hash)))
+;; snapshot-order : base-type (listof element) -> same elements, in the base definition's order.
+;; SUSHI emits a differential in snapshot order, not rule order. Elements are compared segment by
+;; segment on their ids (`Observation.component:systolic.code`): first the position of the path
+;; prefix in the base snapshot (unknown paths — inside a datatype — sort after known ones), then the
+;; slice (the unsliced element before its slices, slices in first-appearance order); ties keep rule
+;; order. Without a core package to read (no SD index) the rule order is kept.
+(define (snapshot-order base-type elements)
+  (define base (and (sd-index-available?) (resolve-sd-raw base-type)))
+  (define snap (and (hash? base) (let ([sn (hash-ref base 'snapshot #f)]) (and (hash? sn) (hash-ref sn 'element #f)))))
+  (cond
+    [(not (list? snap)) elements]
+    [else
+     (define pos (for/hash ([e (in-list snap)] [i (in-naturals)] #:when (hash-ref e 'path #f))
+                   (values (hash-ref e 'path) i)))
+     (define slice-rank (make-hash))                       ; (path-prefix . slice) -> first appearance
+     (define (segments id)                                  ; "A.b:s.c" -> '(("A" #f) ("b" "s") ("c" #f))
+       (for/list ([seg (in-list (string-split id "."))])
+         (match (regexp-match #px"^([^:]+)(?::(.+))?$" seg) [(list _ n sl) (list n sl)] [#f (list seg #f)])))
+     (define (key id)
+       (let loop ([segs (segments id)] [prefix ""] [acc '()])
+         (cond
+           [(null? segs) (reverse acc)]
+           [else
+            (match-define (list n sl) (car segs))
+            (define path (if (string=? prefix "") n (string-append prefix "." n)))
+            (define p (hash-ref pos (regexp-replace #rx"\\[x\\]$" path "[x]") (lambda () (hash-ref pos path 1000000))))
+            (define r (if sl (hash-ref! slice-rank (cons path sl) (lambda () (hash-count slice-rank))) -1))
+            (loop (cdr segs) path (list* r p acc))])))
+     (define keyed (for/list ([e (in-list elements)] [i (in-naturals)]) (list (key (hash-ref e 'id "")) i e)))
+     (map caddr (sort keyed (lambda (a b) (key<? (car a) (car b) (cadr a) (cadr b)))))]))
+
+;; lexicographic on integer lists; a prefix sorts first; ties fall back to rule order
+(define (key<? a b ia ib)
+  (cond [(and (null? a) (null? b)) (< ia ib)]
+        [(null? a) #t] [(null? b) #f]
+        [(< (car a) (car b)) #t] [(> (car a) (car b)) #f]
+        [else (key<? (cdr a) (cdr b) ia ib)]))
+
 ;; current-slice-orders : profile name/id -> (hash element-path -> slice names in declaration order)
 (define current-slice-orders (make-parameter (lambda (_) (hash))))
 ;; current-profiles : the document's Profiles/Extensions by name/id/url -> (cons parent id)
