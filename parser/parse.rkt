@@ -8,7 +8,7 @@
 ;;; parser backs both the embedded API and the `#lang fsh` reader.
 
 (require brag/support
-         (only-in fhir/diagnostic raise-diagnostic exn->diagnostic exn:fail:diagnostic? error-position loc)
+         (only-in fhir/diagnostic raise-diagnostic exn->diagnostic exn:fail:diagnostic? error-position loc attach-loc!)
          racket/contract
          racket/match
          (only-in racket/list append* take last)
@@ -77,19 +77,37 @@
                                                                       #:unit "entity"
                                                                       #:ran-out? (ran-out-probe (filter real-tok? ch) last-pos))))])
         (define first-real (for/first ([t (in-list ch)] #:when (real-tok? t)) t))
-        (cons (parse-chunk ch)
+        (cons (parse-chunk ch #:source source)
               (loc (and source (if (path? source) (path->string source) source))
                    (token-struct-line first-real)
                    (let ([c (token-struct-column first-real)]) (and c (add1 c)))
                    (token-struct-offset first-real) (token-struct-span first-real)))))))
 
 ;; parse one entity's token chunk
-(define (parse-chunk toks)
+(define (parse-chunk toks #:source [source #f])
   (define reals (filter real-tok? toks))
   (cond
     [(param-ruleset? reals) (capture-param-ruleset reals)]
-    [else (apply-indentation (lower-entity (parse-reals reals))
-                             (for/list ([t (in-list reals)] #:when (eq? (ttype t) 'STAR)) (star-indent t)))]))
+    [else
+     (define e (apply-indentation (lower-entity (parse-reals reals))
+                                  (for/list ([t (in-list reals)] #:when (eq? (ttype t) 'STAR)) (star-indent t))))
+     ;; each rule remembers where it is written (the token after its `*`), for compile diagnostics
+     (define starts (for/list ([t (in-list reals)] [nxt (in-list (append (cdr reals) (list #f)))]
+                               #:when (eq? (ttype t) 'STAR))
+                      nxt))
+     (define rules (entity-rules e))
+     (when (and rules (= (length rules) (length starts)))
+       (for ([r (in-list rules)] [t (in-list starts)] #:when (and t (token-struct-line t)))
+         (attach-loc! r (loc (and source (if (path? source) (path->string source) source))
+                             (token-struct-line t) (let ([c (token-struct-column t)]) (and c (add1 c)))
+                             (token-struct-offset t) (token-struct-span t)))))
+     e]))
+;; entity-rules : entity -> (listof rule) | #f
+(define (entity-rules e)
+  (match e
+    [(fsh-profile _ _ r) r] [(fsh-extension _ _ r) r] [(fsh-logical _ _ r) r] [(fsh-resource _ _ r) r]
+    [(fsh-instance _ _ r) r] [(fsh-valueset _ _ r) r] [(fsh-codesystem _ _ r) r] [(fsh-mapping _ _ r) r]
+    [(fsh-invariant _ _ r) r] [(fsh-ruleset _ r) r] [_ #f]))
 
 ;; ---- indented rules (FSH 2.0 "path context") ------------------------------------------------
 ;; A rule indented under another continues its path: under `* extension[a][0]`, an indented

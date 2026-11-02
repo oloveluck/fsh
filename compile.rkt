@@ -20,6 +20,7 @@
          "parser/path.rkt"
          "caret.rkt"
          (only-in "parser/parse.rkt" parse-fsh-doc)
+         (only-in fhir/diagnostic diagnostic attached-loc)
          (only-in "resolve.rkt" element-fhir-type field-info)
          (only-in fhir/model/registry type-schema-of)
          (only-in fhir/model/schema type-schema-fields type-schema-parent schema-field-name schema-field-choice-base)
@@ -40,6 +41,7 @@
           [compile-doc    (-> (listof struct?) (listof hash?))]
           [compile-doc/errors (-> (listof struct?) (values (listof hash?) (listof (cons/c string? exn?))))]
           [entity-label (-> struct? string?)]   ; "profile: Name" — how compile-doc/errors names an entity
+          [compile-doc/diagnostics (-> (listof struct?) (values (listof hash?) (listof (cons/c string? exn?)) list?))]
           [fsh->fhir      (-> string? (listof hash?))]))
 
 ;; the IG canonical URL base (SUSHI default in the golden corpus is http://example.org)
@@ -64,6 +66,63 @@
   (define-values (out errors) (compile-doc/errors entities))
   (when (pair? errors) (raise (cdr (car errors))))
   out)
+
+;; compile-doc/diagnostics : entities -> (values resources errors diagnostics)   compile-doc/errors,
+;; plus every rule-level diagnostic (fhir/diagnostic) — accumulated, compilation continues past them
+(define (compile-doc/diagnostics entities)
+  (define found (box '()))
+  (define-values (out errors) (parameterize ([current-rule-diagnostics found]) (compile-doc/errors entities)))
+  (values out errors (reverse (unbox found))))
+(define current-rule-diagnostics (make-parameter #f))
+(define (rule-diagnostic! rule entity-label msg)
+  (define b (current-rule-diagnostics))
+  (when b (set-box! b (cons (diagnostic 'fsh 'compile 'error (format "~a: ~a" entity-label msg) (attached-loc rule)) (unbox b)))))
+
+;; check-element-paths! : entity -> void   a rule whose path starts at an element the base type does
+;; not have (`* nosuchelement 1..1` on a Patient profile) is an error, positioned at the rule. Only
+;; the FIRST path element is checked (deeper steps go through slices, extensions, choices and
+;; datatypes this check does not model), and only when the base type's snapshot resolves — never a
+;; guess (logical models, custom resources and unresolvable parents are skipped).
+(define (check-element-paths! e)
+  (when (current-rule-diagnostics)
+    (define-values (base rules)
+      (match e
+        [(fsh-profile n m r) (values (instance-base (resolve-alias (or (assoc-ref m 'parent) "DomainResource") (current-aliases))
+                                                    (current-profiles))
+                                     r)]
+        [(fsh-extension _ _ r) (values "Extension" r)]
+        [(fsh-instance _ m r) (values (let ([of (assoc-ref m 'instanceOf)])
+                                        (and of (instance-base (resolve-alias of (current-aliases)) (current-profiles))))
+                                      r)]
+        [_ (values #f '())]))
+    (define names (and base (type-registered? (string->symbol base)) (base-element-names base)))
+    (when names
+      (for ([r (in-list rules)])
+        (for ([p (in-list (cons (rule-path-of r) (match r [(rule-flag _ ps _) ps] [_ '()])))]
+              #:when (and (string? p) (not (member p '("" "."))) (not (regexp-match? #rx"^[.^]" p))))
+          (define first (let ([steps (with-handlers ([exn:fail? (lambda (_) '())]) (fsh-path-steps (parse-fsh-path p)))])
+                          (and (pair? steps) (fsh-step-name (car steps)))))
+          (when (and first (not (known-element? names first)))
+            (rule-diagnostic! r (entity-label e) (format "`~a` is not an element of ~a" first base))))))))
+;; base-element-names : type -> (listof string)|#f   its top-level element names ("value[x]", "name")
+(define (base-element-names type)
+  (define sd (and (sd-index-available?) (resolve-sd-raw type)))
+  (define els (and (hash? sd) (hash-ref (hash-ref sd 'snapshot (hash)) 'element #f)))
+  (and (list? els)
+       (for*/list ([el (in-list els)]
+                   [m (in-value (regexp-match (pregexp (string-append "^" (regexp-quote type) "[.]([^.:]+)$")) (hash-ref el 'path "")))]
+                   #:when m)
+         (cadr m))))
+;; known-element? : names name -> boolean   directly, as a choice ("value[x]"), or a choice spelled
+;; with its type ("valueQuantity")
+(define (known-element? names n)
+  (or (member n names)
+      (member (string-append n "[x]") names)
+      (for/or ([c (in-list names)] #:when (regexp-match? #rx"\\[x\\]$" c))
+        (define stem (substring c 0 (- (string-length c) 3)))
+        (and (> (string-length n) (string-length stem)) (string-prefix? n stem)
+             (char-upper-case? (string-ref n (string-length stem)))))
+      #f))
 
 ;; compile-doc/errors : entities -> (values (listof jsexpr) (listof (cons entity-label exn)))
 ;; Like SUSHI, a failing entity is reported and the rest of the document still compiles.
@@ -184,10 +243,13 @@
                    [current-local-canonical (lambda (n) (hash-ref local-canonicals n #f))])
     (for*/list ([e (in-list entities)]
                 #:unless (or (fsh-alias? e) (fsh-ruleset? e) (fsh-param-ruleset? e)
-                             (fsh-invariant? e) (fsh-mapping? e) (inline? e))
+                             (fsh-invariant? e) (fsh-mapping? e) (fsh-invariant? e))
+                [x (in-value (expand-entity-inserts e rulesets param-rulesets))]
+                [_ (in-value (check-element-paths! x))]          ; rule-level diagnostics (accumulated)
+                #:unless (inline? e)
                 [out (in-value
                       (with-handlers ([exn:fail? (lambda (x) (set! errors (cons (cons (entity-label e) x) errors)) #f)])
-                        (compile-entity (expand-entity-inserts e rulesets param-rulesets) aliases profiles invariants)))]
+                        (compile-entity x aliases profiles invariants)))]
                 #:when out)
       out)))
   ;; Mapping entities inject into their Source StructureDefinition (SUSHI-style) — a post-pass.

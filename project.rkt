@@ -13,7 +13,7 @@
          (only-in fhir/sd/sd-index current-sd-packages)
          (only-in fhir/spec-package spec-package-path)
          (only-in fhir/diagnostic diagnostic exn:fail:diagnostic? exn:fail:diagnostic-diagnostic)
-         (only-in "compile.rkt" compile-doc/errors entity-label emit-snapshot? canonical-base fsh-fhir-version)
+         (only-in "compile.rkt" compile-doc/diagnostics entity-label emit-snapshot? canonical-base fsh-fhir-version)
          (only-in "parser/parse.rkt" parse-fsh-doc/located)
          (only-in "parser/ast.rkt" fsh-instance? fsh-instance-metadata fsh-instance-name)
          "ig-config.rkt" "pack.rkt")
@@ -68,18 +68,20 @@
   (cond
     [(pair? parse-errors) (project cfg fhir-version files texts located '() (reverse parse-errors) missing)]
     [else
-     (define-values (out errors)
+     (define-values (out errors rule-diags)
        (parameterize ([emit-snapshot? snapshot?]
                       [canonical-base (or canonical (canonical-base))]
                       [fsh-fhir-version fhir-version]
                       [current-sd-packages
                        (let ([core (spec-package-path (if r4? "hl7.fhir.r4.core.tgz" "hl7.fhir.r5.core.tgz") #:optional? #t)])
                          (append dep-packages (if core (list core) '())))])
-         (compile-doc/errors (map car located))))
+         (compile-doc/diagnostics (map car located))))
      (define at (for/hash ([p (in-list located)]) (values (entity-label (car p)) (cdr p))))
+     ;; rule-level diagnostics (an unknown element, …) first, then entities that failed outright
      (project cfg fhir-version files texts located out
-              (for/list ([e (in-list (reverse errors))])
-                (diagnostic 'fsh 'compile 'error (format "~a: ~a" (car e) (exn-message (cdr e))) (hash-ref at (car e) #f)))
+              (append rule-diags
+                      (for/list ([e (in-list errors)])
+                        (diagnostic 'fsh 'compile 'error (format "~a: ~a" (car e) (exn-message (cdr e))) (hash-ref at (car e) #f))))
               missing)]))
 
 ;; pack-project! : project out -> path   instances' Usage decides package/ vs package/example/
@@ -90,3 +92,20 @@
                              [u (in-value (assoc 'usage m))] #:when u)
                    (values (let ([i (assoc 'id m)]) (if i (cdr i) (fsh-instance-name (car l)))) (cdr u))))
   (pack-package! out (project-config p) (project-artifacts p) usages))
+
+(module+ test
+  (require rackunit racket/file fhir/diagnostic)
+  ;; rule-level errors accumulate: every unknown element is reported, each at its own rule, and
+  ;; the entity still compiles
+  (define dir (make-temporary-directory))
+  (call-with-output-file (build-path dir "bad.fsh")
+    (λ (o) (void (write-string (string-append "Profile: Bad\nParent: Patient\n* nosuchelement 1..1\n"
+                                        "* name 1..1 MS\n* gender and birthDat MS\n\n"
+                                        "Instance: P1\nInstanceOf: Patient\n* nmae.given = \"x\"\n") o))))
+  (define p (compile-project dir))
+  (define ds (project-diagnostics p))
+  (check-equal? (map (λ (d) (loc-line (diagnostic-loc d))) ds) '(3 5 9))
+  (check-equal? (map (λ (d) (loc-column (diagnostic-loc d))) ds) '(3 3 3))
+  (check-true (for/and ([d (in-list ds)]) (regexp-match? #rx"is not an element of Patient" (diagnostic-message d))))
+  (check-equal? (length (project-artifacts p)) 2)
+  (delete-directory/files dir))
