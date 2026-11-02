@@ -25,7 +25,8 @@
                   project-artifacts project-config project-files)
          (only-in fsh/ig-config ig-config-id ig-config-version)
          (only-in fsh/decompile fhir->fsh)
-         (only-in fhir/diagnostic emit-diagnostics format-flag))
+         (only-in racket/match match)
+         (only-in fhir/diagnostic emit-diagnostics format-flag diagnostic-severity))
 
 (provide compile-path decompile-files)
 
@@ -67,8 +68,27 @@
   (define jss (for/list ([f (in-list files)]) (call-with-input-file f read-json)))
   (displayln (apply fhir->fsh jss)))
 
+;; raco fsh check <dir> [--capability id]   compile, then validate every example against the
+;; project's profiles and (with a CapabilityStatement) report the generated server's unmet
+;; requirements — every problem positioned in the FSH (fhir/conformance/ig-check, in fhir-tools)
+(define (check-project dir capability fmt)
+  (define check (with-handlers ([exn:fail:filesystem:missing-module?
+                                 (lambda (_) (eprintf "fsh check: needs fhir-tools (the validator): raco pkg install fhir-tools\n") (exit 2))])
+                  (dynamic-require 'fhir/conformance/ig-check 'check-fsh-project)))
+  (define report-of (lambda (f) (dynamic-require 'fhir/conformance/ig-check f)))
+  (define r (check dir #:capability capability))
+  (define diags ((report-of 'check-report-diagnostics) r))
+  (define texts ((report-of 'check-report-texts) r))
+  (unless (null? diags)
+    (emit-diagnostics diags #:format fmt #:text-of (lambda (s) (and s (hash-ref texts s #f)))))
+  (define errors (for/sum ([d (in-list diags)]) (if (eq? (diagnostic-severity d) 'error) 1 0)))
+  (eprintf "fsh check: ~a examples, ~a with errors; ~a error(s), ~a warning(s)\n"
+           ((report-of 'check-report-examples) r) ((report-of 'check-report-invalid) r)
+           errors (- (length diags) errors))
+  (exit (if (zero? errors) 0 1)))
+
 (define (usage [code 2])                             ; --help: stdout, exit 0
-  ((if (zero? code) printf eprintf) "usage: raco fsh <file.fsh | dir> [-o <outdir>] [--snapshot] [--canonical <url>] [--fhir-version 4.0.1|5.0.0] [--format text|json|outcome] [--pack [out.tgz]]\n       raco fsh --decompile <file.json>...\n")
+  ((if (zero? code) printf eprintf) "usage: raco fsh <file.fsh | dir> [-o <outdir>] [--snapshot] [--canonical <url>] [--fhir-version 4.0.1|5.0.0] [--format text|json|outcome] [--pack [out.tgz]]\n       raco fsh --decompile <file.json>...\n       raco fsh check <dir> [--capability <CapabilityStatement id>] [--format text|json|outcome]\n")
   (exit code))
 
 (module+ main
@@ -84,6 +104,11 @@
              [else (default e)]))))
   (cond
     [(ormap (lambda (a) (member a '("-h" "--help"))) args) (usage 0)]
+    [(equal? (car args) "check")
+     (match (cdr args)
+       [(list dir) (check-project dir #f fmt)]
+       [(list dir "--capability" cs) (check-project dir cs fmt)]
+       [_ (usage)])]
     [(null? args) (usage)]
     [(equal? (car args) "--decompile") (if (pair? (cdr args)) (decompile-files (cdr args)) (usage))]
     [else

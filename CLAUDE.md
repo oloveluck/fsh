@@ -118,6 +118,11 @@ now resolves the package's own dependencies from fhir-spec. `tests/pack-test.rkt
 package; fhir-tools/tests/fsh-ig-server-r4-test.rkt serves it: 0 unmet requirements, and **283/283**
 of the examples we compile validate against the profiles we compile (as the published package does).
 
+`raco fsh check <dir> [--capability id]` validates every example against the project's profiles and
+positions each problem in the FSH (implemented in fhir-tools: `fhir/conformance/ig-check`, loaded on
+demand; see the main repo's CLAUDE.md, "The spec-author's loop"). `project-sd-packages` records the
+package context a compile used, so the checker validates in the same one.
+
 Conformance: `fsh/tests/golden-test.rkt` runs the vendored SUSHI **golden corpus** (`.fsh`+`.json`
 pairs) through a tolerant deep-subset comparator (expected ⊆ actual; list items matched
 content-independently so differential `element` arrays line up by path) — forward **22/22**;

@@ -42,7 +42,9 @@
           [compile-doc/errors (-> (listof struct?) (values (listof hash?) (listof (cons/c string? exn?))))]
           [entity-label (-> struct? string?)]   ; "profile: Name" — how compile-doc/errors names an entity
           [compile-doc/diagnostics (-> (listof struct?) (values (listof hash?) (listof (cons/c string? exn?)) list?))]
-          [fsh->fhir      (-> string? (listof hash?))]))
+          [fsh->fhir      (-> string? (listof hash?))]
+          ;; the element path a profile rule constrains ("component[a].code"), or #f
+          [rule-path-of   (-> any/c (or/c string? #f))]))
 
 ;; the IG canonical URL base (SUSHI default in the golden corpus is http://example.org)
 (define canonical-base (make-parameter "http://example.org"))

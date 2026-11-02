@@ -30,7 +30,8 @@
 
 ;; project : config(ig-config|#f) fhir-version files texts(hash path-string -> text) located artifacts
 ;;           diagnostics missing-dependencies
-(struct project (config fhir-version files texts located artifacts diagnostics missing) #:transparent)
+;; sd-packages: the packages the compile resolved against (dependencies, then core), in order
+(struct project (config fhir-version files texts located artifacts diagnostics missing sd-packages) #:transparent)
 
 ;; find-config : path -> path|#f   sushi-config.yaml next to the sources or one/two levels up
 (define (find-config src)
@@ -54,6 +55,9 @@
   (define-values (dep-packages missing) (dependency-packages (if cfg (ig-config-dependencies cfg) '())))
   ;; one tower per process: register the one this compile targets
   (define r4? (regexp-match? #rx"^4[.]" fhir-version))
+  (define sd-packages
+    (let ([core (spec-package-path (if r4? "hl7.fhir.r4.core.tgz" "hl7.fhir.r5.core.tgz") #:optional? #t)])
+      (append dep-packages (if core (list core) '()))))
   (dynamic-require (if r4? 'fhir/r4/schemas 'fhir/r5/schemas) #f)
   (define files (fsh-files src))
   ;; a leading #lang line is blanked, not removed, so line numbers stay true
@@ -66,15 +70,13 @@
        (with-handlers ([exn:fail:diagnostic? (lambda (e) (set! parse-errors (cons (exn:fail:diagnostic-diagnostic e) parse-errors)) '())])
          (parse-fsh-doc/located (hash-ref texts (path->string f)) #:source (path->string f))))))
   (cond
-    [(pair? parse-errors) (project cfg fhir-version files texts located '() (reverse parse-errors) missing)]
+    [(pair? parse-errors) (project cfg fhir-version files texts located '() (reverse parse-errors) missing sd-packages)]
     [else
      (define-values (out errors rule-diags)
        (parameterize ([emit-snapshot? snapshot?]
                       [canonical-base (or canonical (canonical-base))]
                       [fsh-fhir-version fhir-version]
-                      [current-sd-packages
-                       (let ([core (spec-package-path (if r4? "hl7.fhir.r4.core.tgz" "hl7.fhir.r5.core.tgz") #:optional? #t)])
-                         (append dep-packages (if core (list core) '())))])
+                      [current-sd-packages sd-packages])
          (compile-doc/diagnostics (map car located))))
      (define at (for/hash ([p (in-list located)]) (values (entity-label (car p)) (cdr p))))
      ;; rule-level diagnostics (an unknown element, …) first, then entities that failed outright
@@ -82,7 +84,7 @@
               (append rule-diags
                       (for/list ([e (in-list errors)])
                         (diagnostic 'fsh 'compile 'error (format "~a: ~a" (car e) (exn-message (cdr e))) (hash-ref at (car e) #f))))
-              missing)]))
+              missing sd-packages)]))
 
 ;; pack-project! : project out -> path   instances' Usage decides package/ vs package/example/
 (define (pack-project! p out)
