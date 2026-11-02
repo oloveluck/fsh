@@ -67,13 +67,23 @@
   (define jss (for/list ([f (in-list files)]) (call-with-input-file f read-json)))
   (displayln (apply fhir->fsh jss)))
 
-(define (usage)
-  (eprintf "usage: raco fsh <file.fsh | dir> [-o <outdir>] [--snapshot] [--canonical <url>] [--fhir-version 4.0.1|5.0.0] [--format text|json|outcome] [--pack [out.tgz]]\n       raco fsh --decompile <file.json>...\n")
-  (exit 2))
+(define (usage [code 2])                             ; --help: stdout, exit 0
+  ((if (zero? code) printf eprintf) "usage: raco fsh <file.fsh | dir> [-o <outdir>] [--snapshot] [--canonical <url>] [--fhir-version 4.0.1|5.0.0] [--format text|json|outcome] [--pack [out.tgz]]\n       raco fsh --decompile <file.json>...\n")
+  (exit code))
 
 (module+ main
   (define-values (fmt args) (format-flag (vector->list (current-command-line-arguments))))
+  ;; an unreadable input file is a one-line error (exit 2), not a stack trace
+  (let ([default (uncaught-exception-handler)])
+    (uncaught-exception-handler
+     (lambda (e)
+       (cond [(exn:fail:filesystem? e)
+              (define m (regexp-match #px"path: ([^\n]*)" (exn-message e)))
+              (eprintf "fsh: cannot read ~a\n" (if m (cadr m) (exn-message e)))
+              (exit 2)]
+             [else (default e)]))))
   (cond
+    [(ormap (lambda (a) (member a '("-h" "--help"))) args) (usage 0)]
     [(null? args) (usage)]
     [(equal? (car args) "--decompile") (if (pair? (cdr args)) (decompile-files (cdr args)) (usage))]
     [else
