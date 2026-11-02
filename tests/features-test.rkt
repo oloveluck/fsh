@@ -83,3 +83,31 @@
   ;; …and the differential constraint is merged onto the base element
   (define name-el (findf (lambda (e) (equal? (hash-ref e 'path) "Patient.name")) snap))
   (check-equal? (hash-ref name-el 'min) 1))
+
+;; ---- instances: SUSHI's slice positions, required values, code-typed primitives -----------------
+(parameterize ([canonical-base "http://example.org"])
+  (define out
+    (fsh->fhir (string-append
+                "Profile: Obs\nParent: Observation\nId: obs\n"
+                "* code = http://loinc.org#1-1\n"                       ; Observation.code is 1..1 in the base
+                "* component ^slicing.discriminator.type = #pattern\n"
+                "* component ^slicing.discriminator.path = \"code\"\n"
+                "* component ^slicing.rules = #open\n"
+                "* component contains a 0..1 and b 0..1 and c 0..1\n"
+                "* component[a].code = http://loinc.org#a\n"
+                "* component[b].code = http://loinc.org#b\n"
+                "* component[c].code = http://loinc.org#c\n\n"
+                "Instance: o1\nInstanceOf: Obs\n"
+                "* status = http://hl7.org/fhir/observation-status#final\n"  ; a code keeps only the code
+                "* component[a].valueString = \"1\"\n"
+                "* component[b].valueString = \"2\"\n"
+                "* component[a].valueString = \"1\"\n"                   ; re-mentioning a…
+                "* component[c].valueString = \"3\"\n")))                ; …does not let c take b's place
+  (define o1 (findf (lambda (r) (equal? (hash-ref r 'resourceType) "Observation")) out))
+  (check-equal? (hash-ref o1 'status) "final")
+  (check-equal? (for/list ([c (in-list (hash-ref o1 'component))]) (hash-ref c 'valueString)) '("1" "2" "3"))
+  ;; each named slice's entry gets the slice's required code; the base's required `code` its pattern
+  (check-equal? (for/list ([c (in-list (hash-ref o1 'component))])
+                  (hash-ref (car (hash-ref (hash-ref c 'code) 'coding)) 'code))
+                '("a" "b" "c"))
+  (check-equal? (hash-ref (car (hash-ref (hash-ref o1 'code) 'coding)) 'code) "1-1"))

@@ -15,7 +15,7 @@
 (require racket/match
          racket/string
          racket/contract
-         (only-in racket/list append-map make-list last filter-map remove-duplicates index-of)
+         (only-in racket/list append-map make-list last filter-map remove-duplicates index-of drop-right)
          "parser/ast.rkt"
          "parser/path.rkt"
          "caret.rkt"
@@ -205,13 +205,16 @@
                                (compile-entity (expand-entity-inserts e rulesets param-rulesets) aliases profiles invariants))))
                 (hash-set! profile-memo e sd)
                 sd]))
-  ;; profile name/id -> (hash element-path -> slice names in declaration order), parents first
+  ;; profile name/id -> (hash element-path -> REQUIRED slice names in declaration order), parents
+  ;; first. SUSHI creates a profile's required slices before applying an instance's rules (in profile
+  ;; order); every other slice takes its place in the order the instance first mentions it.
   (define own-slice-orders
     (for*/hash ([e (in-list entities)] #:when (fsh-profile? e)
                 [k (in-list (remove-duplicates (list (fsh-profile-name e) (or (assoc-ref (fsh-profile-metadata e) 'id) (fsh-profile-name e)))))])
       (values k (for/fold ([h (hash)]) ([r (in-list (fsh-profile-rules e))] #:when (rule-contains? r))
                   (hash-update h (rule-contains-path r)
-                               (lambda (l) (append l (for/list ([it (in-list (rule-contains-items r))])
+                               (lambda (l) (append l (for/list ([it (in-list (rule-contains-items r))]
+                                                                #:when (let ([c (contains-item-card it)]) (and (string? c) (>= (card-lo c) 1))))
                                                        (or (contains-item-named-as it) (contains-item-name it)))))
                                '())))))
   (define (slice-orders-of name [fuel 16])
@@ -438,7 +441,8 @@
   (for/fold ([elems (hash)] [order '()]) ([r (in-list rules)])
     (define p (rule-path-of r))
     (define-values (rid rpath rslice)
-      (if (string? p) (element-loc base-type p) (values #f #f #f)))
+      (let-values ([(id path slice) (if (string? p) (element-loc base-type p) (values #f #f #f))])
+        (if id (narrowed-choice elems id path slice) (values id path slice))))
     (define-values (elems* order*)
       (if (and rid (regexp-match? #px"\\[x\\]:" rid) (not (rule-only? r)))
           (let-values ([(e o) (ensure-choice-parents elems order rid)])
@@ -556,6 +560,25 @@
      (values (string-append base-type "." (string-join id-segs "."))
              (string-append base-type "." (string-join path-segs "."))
              last-slice)]))
+
+;; narrowed-choice : elems id path slice -> id path slice
+;; once the profile has narrowed `value[x]` to exactly one type (`only Quantity`), `valueQuantity`
+;; addresses `value[x]` itself (SUSHI): no type slice
+(define (narrowed-choice elems id path slice)
+  (define segs (string-split id "."))
+  (define-values (out last-collapsed?)
+    (for/fold ([acc '()] [collapsed? #f] #:result (values (reverse acc) collapsed?)) ([seg (in-list segs)])
+      (define m (regexp-match #px"^(.*\\[x\\]):([A-Za-z]+)$" seg))
+      (define choice-id (and m (string-join (reverse (cons (cadr m) acc)) ".")))
+      (define types (and choice-id (hash-ref (hash-ref elems choice-id (hash)) 'type #f)))
+      (define base (and m (regexp-replace #rx"\\[x\\]$" (cadr m) "")))
+      (if (and m (list? types) (= 1 (length types))
+               (string-ci=? (string-append base (hash-ref (car types) 'code "")) (caddr m)))
+          (values (cons (cadr m) acc) #t)
+          (values (cons seg acc) #f))))
+  (if (equal? out segs)
+      (values id path slice)
+      (values (string-join out ".") path (if last-collapsed? #f slice))))
 
 ;; choice-base-of : type member -> "value" when `member` (valueQuantity) is an expanded choice
 ;; member of `type` (searching the type's generated ancestors), else #f
@@ -818,6 +841,7 @@
 (define (resolve-soft-indices paths #:slice-order [slice-order (hash)])
   (define counters (make-hash))
   (define slices (make-hash))                       ; (key . slice-name) -> index
+  (define high (make-hash))                         ; key -> the highest index used so far
   ;; a top-level array's named slices take positions in the PROFILE's declaration order (SUSHI), so
   ;; allocate them up front: the slices this instance uses, profile order first, then any others
   (define used (make-hash))                         ; key -> slice names, first mention order
@@ -832,7 +856,7 @@
     (define ordered (append (filter (lambda (n) (member n names)) declared)
                             (filter (lambda (n) (not (member n declared))) names)))
     (when (pair? declared)
-      (for ([n (in-list ordered)] [i (in-naturals)]) (hash-set! slices (cons key n) i))
+      (for ([n (in-list ordered)] [i (in-naturals)]) (hash-set! slices (cons key n) i) (hash-set! high key i))
       (hash-set! counters key (sub1 (length ordered)))))
   (for/list ([steps (in-list paths)])
     (let loop ([steps steps] [prefix ""] [acc '()])
@@ -850,10 +874,14 @@
                [(index) (hash-set! counters key (fsh-bracket-value b)) b]
                [(slice)
                 (define sk (cons key (fsh-bracket-value b)))
+                ;; a slice mentioned again reuses its index; a new one takes the next UNUSED
+                ;; position (after re-mentioning an earlier slice the counter points back at it)
                 (cond [(hash-ref slices sk #f) => (lambda (n) (hash-set! counters key n) (fsh-bracket 'index n))]
-                      [else (define n (if (hash-has-key? counters key) (add1 (hash-ref counters key)) 0))
+                      [else (define n (add1 (max (hash-ref counters key -1) (hash-ref high key -1))))
                             (hash-set! counters key n) (hash-set! slices sk n) (fsh-bracket 'index n)])]
                [else b])))
+         (for ([b (in-list brackets)] #:when (eq? (fsh-bracket-kind b) 'index))
+           (hash-update! high key (lambda (h) (max h (fsh-bracket-value b))) -1))
          (define resolved (fsh-step (fsh-step-name st) brackets))
          (define next-prefix
            (string-append key (apply string-append
@@ -927,7 +955,8 @@
 (define (coerce v ftype)
   (define tag (ftype-tag ftype))
   (match* (tag v)
-    [('prim (struct fsh-code (c _))) (strip# c)]
+    ;; `System#code` on a code-typed primitive keeps only the code (`* status = MedReqStatus#completed`)
+    [('prim (struct fsh-code (c _))) (let-values ([(_sys code) (split-code c)]) code)]
     ;; a number assigned to a primitive whose JSON form is a string (date `2020`, string `42`)
     [('prim (? number? n)) #:when (not (member (ftype-prim-code ftype) json-number-primitives)) (number->string n)]
     [(_ (struct fsh-code (c d)))
@@ -949,12 +978,19 @@
 (define current-profile-sd (make-parameter (lambda (_) #f)))
 
 ;; profile-elements : profile-name|id|url -> (hash element-id -> ElementDefinition jsexpr)
-;; the constraints an Instance of that profile inherits: a dependency profile's snapshot, overlaid by
-;; each local profile's differential down the Parent chain (the child's keys win)
+;; the constraints an Instance of that profile inherits: a dependency profile's (or the base type's)
+;; snapshot, overlaid by each local profile's differential down the Parent chain (the child's keys win)
 (define (profile-elements key [fuel 16])
   (define k (resolve-alias key (current-aliases)))
   (cond
-    [(or (<= fuel 0) (type-registered? (string->symbol k))) (hash)]
+    [(<= fuel 0) (hash)]
+    ;; the chain ends at a base type: its snapshot supplies what the profiles do not restate (min)
+    [(type-registered? (string->symbol k))
+     (define sd (and (sd-index-available?) (resolve-sd-raw k)))
+     (if (hash? sd)
+         (for/hash ([e (in-list (hash-ref (hash-ref sd 'snapshot (hash)) 'element '()))] #:when (hash-ref e 'id #f))
+           (values (hash-ref e 'id) e))
+         (hash))]
     [((current-profile-sd) k)
      => (lambda (sd)
           (define parent (let ([p (hash-ref (current-profiles) k #f)]) (and p (car p))))
@@ -969,14 +1005,15 @@
     [else (hash)]))
 
 ;; assign-required : jsexpr (hash id -> element) -> jsexpr
-;; SUSHI assigns an element's fixed[x]/pattern[x] when the profile REQUIRES the element (min >= 1)
-;; and the instance leaves it out; a required slice gets its pattern appended unless an entry
-;; already carries it. Top-level elements only (Observation.category, Observation.code).
+;; SUSHI assigns what the InstanceOf profile REQUIRES and the instance leaves out: a required element
+;; (min >= 1) gets its `required-entry` (its fixed[x]/pattern[x], completed by its required children,
+;; recursively); a required slice gets its entry appended unless an entry already carries it; a named
+;; slice the instance uses is completed the same way (and gets its own pattern even when optional).
 (define (assign-required js elements [positions (hash)])
-  (define type (hash-ref js 'resourceType))
-  (define js1 (fill-slice-children js elements positions))
-  (assign-required* js1 elements))
-;; a named slice the instance used gets its required children's fixed/pattern values
+  (assign-required* (fill-slice-children js elements positions) elements))
+
+;; fill-slice-children : jsexpr elements positions -> jsexpr
+;; a named slice the instance used gets the slice's pattern and its required children's values
 (define (fill-slice-children js elements positions)
   (define type (hash-ref js 'resourceType))
   (for/fold ([js js]) ([(pos slice) (in-hash positions)])
@@ -985,59 +1022,106 @@
     (cond
       [(not (and (list? lst) (< (cdr pos) (length lst)) (hash? (list-ref lst (cdr pos))))) js]
       [else
-       (define prefix (string-append type "." (car pos) ":" slice "."))
+       (define slice-id (string-append type "." (car pos) ":" slice))
+       (define slice-el (hash-ref elements slice-id #f))
        ;; an extension slice's url is the canonical of the Extension it is typed with
-       (define slice-el (hash-ref elements (string-append type "." (car pos) ":" slice) #f))
        (define ext-url (and slice-el (member (car pos) '("extension" "modifierExtension"))
                             (let* ([ts (hash-ref slice-el 'type '())]
                                    [pr (and (pair? ts) (hash-ref (car ts) 'profile '()))])
                               (and (pair? pr) (car pr)))))
-       (define entry0 (let ([en (list-ref lst (cdr pos))])
-                        (if (and ext-url (not (hash-has-key? en 'url))) (hash-set en 'url ext-url) en)))
-       (define entry
-         (for/fold ([en entry0]) ([(id el) (in-hash elements)])
-           (define child (and (string-prefix? id prefix) (substring id (string-length prefix))))
-           (define v (required-value el))
-           (if (and child (regexp-match? #px"^[A-Za-z]+$" child) v (not (hash-has-key? en (string->symbol child))))
-               (hash-set en (string->symbol child) v)
-               en)))
+       (define en (list-ref lst (cdr pos)))
+       (define pinned (let ([v (and slice-el (pinned-value slice-el))]) (and (hash? v) v)))
+       (define entry (merge-missing (merge-missing (if (and ext-url (not (hash-has-key? en 'url))) (hash-set en 'url ext-url) en)
+                                                   (or pinned (hasheq)))
+                                    (required-children elements slice-id)))
        (hash-set js field (for/list ([x (in-list lst)] [i (in-naturals)]) (if (= i (cdr pos)) entry x)))])))
-;; required-value : element -> jsexpr|#f   its fixed[x]/pattern[x] when the element is required
-(define (required-value e)
-  (define mn (hash-ref e 'min 0))
-  (and (number? mn) (>= mn 1)
-       (for/or ([(k v) (in-hash e)]) (and (regexp-match? #rx"^(fixed|pattern)" (symbol->string k)) v))))
+
+;; pinned-value : element -> jsexpr|#f   its fixed[x]/pattern[x]
+(define (pinned-value e)
+  (for/or ([(k v) (in-hash e)]) (and (regexp-match? #rx"^(fixed|pattern)" (symbol->string k)) v)))
+(define (required? e)
+  (let ([mn (hash-ref e 'min 0)]) (and (number? mn) (>= mn 1))))
+;; required-in? : elements id -> boolean   the element's min, else (inside a slice) the unsliced element's
+(define (required-in? elements id)
+  (define e (hash-ref elements id (hash)))
+  (if (hash-has-key? e 'min)
+      (required? e)
+      (required? (hash-ref elements (regexp-replace* #rx":[^.]+" id "") (hash)))))
+
+;; required-entry : elements id -> jsexpr|#f   the value SUSHI builds for a required element: its pin,
+;; completed by its required children; #f when nothing below it is pinned
+(define (required-entry elements id)
+  (define own (pinned-value (hash-ref elements id (hash))))
+  (define kids (required-children elements id))
+  (cond [(and own (not (hash? own))) own]
+        [(and (not own) (hash-empty? kids)) #f]
+        [else (merge-missing (or own (hasheq)) kids)]))
+
+;; required-children : elements id -> (hash field -> jsexpr)   the direct children of `id` that are
+;; required and have a required-entry; a child's required named slices are its entries (in place of
+;; the unsliced element's), a list when the child repeats
+(define (required-children elements id)
+  (define prefix (string-append id "."))
+  (define groups                                     ; field -> (listof (cons slice|#f value))
+    (for*/fold ([g (hash)]) ([(cid el) (in-hash elements)]
+                             [rest (in-value (and (string-prefix? cid prefix) (substring cid (string-length prefix))))]
+                             [m (in-value (and rest (regexp-match #px"^([A-Za-z]+)(?::([^.]+))?$" rest)))]
+                             #:when (and m (required-in? elements cid) (not (member (cadr m) '("extension" "modifierExtension" "id"))))
+                             [v (in-value (required-entry elements cid))] #:when v)
+      (hash-update g (cadr m) (lambda (l) (cons (cons (caddr m) v) l)) '())))
+  (for/hasheq ([(name vs) (in-hash groups)])
+    (define sliced (map cdr (sort (filter car vs) string<? #:key car)))
+    (define vals (if (pair? sliced) sliced (list (cdr (assf not vs)))))
+    (values (string->symbol name) (if (repeats? elements (string-append id "." name)) vals (car vals)))))
+(define (assf f l) (for/first ([p (in-list l)] #:when (f (car p))) p))
+
+;; merge-missing : jsexpr jsexpr -> jsexpr   `a` with the keys only `b` has (objects, recursively)
+(define (merge-missing a b)
+  (if (and (hash? a) (hash? b))
+      (for/fold ([a a]) ([(k v) (in-hash b)])
+        (hash-set a k (if (hash-has-key? a k) (merge-missing (hash-ref a k) v) v)))
+      a))
+
+;; repeats? : elements id -> boolean   the element at `id` repeats: its max, else the base model's
+(define (repeats? elements id)
+  (define mx (let ([el (hash-ref elements (regexp-replace* #rx":[^.]+" id "") #f)]) (and el (hash-ref el 'max #f))))
+  (cond [(equal? mx "*") #t]
+        [(and (string? mx) (string->number mx)) => (lambda (n) (> n 1))]
+        [else (path-repeats? (regexp-replace* #rx":[^.]+" id ""))]))
+;; path-repeats? : "Type.a.b" -> boolean   via the registered tower
+(define (path-repeats? path)
+  (define steps (string-split path "."))
+  (define parent (if (= (length steps) 2)
+                     (car steps)
+                     (element-fhir-type (string->symbol (car steps)) (string-join (drop-right (cdr steps) 1) "."))))
+  (and parent (pair? (cdr steps))
+       (let-values ([(k _) (field-info (string->symbol parent) (string->symbol (last steps)))]) (eq? k 'list))))
+
 (define (assign-required* js elements)
   (define type (hash-ref js 'resourceType))
   (define rx (pregexp (string-append "^" (regexp-quote type) "[.]([A-Za-z]+)(?::([^.]+))?$")))
+  (define (sliced-required? field)
+    (define p (string-append type "." field ":"))
+    (for/or ([(id e) (in-hash elements)]) (and (string-prefix? id p) (required? e) (required-entry elements id) #t)))
   (for/fold ([js js]) ([(id e) (in-hash elements)])
     (define m (regexp-match rx id))
-    (define value (for/or ([(k v) (in-hash e)])
-                    (and (regexp-match? #rx"^(fixed|pattern)" (symbol->string k)) v)))
-    (define req? (let ([mn (hash-ref e 'min 0)]) (and (number? mn) (>= mn 1))))
+    (define value (and m (required? e) (not (member (cadr m) '("extension" "modifierExtension" "id" "meta")))
+                       (required-entry elements id)))
     (cond
-      [(not (and m value req?)) js]
-      [(member (cadr m) '("extension" "modifierExtension" "id" "meta")) js]
+      [(not value) js]
       [(caddr m)                                                ; a required slice
        (define field (string->symbol (cadr m)))
        (define cur (let ([v (hash-ref js field '())]) (if (list? v) v (list v))))
        (if (ormap (lambda (x) (json-subset? value x)) cur) js (hash-set js field (append cur (list value))))]
       [(hash-has-key? js (string->symbol (cadr m))) js]
+      [(sliced-required? (cadr m)) js]                         ; its slices supply the entries
       [else
-       (define many? (let ([mx (hash-ref e 'max "1")]) (or (equal? mx "*") (and (string->number mx) (> (string->number mx) 1)))))
-       (define base-many? (and (not many?) (base-repeats? type (cadr m))))
-       (hash-set js (string->symbol (cadr m)) (if (or many? base-many?) (list value) value))])))
+       (hash-set js (string->symbol (cadr m)) (if (repeats? elements id) (list value) value))])))
 
 (define (json-subset? a b)
   (cond [(and (hash? a) (hash? b)) (for/and ([(k v) (in-hash a)]) (and (hash-has-key? b k) (json-subset? v (hash-ref b k))))]
         [(and (list? a) (list? b)) (for/and ([x (in-list a)]) (ormap (lambda (y) (json-subset? x y)) b))]
         [else (equal? a b)]))
-;; base-repeats? : type field -> boolean   the base resource's element repeats (max *)
-(define (base-repeats? type field)
-  (define sd (and (sd-index-available?) (resolve-sd-raw type)))
-  (and (hash? sd)
-       (for/or ([e (in-list (hash-ref (hash-ref sd 'snapshot (hash)) 'element '()))])
-         (and (equal? (hash-ref e 'id #f) (string-append type "." field)) (equal? (hash-ref e 'max #f) "*")))))
 
 ;; current-instance-resolver : (parameter (string -> (or jsexpr #f)))   name/id -> the compiled instance
 (define current-instance-resolver (make-parameter (lambda (_) #f)))

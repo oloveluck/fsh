@@ -52,10 +52,13 @@ filters / valueSet includes / versions / per-system concept merging; local names
 `only` types and target profiles; root `.` paths; rule-by-rule parsing of long entities (IPS's
 Composition profile: 105 s -> instant). `fsh-fhir-version` (and `raco fsh --fhir-version 4.0.1`)
 selects the target version; directories compile recursively.
+Rule-level diagnostics (`compile-doc/diagnostics`, used by `project.rkt`): every rule carries its
+position, and a path whose first element the base type does not have is an error at that rule; all of
+them are reported, and the entity still compiles.
 Also: bare names of core/dependency CodeSystems and ValueSets resolve through the SD index's canonical
 lookup (`from system ConditionCategoryCodes`, bindings to `SNOMEDCTBodyStructures`); an instance's
-named slices take positions in the InstanceOf profile's declaration order (local profiles, inherited
-through Parent chains).
+REQUIRED named slices take positions in the InstanceOf profile's declaration order (local profiles,
+inherited through Parent chains), the others in first-mention order.
 Differential SHAPE now follows SUSHI: elements in base-snapshot order (slices grouped under their
 element; `snapshot-order`); a type-specific choice path (`valueQuantity`) is the type slice
 `value[x]:valueQuantity` (min 0, base max, that one type) under a `value[x]` with type slicing
@@ -75,7 +78,7 @@ published `hl7.fhir.us.mcode-4.0.0.tgz`. mCODE builds on US Core 6.1.0 and Genom
 each dependency in fhir-spec (`<id>-<version>.tgz`); the packages go ahead of core in
 `current-sd-packages`. `raco fsh <dir>` does the same when it finds a sushi-config.yaml (next to the
 sources or up to two levels up); flags override it, missing dependencies are reported.
-Current: **0 compile errors; 349 paired; 173 exact; 249 with all published content; 277/501 differential
+Current: **0 compile errors; 349 paired; 206 exact; 282 with all published content; 279/501 differential
 elements** — ratcheted. It drove: profiles of DEPENDENCY packages for Parent and InstanceOf (`external-sd`:
 base type, canonical, `meta.profile`), aliases on InstanceOf and along Parent chains; SUSHI's required
 values (`assign-required`: an element the InstanceOf profile requires with fixed[x]/pattern[x] is
@@ -89,8 +92,18 @@ parse); a bare four-digit `6000` is a NUMBER (FSHLexer.g4), stringified when ass
 primitive; `descendant-of` filters emit FHIR's `descendent-of`; an Extension that sets `^context` gets no
 default Element context; `Usage: #definition` canonical resources get `<canonical>/<Type>/<id>` as url.
 The harness also drops the OIDs the IG Publisher assigns to conformance resources.
+Required values follow SUSHI recursively (`required-entry`): an element's pin completed by its
+required children, a child's required named slices as its entries (a list when the path repeats, from
+the element's max or the tower); `min` inside a slice falls back to the unsliced element's; a profile
+chain ending at a base type contributes the base snapshot (Observation.code is 1..1 there, not in the
+profile); a named slice an instance uses gets the slice's own pattern (`identifier:NPI`'s system).
+Also: `System#code` assigned to a `code` keeps only the code; once a profile narrows `value[x]` to
+one type, `valueQuantity` addresses `value[x]` itself (no type slice); an instance's REQUIRED slices
+take positions in profile order, the rest in first-mention order, and a new slice takes the next
+unused position (re-mentioning an earlier slice used to rewind the counter, so two slices shared an
+entry). These came from the FSH -> package -> server loop (below): 250 -> 283/283.
 Remaining (measured): 28 profiles whose differential lacks elements SUSHI writes (mostly genomics and
-performance-status profiles), required values deeper than the top level, a few instance details.
+performance-status profiles), a few instance details.
 
 ## Projects and packages (`fsh/project.rkt`, `fsh/pack.rkt`, `raco fsh <dir> --pack [out.tgz]`)
 `compile-project` finds the files and sushi-config.yaml, parses each file (diagnostics name the file),
@@ -102,9 +115,8 @@ description, publisher.name): package/package.json (dependencies + the core pack
 resources and `Usage: #definition` instances in package/, other instances in package/example/, a
 `.index.json` per folder. The package feeds `raco fhir serve-ig <tgz> --capability <id>`, which
 now resolves the package's own dependencies from fhir-spec. `tests/pack-test.rkt` checks mCODE's
-package; fhir-tools/tests/fsh-ig-server-r4-test.rkt serves it: 0 unmet requirements, and **250/283**
-of the examples we compile validate against the profiles we compile (the published package: 283/283)
-— each rejection is a compile gap, since SUSHI's output of the same sources validates.
+package; fhir-tools/tests/fsh-ig-server-r4-test.rkt serves it: 0 unmet requirements, and **283/283**
+of the examples we compile validate against the profiles we compile (as the published package does).
 
 Conformance: `fsh/tests/golden-test.rkt` runs the vendored SUSHI **golden corpus** (`.fsh`+`.json`
 pairs) through a tolerant deep-subset comparator (expected ⊆ actual; list items matched
