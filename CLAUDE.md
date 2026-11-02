@@ -92,6 +92,20 @@ The harness also drops the OIDs the IG Publisher assigns to conformance resource
 Remaining (measured): 28 profiles whose differential lacks elements SUSHI writes (mostly genomics and
 performance-status profiles), required values deeper than the top level, a few instance details.
 
+## Projects and packages (`fsh/project.rkt`, `fsh/pack.rkt`, `raco fsh <dir> --pack [out.tgz]`)
+`compile-project` finds the files and sushi-config.yaml, parses each file (diagnostics name the file),
+compiles with the dependency packages in the SD context, and never exits: parse errors and failing
+entities are `fhir/diagnostic` values positioned at the entity. `pack-project!` writes a FHIR NPM
+package — no SUSHI involved; `sushi-config.yaml` is read by `ig-config.rkt`'s line-oriented reader
+(canonical, fhirVersion, dependencies, id/packageId, version, name, title, status, license,
+description, publisher.name): package/package.json (dependencies + the core package), conformance
+resources and `Usage: #definition` instances in package/, other instances in package/example/, a
+`.index.json` per folder. The package feeds `raco fhir serve-ig <tgz> --capability <id>`, which
+now resolves the package's own dependencies from fhir-spec. `tests/pack-test.rkt` checks mCODE's
+package; fhir-tools/tests/fsh-ig-server-r4-test.rkt serves it: 0 unmet requirements, and **250/283**
+of the examples we compile validate against the profiles we compile (the published package: 283/283)
+— each rejection is a compile gap, since SUSHI's output of the same sources validates.
+
 Conformance: `fsh/tests/golden-test.rkt` runs the vendored SUSHI **golden corpus** (`.fsh`+`.json`
 pairs) through a tolerant deep-subset comparator (expected ⊆ actual; list items matched
 content-independently so differential `element` arrays line up by path) — forward **22/22**;

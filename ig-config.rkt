@@ -25,8 +25,11 @@
   [read-ig-config      (-> path-string? ig-config?)]
   [dependency-packages (-> (listof (cons/c string? string?)) (values (listof path?) (listof (cons/c string? string?))))]))
 
-;; ig-config : canonical fhir-version dependencies — any may be #f / '()
-(struct ig-config (canonical fhir-version dependencies) #:transparent)
+;; ig-config : what compiling and packaging read — any may be #f / '()
+;;   canonical fhir-version dependencies   (compile)
+;;   id name title version status license description publisher   (package.json; publisher = its name)
+(struct ig-config (canonical fhir-version dependencies id name title version status license description publisher)
+  #:transparent)
 
 ;; read-ig-config : path -> ig-config
 (define (read-ig-config file)
@@ -35,7 +38,18 @@
     (for/or ([l (in-list lines)])
       (define m (regexp-match (pregexp (string-append "^" (regexp-quote key) ":\\s*(.*?)\\s*$")) l))
       (and m (not (string=? (unquote* (cadr m)) "")) (unquote* (cadr m)))))
-  (ig-config (top "canonical") (top "fhirVersion") (read-dependencies lines)))
+  (define publisher
+    (or (top "publisher")
+        (let loop ([ls lines])
+          (cond [(null? ls) #f]
+                [(regexp-match? #px"^publisher:\\s*$" (car ls))
+                 (for/or ([l (in-list (cdr ls))] #:break (and (not (blank-or-comment? l)) (= (indent l) 0)))
+                   (define m (regexp-match #px"^\\s+-?\\s*name:\\s*(.*?)\\s*$" l))
+                   (and m (unquote* (cadr m))))]
+                [else (loop (cdr ls))]))))
+  (ig-config (top "canonical") (top "fhirVersion") (read-dependencies lines)
+             (or (top "packageId") (top "id")) (top "name") (top "title") (top "version") (top "status")
+             (top "license") (top "description") publisher))
 
 (define (unquote* s) (string-trim (regexp-replace #rx"[ \t]+#.*$" s "") #px"[\"' ]"))
 (define (indent l) (string-length (car (regexp-match #px"^ *" l))))
@@ -103,4 +117,10 @@
   (define c (read-ig-config f))
   (check-equal? (ig-config-canonical c) "http://hl7.org/fhir/us/mcode")
   (check-equal? (ig-config-fhir-version c) "4.0.1")
-  (check-equal? (ig-config-dependencies c) '(("hl7.fhir.uv.genomics-reporting" . "2.0.0") ("hl7.fhir.us.core" . "6.1.0"))))
+  (check-equal? (ig-config-dependencies c) '(("hl7.fhir.uv.genomics-reporting" . "2.0.0") ("hl7.fhir.us.core" . "6.1.0")))
+  (define g (make-temporary-file))
+  (with-output-to-file g #:exists 'truncate
+    (lambda () (display "id: hl7.fhir.uv.ips\nversion: 2.0.1\ntitle: \"IPS\"\nlicense: CC0-1.0\npublisher:\n  name: HL7 International\n  url: http://hl7.org\n")))
+  (define gc (read-ig-config g))
+  (check-equal? (list (ig-config-id gc) (ig-config-version gc) (ig-config-title gc) (ig-config-publisher gc))
+                '("hl7.fhir.uv.ips" "2.0.1" "IPS" "HL7 International")))
