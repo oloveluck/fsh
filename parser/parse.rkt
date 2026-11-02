@@ -8,6 +8,7 @@
 ;;; parser backs both the embedded API and the `#lang fsh` reader.
 
 (require brag/support
+         (only-in fhir/diagnostic raise-diagnostic exn->diagnostic exn:fail:diagnostic? error-position loc)
          racket/contract
          racket/match
          (only-in racket/list append* take last)
@@ -18,7 +19,11 @@
 
 (provide
  (contract-out
-  [parse-fsh-doc    (-> string? list?)]    ; FSH source -> list of entity ASTs
+  ;; FSH source -> list of entity ASTs ; a failure raises exn:fail:diagnostic (fhir/diagnostic)
+  ;; positioned in `source` (a file name for messages)
+  [parse-fsh-doc    (->* (string?) (#:source (or/c string? path? #f)) list?)]
+  ;; the same, each entity paired with the location of its first token (for compile diagnostics)
+  [parse-fsh-doc/located (->* (string?) (#:source (or/c string? path? #f)) (listof pair?))]
   [parse-fsh-entity (-> string? any/c)]))  ; one entity's source -> its AST
 
 (define entity-start-types
@@ -31,6 +36,21 @@
     (define t (next))
     (if (or (void? t) (eof-object? t)) (reverse acc) (loop (cons t acc)))))
 
+;; probe-token : token|srcloc-token -> token-struct|#f   (skip tokens excluded)
+(define (probe-token t)
+  (define k (if (srcloc-token? t) (srcloc-token-token t) t))
+  (and (token-struct? k) (not (token-struct-skip? k)) k))
+;; ran-out-probe : tokens last-position -> (-> boolean)   re-parse with a sentinel token after the
+;; last one: if the error moves to the sentinel, the input was a valid prefix that ran out
+(define ((ran-out-probe toks last-pos) )
+  ;; the sentinel is a COPY of the last real token (a type the grammar knows), placed after it
+  (define last-real (for/last ([t (in-list toks)] #:when (probe-token t)) (probe-token t)))
+  (and last-pos last-real
+       (with-handlers ([exn:fail? (lambda (e) (let ([p (error-position e)]) (and p (> p last-pos))))])
+         (g:parse-to-datum (let ([ts (append toks (list (token (token-struct-type last-real) (token-struct-val last-real)
+                                                                #:position (+ last-pos 100000) #:line 1 #:column 0)))])
+                             (lambda () (if (null? ts) (void) (begin0 (car ts) (set! ts (cdr ts)))))))
+         #f)))
 (define (real-tok? t) (not (token-struct-skip? t)))
 (define (ttype t) (token-struct-type t))
 (define (tval t) (token-struct-val t))
@@ -45,10 +65,23 @@
        (loop (cdr toks) (list (car toks)) (cons (reverse cur) chunks))]
       [else (loop (cdr toks) (cons (car toks) cur) chunks)])))
 
-(define (parse-fsh-doc str)
-  (for/list ([ch (in-list (chunk-entities (collect-tokens str)))]
-             #:when (ormap real-tok? ch))
-    (parse-chunk ch)))
+(define (parse-fsh-doc str #:source [source #f]) (map car (parse-fsh-doc/located str #:source source)))
+(define (parse-fsh-doc/located str #:source [source #f])
+  (with-handlers ([exn:fail? (lambda (e) (raise-diagnostic (exn->diagnostic e 'fsh #:source source)))])
+    (for/list ([ch (in-list (chunk-entities (collect-tokens str)))]
+               #:when (ormap real-tok? ch))
+      ;; a parse that runs out of the entity's tokens reads "the entity ends after `X`"
+      (define last-pos (for/last ([t (in-list ch)] #:when (real-tok? t)) (token-struct-offset t)))
+      (with-handlers ([(lambda (e) (and (exn:fail? e) (not (exn:fail:diagnostic? e))))
+                       (lambda (e) (raise-diagnostic (exn->diagnostic e 'fsh #:source source #:last-position last-pos
+                                                                      #:unit "entity"
+                                                                      #:ran-out? (ran-out-probe (filter real-tok? ch) last-pos))))])
+        (define first-real (for/first ([t (in-list ch)] #:when (real-tok? t)) t))
+        (cons (parse-chunk ch)
+              (loc (and source (if (path? source) (path->string source) source))
+                   (token-struct-line first-real)
+                   (let ([c (token-struct-column first-real)]) (and c (add1 c)))
+                   (token-struct-offset first-real) (token-struct-span first-real)))))))
 
 ;; parse one entity's token chunk
 (define (parse-chunk toks)
@@ -198,3 +231,15 @@
 (define (parse-fsh-entity str)
   (define ds (parse-fsh-doc str))
   (if (pair? ds) (car ds) (error 'parse-fsh-entity "no entity in: ~s" str)))
+
+(module+ test
+  (require rackunit (only-in fhir/diagnostic diagnostic->string exn:fail:diagnostic-diagnostic))
+  ;; diagnostics: positioned, in words, "ends after" when the entity runs out
+  (define (diag src) (with-handlers ([exn:fail:diagnostic? (lambda (e) (diagnostic->string (exn:fail:diagnostic-diagnostic e)))])
+                       (parse-fsh-doc src #:source "t.fsh") #f))
+  (check-equal? (diag "Profile: P\nParent: Patient\n* gender = #male ^short used\n")
+                "t.fsh:3:18: fsh parse error: unexpected caret sequence `^short`")
+  (check-equal? (diag "Profile: P\nParent: Patient\n* name ^short =\n") "t.fsh:3:15: fsh parse error: the entity ends after `=`")
+  (check-equal? (diag "Profile: P\nParent: Patient\n* name ^short = = 3\n") "t.fsh:3:17: fsh parse error: unexpected equal `=`")
+  (check-equal? (cdr (car (parse-fsh-doc/located "Alias: A = http://x\n\nProfile: P\nParent: Patient\n" #:source "t.fsh")))
+                (loc "t.fsh" 1 1 1 6)))

@@ -15,7 +15,8 @@
          racket/string
          racket/contract
          (only-in racket/list last)
-         (only-in "ast.rkt" code-tok))
+         (only-in "ast.rkt" code-tok)
+         (only-in fhir/diagnostic diagnostic loc raise-diagnostic exn:fail:diagnostic?))
 
 (provide
  (contract-out
@@ -72,13 +73,26 @@
 ;; -------------------------------------------------------------------
 (define (tokenize ip)
   (port-count-lines! ip)
+  ;; positioned : lexer-srcloc result -> token   the token with its line/column/position/span
+  ;; (brag reports parse errors at them; the token accessors downstream are unchanged)
+  (define (positioned t)
+    (cond [(srcloc-token? t)
+           (define tok (srcloc-token-token t))
+           (define sl (srcloc-token-srcloc t))
+           (if (token-struct? tok)
+               (token (token-struct-type tok) (token-struct-val tok)
+                      #:line (srcloc-line sl) #:column (srcloc-column sl)
+                      #:position (srcloc-position sl) #:span (srcloc-span sl)
+                      #:skip? (token-struct-skip? tok))
+               tok)]
+          [else t]))
   (define modes (box '(default)))
   (define (push! m) (set-box! modes (cons m (unbox modes))))
   (define (pop!)    (set-box! modes (cdr (unbox modes))))
 
   ;; ===== DEFAULT mode =====
   (define default-lexer
-    (lexer
+    (lexer-srcloc
      [(eof) (void)]
      [block-comment   (token 'COMMENT lexeme #:skip? #t)]
      ;; STAR: a rule line — newline (or line comment) + ws + '*' + space. Must precede WS.
@@ -184,7 +198,7 @@
 
   ;; ===== RULESET_OR_INSERT mode =====
   (define ruleset-lexer
-    (lexer
+    (lexer-srcloc
      [(eof) (void)]
      [(:: (:* anyws) (:+ rsnonws) (:* anyws) "(")
       (begin (push! 'param) (token 'PARAM_RULESET_REFERENCE (clean-ref lexeme)))]
@@ -193,7 +207,7 @@
 
   ;; ===== PARAM_RULESET_OR_INSERT mode =====
   (define param-lexer
-    (lexer
+    (lexer-srcloc
      [(eof) (void)]
      [(:: (:* anyws) "[[" (:* (:or (:~ #\]) (:: #\] (:~ #\])))) "]]" (:* anyws) ")")
       (begin (pop!) (pop!) (token 'LAST_BRACKETED_PARAM lexeme))]
@@ -206,7 +220,7 @@
 
   ;; ===== LIST_OF_CONTEXTS mode =====
   (define contexts-lexer
-    (lexer
+    (lexer-srcloc
      [(eof) (void)]
      [(:+ anyws) (token 'WS lexeme #:skip? #t)]
      [(:: "\"" str-body "\"" (:* anyws) ",") (token 'QUOTED_CONTEXT lexeme)]
@@ -216,17 +230,25 @@
 
   ;; ===== LIST_OF_CODES mode =====
   (define codes-lexer
-    (lexer
+    (lexer-srcloc
      [(eof) (void)]
      [(:+ anyws) (token 'WS lexeme #:skip? #t)]
      [(:: (:+ nonws) (:* anyws) ",") (token 'CODE_ITEM lexeme)]
      [(:+ nonws)                     (begin (pop!) (token 'LAST_CODE_ITEM lexeme))]))
 
   (lambda ()
-    ((case (car (unbox modes))
-       [(default)  default-lexer]
-       [(ruleset)  ruleset-lexer]
-       [(param)    param-lexer]
-       [(contexts) contexts-lexer]
-       [(codes)    codes-lexer])
-     ip)))
+    (define-values (line col pos) (port-next-location ip))
+    ;; text no rule matches is a positioned LEX error
+    (with-handlers ([(lambda (e) (and (exn:fail? e) (not (exn:fail:diagnostic? e))))
+                     (lambda (e)
+                       (define rest (let ([s (peek-string 30 0 ip)]) (if (eof-object? s) "" (car (string-split (string-append s " ") "\n")))))
+                       (raise-diagnostic (diagnostic 'fsh 'lex 'error (format "unrecognized text `~a`" (string-trim rest))
+                                                     (loc #f line (and col (add1 col)) pos #f))))])
+      (positioned
+       ((case (car (unbox modes))
+          [(default)  default-lexer]
+          [(ruleset)  ruleset-lexer]
+          [(param)    param-lexer]
+          [(contexts) contexts-lexer]
+          [(codes)    codes-lexer])
+        ip)))))

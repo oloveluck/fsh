@@ -39,6 +39,7 @@
           [compile-entity (->* (struct?) (hash? hash? hash?) (or/c hash? #f))]
           [compile-doc    (-> (listof struct?) (listof hash?))]
           [compile-doc/errors (-> (listof struct?) (values (listof hash?) (listof (cons/c string? exn?))))]
+          [entity-label (-> struct? string?)]   ; "profile: Name" — how compile-doc/errors names an entity
           [fsh->fhir      (-> string? (listof hash?))]))
 
 ;; the IG canonical URL base (SUSHI default in the golden corpus is http://example.org)
