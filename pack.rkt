@@ -2,7 +2,7 @@
 
 ;;; pack.rkt — an FSH project's compiled resources as a FHIR NPM package (.tgz).
 ;;;
-;;; The package is what the rest of the toolchain consumes (`raco fhir serve-ig <pkg.tgz>`, an SD
+;;; The package is what the rest of the toolchain consumes (`raco fhir-server serve-ig <pkg.tgz>`, an SD
 ;;; index, a validator): package/package.json from the project's sushi-config.yaml (name = packageId
 ;;; or id, version, fhirVersions, canonical, title, description, license, author = publisher, and the
 ;;; dependencies plus the core package for the FHIR version); conformance resources and

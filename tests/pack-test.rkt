@@ -4,7 +4,7 @@
 ;;; this compiler and written as a FHIR NPM package. Checks the package.json taken from
 ;;; sushi-config.yaml (id, version, fhirVersions, canonical, dependencies + the core package) and the
 ;;; layout: conformance resources and #definition instances in package/, examples in
-;;; package/example/, a .index.json in each. (fhir-tools/tests/fsh-ig-server-r4-test.rkt serves it.)
+;;; package/example/, a .index.json in each. (fhir-server/tests/fsh-ig-server-r4-test.rkt in the fhir repo serves it.)
 
 (require rackunit racket/runtime-path racket/file racket/list racket/string json file/gunzip file/untar
          (only-in fhir/spec-package spec-package-path)

@@ -10,7 +10,7 @@
 ;;;       as {"diagnostics":[…]} or a FHIR OperationOutcome instead (fhir/diagnostic).
 ;;;       --pack [out.tgz] also writes the FHIR NPM package (fsh/pack.rkt; default <id>-<version>.tgz):
 ;;;       package.json from sushi-config.yaml, conformance resources + #definition instances in
-;;;       package/, other instances in package/example/ — loadable by `raco fhir serve-ig <tgz>`.
+;;;       package/, other instances in package/example/ — loadable by `raco fhir-server serve-ig <tgz>`.
 ;;;       --fhir-version picks the target (default 5.0.0): 4.0.1 compiles an R4 IG against the R4 tower.
 ;;;       A sushi-config.yaml beside the sources (or one/two levels up) supplies canonical, fhirVersion
 ;;;       and dependencies (packages located in fhir-spec as <id>-<version>.tgz); flags override it.
@@ -26,6 +26,8 @@
          (only-in fsh/ig-config ig-config-id ig-config-version)
          (only-in fsh/decompile fhir->fsh)
          (only-in racket/match match)
+         (only-in fsh/check check-fsh-project check-report-diagnostics check-report-texts
+                  check-report-examples check-report-invalid)
          (only-in fhir/diagnostic emit-diagnostics format-flag diagnostic-severity))
 
 (provide compile-path decompile-files)
@@ -70,21 +72,15 @@
 
 ;; raco fsh check <dir> [--capability id]   compile, then validate every example against the
 ;; project's profiles and (with a CapabilityStatement) report the generated server's unmet
-;; requirements — every problem positioned in the FSH (fhir/conformance/ig-check, in fhir-tools)
+;; requirements — every problem positioned in the FSH (fsh/check)
 (define (check-project dir capability fmt)
-  (define check (with-handlers ([exn:fail:filesystem:missing-module?
-                                 (lambda (_) (eprintf "fsh check: needs fhir-tools (the validator): raco pkg install fhir-tools\n") (exit 2))])
-                  (dynamic-require 'fhir/conformance/ig-check 'check-fsh-project)))
-  (define report-of (lambda (f) (dynamic-require 'fhir/conformance/ig-check f)))
-  (define r (check dir #:capability capability))
-  (define diags ((report-of 'check-report-diagnostics) r))
-  (define texts ((report-of 'check-report-texts) r))
+  (define r (check-fsh-project dir #:capability capability))
+  (define diags (check-report-diagnostics r))
   (unless (null? diags)
-    (emit-diagnostics diags #:format fmt #:text-of (lambda (s) (and s (hash-ref texts s #f)))))
+    (emit-diagnostics diags #:format fmt #:text-of (lambda (s) (and s (hash-ref (check-report-texts r) s #f)))))
   (define errors (for/sum ([d (in-list diags)]) (if (eq? (diagnostic-severity d) 'error) 1 0)))
   (eprintf "fsh check: ~a examples, ~a with errors; ~a error(s), ~a warning(s)\n"
-           ((report-of 'check-report-examples) r) ((report-of 'check-report-invalid) r)
-           errors (- (length diags) errors))
+           (check-report-examples r) (check-report-invalid r) errors (- (length diags) errors))
   (exit (if (zero? errors) 0 1)))
 
 (define (usage [code 2])                             ; --help: stdout, exit 0

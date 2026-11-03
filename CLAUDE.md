@@ -23,7 +23,7 @@ system` or the code token; CodeSystem gets `count`). Whole-doc compile resolves 
 non-parameterized `insert RuleSet` first. `#lang fsh` (`fsh/base.rkt` custom `#%module-begin` +
 `fsh/lang/reader.rkt`'s `#:read-syntax` running `parse-fsh-doc`, emitting `(fsh-entity <ast>)` forms)
 makes a `.fsh` file a module providing `document`/`compiled`(jsexpr)/`resources`(typed nodes via
-`from-json`), printing JSON in `main`. `raco fhir fsh <dir>` batch-compiles a folder SUSHI-style.
+`from-json`), printing JSON in `main`. `raco fsh <dir>` batch-compiles a folder SUSHI-style.
 **Bidirectional**: the reverse direction (FHIR → FSH, "GoFSH") is `fsh/decompile.rkt` +
 `fsh/print.rkt` (FSH AST → text). `fhir->fsh` (jsexpr) / `node->fsh` (typed node) emit idiomatic rules
 where recognised (card/flag/binding/only-with-targetProfile/obeys/concept/include-exclude) and a
@@ -113,13 +113,13 @@ package — no SUSHI involved; `sushi-config.yaml` is read by `ig-config.rkt`'s 
 (canonical, fhirVersion, dependencies, id/packageId, version, name, title, status, license,
 description, publisher.name): package/package.json (dependencies + the core package), conformance
 resources and `Usage: #definition` instances in package/, other instances in package/example/, a
-`.index.json` per folder. The package feeds `raco fhir serve-ig <tgz> --capability <id>`, which
+`.index.json` per folder. The package feeds `raco fhir-server serve-ig <tgz> --capability <id>`, which
 now resolves the package's own dependencies from fhir-spec. `tests/pack-test.rkt` checks mCODE's
-package; fhir-tools/tests/fsh-ig-server-r4-test.rkt serves it: 0 unmet requirements, and **283/283**
+package; the fhir repo's fhir-server/tests/fsh-ig-server-r4-test.rkt serves it: 0 unmet requirements, and **283/283**
 of the examples we compile validate against the profiles we compile (as the published package does).
 
 `raco fsh check <dir> [--capability id]` validates every example against the project's profiles and
-positions each problem in the FSH (implemented in fhir-tools: `fhir/conformance/ig-check`, loaded on
+positions each problem in the FSH (`check.rkt`, on fhir-validation; `--capability` loads fhir-server on
 demand; see the main repo's CLAUDE.md, "The spec-author's loop"). `project-sd-packages` records the
 package context a compile used, so the checker validates in the same one.
 
