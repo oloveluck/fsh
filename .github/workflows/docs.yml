@@ -36,7 +36,8 @@ jobs:
             "https://github.com/oloveluck/fhir.git?path=fhir-tx" \
             "https://github.com/oloveluck/fhir.git?path=fhir-validation" \
             "https://github.com/oloveluck/cql.git" \
-            "https://github.com/oloveluck/fml.git"
+            "https://github.com/oloveluck/fml.git" \
+            "https://github.com/oloveluck/fhir.git?path=fhir-server"
       - name: Test projects, the checker and the planted-mistake corpus
         run: raco test project.rkt check.rkt tests/check-r4-test.rkt
       - name: Build the documentation
