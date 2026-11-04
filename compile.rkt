@@ -830,7 +830,12 @@
     (values (cons (fsh-step-name (car o)) (fsh-bracket-value rb)) (fsh-bracket-value b))))
 
 (define (build-instance-json e resource-type aliases)
-  (define base (hasheq 'resourceType (symbol->string resource-type) 'id (fsh-instance-name e)))
+  ;; an instance of a logical model (registered with Element as its parent: no resourceType on the
+  ;; wire, no id element unless the model declares one) is not stamped with an id
+  (define logical? (let ([sch (type-schema-of resource-type)]) (and sch (eq? (type-schema-parent sch) 'Element))))
+  (define base (if logical?
+                   (hasheq 'resourceType (symbol->string resource-type))
+                   (hasheq 'resourceType (symbol->string resource-type) 'id (fsh-instance-name e))))
   ;; path-only rules (`* extension[x][+]`, the context of indented rules) assign nothing but still
   ;; advance soft indices, so they take part in index resolution
   (define assigns (for/list ([r (in-list (fsh-instance-rules e))] #:when (or (rule-assign? r) (rule-path? r))) r))
