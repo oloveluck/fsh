@@ -337,3 +337,33 @@
     [(or (fsh-profile? e) (fsh-extension? e)) (compile-profile e invariants)]
     [(or (fsh-logical? e) (fsh-resource? e)) (compile-logical-resource e)]
     [else #f]))
+
+;; ---- living examples ------------------------------------------------------------------------
+(module+ test
+  (require rackunit (only-in fhir/r5/schemas))
+  ;; a document: an alias resolves, a profile becomes a differential, an instance a resource
+  (define out (fsh->fhir (string-append
+                          "Alias: $sct = http://snomed.info/sct\n\n"
+                          "Profile: BP\nParent: Observation\nTitle: \"Blood pressure\"\n* component 2..* MS\n* code = $sct#75367002\n\n"
+                          "Instance: p1\nInstanceOf: Patient\nUsage: #example\n* gender = #female\n* name[0].family = \"Doe\"")))
+  (check-equal? (map (lambda (r) (hash-ref r 'resourceType)) out) '("StructureDefinition" "Patient"))
+  (define sd (car out))
+  (check-equal? (hash-ref sd 'name) "BP")
+  (check-equal? (hash-ref sd 'type) "Observation")
+  (check-equal? (hash-ref sd 'derivation) "constraint")
+  (define elements (hash-ref (hash-ref sd 'differential) 'element))
+  (define component (findf (lambda (e) (equal? (hash-ref e 'path) "Observation.component")) elements))
+  (check-equal? (hash-ref component 'min) 2)
+  (check-equal? (hash-ref component 'mustSupport) #t)
+  (define code (findf (lambda (e) (equal? (hash-ref e 'path) "Observation.code")) elements))
+  (check-equal? (hash-ref (car (hash-ref (hash-ref code 'patternCodeableConcept) 'coding)) 'system) "http://snomed.info/sct")
+  (define p (cadr out))
+  (check-equal? (hash-ref p 'id) "p1")
+  (check-equal? (hash-ref p 'gender) "female")
+  (check-equal? (hash-ref (car (hash-ref p 'name)) 'family) "Doe")
+  ;; errors accumulate per entity and name it; the good entities still compile
+  (define-values (ok errs)
+    (compile-doc/errors (map (lambda (e) e) (list (fsh-profile "Bad" (list (cons 'parent "NoSuchType")) '())
+                                                  (fsh-instance "p2" (list (cons 'instanceOf "Patient")) '())))))
+  (check-equal? (map (lambda (r) (hash-ref r 'resourceType)) ok) '("Patient"))
+  (check-equal? (map car errs) '("profile: Bad")))
