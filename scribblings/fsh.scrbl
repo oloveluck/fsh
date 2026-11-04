@@ -120,6 +120,29 @@ leniently). The target is R5 with the default canonical; a project with a config
 (fhir->fsh sd)                                     (code:comment "jsexpr -> FSH text")
 ]
 
+@section{Limits}
+
+Measured against the IGs' published packages: IPS 2.0.1 pairs 114 resources, 82 identical, 97 with
+all published content, 395 of 440 differential elements; mCODE 4.0.0 pairs 349, 206 identical, 282
+complete, 279 of 501 differential elements. What the differences are:
+
+@itemlist[
+@item{28 mCODE profiles (genomics and performance status, mostly) whose differential lacks elements
+SUSHI writes; in IPS a few @tt{min}s, one slice-child order and a logical model's root @tt{short}.}
+@item{No ImplementationGuide resource, no narratives, no ActorDefinition conversion: publisher
+output, out of scope.}
+@item{@tt{Characteristics:} and @tt{Context:} metadata are parsed but not read (an extension's
+context comes from a @tt{^context} caret). An @tt{insert} naming an unknown RuleSet is left
+unexpanded, not reported. A rule-level @tt{insert} with a path prefix drops the prefix.}
+@item{Snapshots are opt-in (@litchar{--snapshot}, @racket[emit-snapshot?]); the default output is
+differential only. R4 and R5 only: a @tt{4.x} version compiles against R4, anything else against R5.}
+@item{No code validation: a binding records its strength and value set, and @tt{raco fsh check}
+validates examples without a terminology service, so only bindings whose value set enumerates its
+codes are checked.}
+@item{The decompiler gives idiomatic FSH to StructureDefinitions, ValueSets and CodeSystems; any
+other resource becomes a per-leaf @tt{Instance} with explicit indices, and nothing is extracted into
+Aliases, RuleSets or Mappings.}]
+
 @section{Reference}
 
 @subsection[#:style 'unnumbered]{@hash-lang[] @tt{fsh}}
