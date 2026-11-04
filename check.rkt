@@ -93,9 +93,18 @@
                 #:when a
                 [k (in-list (list (hash-ref a 'url "") (profile-id (car l))))])
       (values k l)))
+  ;; the FSH instance an artifact came from: by id; an instance of a logical model carries no id,
+  ;; so it is matched by the model it is an InstanceOf (its resourceType)
+  (define (instance-for a)
+    (or (let ([id (hash-ref a 'id #f)]) (and id (hash-ref instances id #f)))
+        (for/first ([l (in-list located)]
+                    #:when (and (fsh-instance? (car l))
+                                (let ([io (assoc 'instanceOf (fsh-instance-metadata (car l)))])
+                                  (and io (equal? (cdr io) (hash-ref a 'resourceType #f))))))
+          l)))
   (define examples
     (for/list ([a (in-list artifacts)]
-               #:when (let ([l (hash-ref instances (hash-ref a 'id #f) #f)])
+               #:when (let ([l (instance-for a)])
                         (and l (equal? (hash-ref a 'resourceType #f) (instance-type a))
                              (not (equal? (usage-of (car l)) "#definition")))))
       a))
@@ -106,7 +115,7 @@
       (for/list ([a (in-list examples)])
         (for/list ([i (in-list (validate-issues (strip-jnum a)))]
                    #:when (member (issue-severity i) '("error" "fatal" "warning")))
-          (issue->diagnostic i a (hash-ref instances (hash-ref a 'id)) profiles)))))
+          (issue->diagnostic i a (instance-for a) profiles)))))
   (delete-directory/files tmp #:must-exist? #f)
   (values examples
           (for/sum ([ds (in-list per-example)]) (if (ormap (lambda (d) (eq? (diagnostic-severity d) 'error)) ds) 1 0))
