@@ -17,7 +17,7 @@ here, as they do against the published package; the remaining differences are li
 repository's notes.
 
 Part of the @hyperlink["https://github.com/oloveluck/fhir"]{fhir} family; depends on @tt{fhir},
-@tt{fhirpath} and @tt{fhir-validation}. Real projects need @tt{fhir-spec} too (the core and
+@tt{fhirpath}, @tt{fhir-tx} and @tt{fhir-validation}. Real projects need @tt{fhir-spec} too (the core and
 dependency packages).
 
 @table-of-contents[]
@@ -25,7 +25,7 @@ dependency packages).
 @section{Install}
 
 @verbatim{
-raco pkg install --link --auto fhir/fhir fhir/fhir-spec fhirpath vcl fhir/fhir-validation fsh
+raco pkg install --link --auto fhir/fhir fhir/fhir-spec fhirpath vcl fhir/fhir-tx fhir/fhir-validation fsh
     # from source
 }
 

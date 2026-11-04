@@ -11,7 +11,7 @@ Reference: [oloveluck.github.io/fsh](https://oloveluck.github.io/fsh/).
 ```sh
 raco pkg install fsh          # once published on pkgs.racket-lang.org
 # from source, with the family repos side by side:
-raco pkg install --link --auto ../fhir/fhir .
+raco pkg install --link --auto ../fhir/fhir ../fhir/fhir-spec ../fhirpath ../vcl ../fhir/fhir-tx ../fhir/fhir-validation .
 ```
 
 Depends on `fhir` (the R5 tower; snapshots additionally need `fhir-spec`), `fhirpath`.

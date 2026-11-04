@@ -5,7 +5,7 @@
 (define pkg-desc "FHIR Shorthand for Racket: a bidirectional FSH compiler (FSH -> FHIR and GoFSH-style FHIR -> FSH), #lang fsh, and raco fsh — including `raco fsh check`, which validates a project's examples against its profiles and positions every problem in the FSH")
 (define pkg-authors '(oloveluck))
 (define license 'MIT)
-(define deps '("base" "fhir" "fhirpath" "fhir-validation" "brag-lib" "br-parser-tools-lib"))
+(define deps '("base" "fhir" "fhirpath" "fhir-tx" "fhir-validation" "brag-lib" "br-parser-tools-lib"))
 ;; fhir-spec (the core and dependency packages) is needed for real projects and the IG tests; fhir-server
 ;; only for `raco fsh check --capability` (loaded on demand)
 (define build-deps '("rackunit-lib" "scribble-lib" "racket-doc"))
