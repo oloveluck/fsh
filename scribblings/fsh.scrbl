@@ -7,17 +7,17 @@
 A @hyperlink["https://hl7.org/fhir/uv/shorthand/"]{FHIR Shorthand} compiler and its reverse. FSH to
 FHIR: profiles, extensions, logical models and resources, instances, value sets, code systems, rule
 sets, mappings, slicing and reslicing, for R4 or R5, with a sushi-config.yaml's canonical, version
-and dependencies. FHIR to FSH: GoFSH-style decompilation. @hash-lang[] @tt{fsh} makes a @tt{.fsh}
-file a module. @tt{raco fsh check} validates a project's examples against its own profiles and
-positions every problem in the FSH.
+and dependencies. FHIR to FSH: GoFSH-style decompilation. A @tt{.fsh} file is a module, and
+@tt{raco fsh check} validates a project's examples against its own profiles and positions every
+problem in the FSH.
 
 Measured on real IGs against their published packages: IPS 2.0.1 and mCODE 4.0.0 compile from their
-own sources with no errors (mCODE's 283 examples all validate against the profiles compiled here, as
-they do against the published package); the remaining differences are listed in the repository's
-notes.
+own sources with no errors, and mCODE's 283 examples all validate against the profiles compiled
+here, as they do against the published package; the remaining differences are listed in the
+repository's notes.
 
 Part of the @hyperlink["https://github.com/oloveluck/fhir"]{fhir} family; depends on @tt{fhir},
-@tt{fhirpath} and @tt{fhir-validation}. Real projects also need @tt{fhir-spec} (the core and
+@tt{fhirpath} and @tt{fhir-validation}. Real projects need @tt{fhir-spec} too (the core and
 dependency packages).
 
 @table-of-contents[]
@@ -28,13 +28,15 @@ dependency packages).
 raco pkg install --link --auto fhir/fhir fhir/fhir-spec fhirpath vcl fhir/fhir-validation fsh   # from source
 }
 
-@section{@hash-lang[] @tt{fsh}}
-@defmodulelang[fsh]
+@section{Writing FSH}
 
-The module provides @racket[document] (the entity ASTs), @racket[compiled] (the FHIR resources as
-jsexprs) and @racket[resources] (the same as typed nodes, read leniently). The target is R5. A parse
-error is a compile error positioned in the file. Running the file prints the JSON, one resource per
-line.
+Entities (@tt{Profile}, @tt{Extension}, @tt{Instance}, @tt{ValueSet}, @tt{CodeSystem},
+@tt{Invariant}, @tt{RuleSet}, @tt{Mapping}, @tt{Logical}, @tt{Resource}, @tt{Alias}) with their
+keyword lines, then rules, one per @tt{*}: cardinality (@tt{* subject 1..1}), flags (@tt{MS}),
+assignments (@tt{* status = #final}, @tt{* code = $loinc#85354-9 "Blood pressure panel"}),
+bindings (@tt{from VS (required)}), types (@tt{only Quantity}), slicing (@tt{contains a 1..1 and b
+0..*} with @tt{^slicing} carets), @tt{obeys}, @tt{insert}, and @tt{^} caret paths for anything
+else. The language reference is the @hyperlink["https://hl7.org/fhir/uv/shorthand/"]{FSH spec}.
 
 @verbatim|{#lang fsh
 Alias: $loinc = http://loinc.org
@@ -57,7 +59,68 @@ InstanceOf: Patient
 * name.family = "Ng"
 * gender = #female}|
 
-@section{Compiling}
+@section{Using it}
+
+@bold{A project.} The SUSHI layout: @tt{sushi-config.yaml} (canonical, fhirVersion, dependencies,
+id, version) and @tt{input/fsh/*.fsh}. Dependencies are found in @tt{fhir-spec} as
+@tt{<id>-<version>.tgz} and put ahead of core when names resolve.
+
+@verbatim{
+raco fsh ig/                     compile every .fsh under ig/ to ig/fsh-generated/<Type>-<id>.json
+raco fsh check ig/               validate every example against the project's profiles; problems on their FSH lines
+raco fsh ig/ --pack              also write the FHIR NPM package, <id>-<version>.tgz
+raco fhir-server serve-ig example.notes-0.1.0.tgz --capability <id>    serve it (fhir-server)
+raco fsh --decompile StructureDefinition-x.json                          FHIR to FSH
+}
+
+@tt{check} prints each problem with its source line and a caret, naming the profile rule an example
+breaks, then a summary, and exits 1 on an error:
+
+@verbatim{
+input/fsh/examples.fsh:5:3: fsh validate error: instance tumor-1: Observation.component.value[x]: valueString is not allowed in slice 'longest' (value[x]: Quantity) (constrained by profile TumorSize at input/fsh/profiles.fsh:10:3)
+ 5 | * component[longest].valueString = "big"
+   |   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+fsh check: 3 examples, 1 with errors; 1 error(s), 0 warning(s)
+}
+
+@tt{--format json} or @tt{outcome} gives the same to a program. Flags: @tt{-o <dir>},
+@tt{--fhir-version 4.0.1|5.0.0}, @tt{--canonical <url>}, @tt{--snapshot}, @tt{--pack [out.tgz]},
+@tt{check --capability <CapabilityStatement id>} (also reports what the generated server would not
+do). Exit codes: 0, 1 on an FSH error, 2 on usage.
+
+@bold{As a module.} @racket[(require "profile.fsh")] compiles the file when the program compiles
+(a parse or compile error is positioned in it) and gives @racket[document] (the entity ASTs),
+@racket[compiled] (the FHIR resources as jsexprs) and @racket[resources] (typed nodes, read
+leniently). The target is R5 with the default canonical; a project with a config is compiled with
+@racket[compile-project]. @tt{racket profile.fsh} prints the JSON.
+
+@racketblock[
+(require (only-in "profile.fsh" [compiled clinic]))
+(parameterize ([current-data-source (resources->data-source clinic)])   (code:comment "the profile is now resolvable")
+  (ensure-valid reading #:profile "http://example.org/StructureDefinition/screening-blood-pressure"))
+]
+
+@bold{From Racket.}
+
+@racketblock[
+(require fsh/compile fsh/project fsh/check fsh/decompile)
+(fsh->fhir text)                                   (code:comment "source -> (listof jsexpr)")
+(define p (compile-project "ig/"))                 (code:comment "with its sushi-config.yaml")
+(project-artifacts p) (project-diagnostics p)
+(parameterize ([current-sd-packages (project-sd-packages p)])   (code:comment "validate in the same context")
+  (apply-operation "$validate" resource))
+(check-report-diagnostics (check-fsh-project "ig/"))
+(fhir->fsh sd)                                     (code:comment "jsexpr -> FSH text")
+]
+
+@section{Reference}
+
+@subsection[#:style 'unnumbered]{@hash-lang[] @tt{fsh}}
+@defmodulelang[fsh]
+
+Provides @racket[document], @racket[compiled] and @racket[resources], as above.
+
+@subsection[#:style 'unnumbered]{@tt{fsh/compile}}
 @defmodule[fsh/compile]
 
 @defproc[(fsh->fhir [src string?]) (listof hash?)]{FSH source to its FHIR resources.}
@@ -65,17 +128,17 @@ InstanceOf: Patient
 A parsed document: aliases resolved, rule sets expanded, each entity compiled. Raises on the first
 entity that fails.}
 @defproc[(compile-doc/errors [entities (listof struct?)]) (values (listof hash?) (listof (cons/c string? exn?)))]{
-Like SUSHI, a failing entity is reported (as @racket[entity-label] and the exception) and the rest
-of the document still compiles.}
+A failing entity is reported (as @racket[entity-label] and the exception) and the rest of the
+document still compiles.}
 @defproc[(compile-doc/diagnostics [entities (listof struct?)]) (values (listof hash?) (listof (cons/c string? exn?)) list?)]{
-Also every rule-level diagnostic (@tt{fhir/diagnostic}, positioned at the rule): an element path
-whose first step the base type does not have, for one. Compilation continues past them.}
-@defproc[(compile-entity [e struct?] [aliases hash? (hash)] [profiles hash? (hash)] [invariants hash? (hash)]) (or/c hash? #f)]{One entity.}
+Also every rule-level diagnostic (@tt{fhir/diagnostic}, positioned at the rule), such as an element
+path whose first step the base type does not have. Compilation continues past them.}
+@defproc[(compile-entity [e struct?] [aliases hash? (hash)] [profiles hash? (hash)] [invariants hash? (hash)]) (or/c hash? #f)]
 @defproc[(entity-label [e struct?]) string?]{@racket["profile: Name"].}
 @defproc[(rule-path-of [rule any/c]) (or/c string? #f)]{The element path a profile rule constrains.}
-@defparam[fsh-fhir-version version string?]{The FHIR version stamped on StructureDefinitions, @racket["5.0.0"] by default. Set @racket["4.0.1"] and register the R4 tower for an R4 IG.}
-@defparam[canonical-base url string?]{The canonical base, @racket["http://example.org"] by default.}
-@defparam[emit-snapshot? on? boolean?]{Also generate snapshots (@tt{fhir/sd/snapshot}; needs the core package). Off by default.}
+@defparam[fsh-fhir-version version string?]{The FHIR version stamped on StructureDefinitions, @racket["5.0.0"] by default; @racket["4.0.1"] with the R4 tower registered compiles an R4 IG.}
+@defparam[canonical-base url string?]{@racket["http://example.org"] by default.}
+@defparam[emit-snapshot? on? boolean?]{Also generate snapshots (needs the core package). Off by default.}
 
 @subsection[#:style 'unnumbered]{@tt{fsh/parser/parse}}
 @defmodule[fsh/parser/parse]
@@ -94,18 +157,18 @@ A document's entity ASTs. A failure raises @racket[exn:fail:diagnostic] position
 @defproc[(print-entity [e any/c]) string?]
 @defproc[(print-value [v any/c]) string?])]{AST back to FSH text.}
 
-@section{Decompiling}
+@subsection[#:style 'unnumbered]{@tt{fsh/decompile}}
 @defmodule[fsh/decompile]
 
 @defproc[(fhir->fsh [resource hash?] ...) string?]{
 FHIR resources as an FSH document: idiomatic rules where the shape is recognised (cardinality, flags,
 bindings, @tt{only}, @tt{obeys}, concepts, includes, slicing) and a lossless @tt{^caret} for the
-rest. Invariants are re-synthesised from the SD constraints. Reads element types from the registered
+rest; invariants re-synthesised from the SD constraints. Reads element types from the registered
 tower.}
 @defproc[(node->fsh [node fhir?] ...) string?]{The same from typed nodes.}
 @defproc[(fhir->fsh-entity [resource hash?]) any/c]{One resource as an entity AST.}
 
-@section{Projects}
+@subsection[#:style 'unnumbered]{@tt{fsh/project}}
 @defmodule[fsh/project]
 
 @defstruct*[project ([config (or/c ig-config? #f)] [fhir-version string?] [files (listof path?)] [texts hash?]
@@ -113,7 +176,7 @@ tower.}
                      [sd-packages (listof path?)])]{
 A compiled project: its sushi-config, the source texts by file, the entities with their locations,
 the resources, every diagnostic (parse errors per file; a failing entity positioned at its
-declaration), the dependencies that were not found, and the packages the compile resolved against
+declaration), the dependencies not found, and the packages the compile resolved against
 (dependencies, then core), which @racket[check-fsh-project] validates in.}
 @defproc[(compile-project [src path-string?]
                           [#:canonical canonical (or/c string? #f) #f]
@@ -134,7 +197,7 @@ What compiling and packaging read from sushi-config.yaml; any field may be @rack
 is @racket[(cons package-id version)].}
 @defproc[(read-ig-config [file path-string?]) ig-config?]
 @defproc[(dependency-packages [deps (listof (cons/c string? string?))]) (values (listof path?) (listof (cons/c string? string?)))]{
-Each dependency's package found in @tt{fhir-spec} as @tt{<id>-<version>.tgz}, and the ones missing.}
+Each dependency's package in @tt{fhir-spec} as @tt{<id>-<version>.tgz}, and the ones missing.}
 
 @subsection[#:style 'unnumbered]{@tt{fsh/pack}}
 @defmodule[fsh/pack]
@@ -145,7 +208,7 @@ instances in @tt{package/}, other instances in @tt{package/example/}, an index p
 @racket[usages] maps an instance id to @racket["#example"] or @racket["#definition"].}
 @defproc[(conformance-type? [type string?]) boolean?]
 
-@section{Checking}
+@subsection[#:style 'unnumbered]{@tt{fsh/check}}
 @defmodule[fsh/check]
 
 @defproc[(check-fsh-project [dir path-string?] [#:capability capability (or/c string? #f) #f]) check-report?]{
@@ -159,18 +222,3 @@ instance rule that wrote the element and names the profile rule it breaks.}
 @defproc[(trace-rule [rules list?] [issue-path string?]) (or/c any/c #f)]{
 The rule whose path best matches a validator path: the type root dropped, brackets and choice suffixes
 normalised, the longest leading run of steps wins.}
-
-@section{Command line}
-
-@verbatim{
-raco fsh <file.fsh | dir> [-o <outdir>] [--snapshot] [--canonical <url>] [--fhir-version 4.0.1|5.0.0] [--pack [out.tgz]]
-raco fsh --decompile <file.json>...
-raco fsh check <dir> [--capability <CapabilityStatement id>]
-}
-
-Compiles one file or every @tt{.fsh} under a directory to @tt{<resourceType>-<id>.json} files in
-@tt{<outdir>} (default @tt{fsh-generated/}). A sushi-config.yaml supplies the canonical, version and
-dependencies; flags override it. @tt{--pack} also writes the FHIR NPM package, which
-@tt{raco fhir-server serve-ig} loads. @tt{check} prints each problem with its source line and a
-caret, then @tt{fsh check: N examples, M with errors; E error(s), W warning(s)}, and exits 1 on an
-error. @tt{--format text|json|outcome} on any command. Exit codes: 0, 1 on an FSH error, 2 on usage.
