@@ -300,3 +300,45 @@
 (define (last-seg s) (last (string-split s "/")))
 (define (hash-ref* js k1 k2)
   (let ([a (hash-ref js k1 #f)]) (if (hash? a) (hash-ref a k2 '()) '())))
+
+;; ---- living examples ------------------------------------------------------------------------
+(module+ test
+  (require rackunit)
+  ;; an instance: one assignment per primitive leaf, arrays indexed, the type and id as metadata
+  (define pat (hasheq 'resourceType "Patient" 'id "p1" 'gender "female" 'active #t
+                      'name (list (hasheq 'family "Doe" 'given '("Jane" "J")))))
+  (define e (fhir->fsh-entity pat))
+  (check-true (fsh-instance? e))
+  (check-equal? (fsh-instance-name e) "p1")
+  (check-equal? (fsh-instance-metadata e) (list (cons 'instanceOf "Patient") (cons 'usage "#example")))
+  (check-equal? (fsh-instance-rules e)
+                (list (rule-assign "active" #t #f) (rule-assign "gender" "female" #f)
+                      (rule-assign "name[0].family" "Doe" #f)
+                      (rule-assign "name[0].given[0]" "Jane" #f) (rule-assign "name[0].given[1]" "J" #f)))
+  (check-equal? (fhir->fsh pat)
+                "Instance: p1\nInstanceOf: Patient\nUsage: #example\n* active = true\n* gender = \"female\"\n* name[0].family = \"Doe\"\n* name[0].given[0] = \"Jane\"\n* name[0].given[1] = \"J\"")
+  ;; a value set: its enumerated concepts as include rules, a whole system as `codes from system`
+  (define vs (hasheq 'resourceType "ValueSet" 'id "vs1" 'name "VS1" 'url "http://x/ValueSet/vs1" 'status "active"
+                     'compose (hasheq 'include (list (hasheq 'system "http://x/cs" 'concept (list (hasheq 'code "a" 'display "A")))
+                                                     (hasheq 'system "http://y/cs")))))
+  (define v (fhir->fsh-entity vs))
+  (check-true (fsh-valueset? v))
+  (check-equal? (fsh-valueset-name v) "VS1")
+  (check-equal? (length (filter vs-component? (fsh-valueset-rules v))) 2)
+  (check-true (regexp-match? #rx"\\* include http://x/cs#a \"A\"" (fhir->fsh vs)))
+  (check-true (regexp-match? #rx"\\* include codes from system http://y/cs" (fhir->fsh vs)))
+  ;; a code system: the concept tree as `* #a #b` rules
+  (define cs (hasheq 'resourceType "CodeSystem" 'id "cs1" 'name "CS1" 'url "http://x/cs" 'status "active" 'content "complete"
+                     'concept (list (hasheq 'code "a" 'display "A" 'concept (list (hasheq 'code "b"))))))
+  (check-equal? (filter concept-rule? (fsh-codesystem-rules (fhir->fsh-entity cs)))
+                (list (concept-rule '("#a") "A" #f) (concept-rule '("#a" "#b") #f #f)))
+  ;; a profile's constraints come back as Invariant entities too
+  (define sd (hasheq 'resourceType "StructureDefinition" 'id "bp" 'name "BP" 'url "http://x/StructureDefinition/bp"
+                     'type "Observation" 'baseDefinition "http://hl7.org/fhir/StructureDefinition/Observation"
+                     'derivation "constraint" 'status "active" 'kind "resource" 'abstract #f
+                     'differential (hasheq 'element (list (hasheq 'id "Observation.component" 'path "Observation.component" 'min 2
+                                                                  'constraint (list (hasheq 'key "bp-1" 'severity "error" 'human "two" 'expression "component.count() = 2")))))))
+  (define doc (fhir->fsh sd))
+  (check-true (regexp-match? #rx"Profile: BP" doc))
+  (check-true (regexp-match? #rx"Invariant: bp-1" doc))
+  (check-true (regexp-match? #rx"Severity: #error" doc)))

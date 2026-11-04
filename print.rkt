@@ -161,3 +161,28 @@
   (string-append "\"" (regexp-replace* #rx"\"" (regexp-replace* #rx"\\\\" s "\\\\\\\\") "\\\\\"") "\""))
 
 (define (code-text* x) (if (code-tok? x) (code-tok-text x) x))
+
+;; ---- living examples ------------------------------------------------------------------------
+(module+ test
+  (require rackunit)
+  ;; values print as FSH literals
+  (check-equal? (print-value "a \"q\" \\ b") "\"a \\\"q\\\" \\\\ b\"")
+  (check-equal? (print-value #t) "true")
+  (check-equal? (print-value 42) "42")
+  (check-equal? (print-value (fsh-code "http://loinc.org#8480-6" "Systolic")) "http://loinc.org#8480-6 \"Systolic\"")
+  (check-equal? (print-value (fsh-quantity 120 "mm[Hg]" #f)) "120 'mm[Hg]'")
+  (check-equal? (print-value (fsh-reference "Patient/p1" #f)) "Patient/p1")
+  ;; rules
+  (check-equal? (print-rule (rule-card "name" "1..*" '(MS))) "* name 1..* MS")
+  (check-equal? (print-rule (rule-binding "gender" "AdministrativeGender" "required")) "* gender from AdministrativeGender (required)")
+  (check-equal? (print-rule (rule-assign "status" (fsh-code "#final" #f) #t)) "* status = #final (exactly)")
+  (check-equal? (print-rule (rule-only "value[x]" '("Quantity" "string"))) "* value[x] only Quantity or string")
+  (check-equal? (print-rule (rule-caret "" "^short" "the x")) "* ^short = \"the x\"")
+  (check-equal? (print-rule (rule-contains "component" (list (contains-item "systolic" #f "1..1" '(MS)))))
+                "* component contains systolic 1..1 MS")
+  ;; an entity, header and metadata first, then its rules
+  (check-equal? (print-entity (fsh-profile "BP" (list (cons 'parent "Observation") (cons 'title "Blood pressure"))
+                                           (list (rule-card "component" "2..*" '()))))
+                "Profile: BP\nParent: Observation\nTitle: \"Blood pressure\"\n* component 2..*")
+  (check-equal? (print-doc (list (fsh-alias "$loinc" "http://loinc.org") (fsh-instance "p1" (list (cons 'instanceOf "Patient")) '())))
+                "Alias: $loinc = http://loinc.org\n\nInstance: p1\nInstanceOf: Patient"))
