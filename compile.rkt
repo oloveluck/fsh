@@ -361,9 +361,10 @@
   (check-equal? (hash-ref p 'id) "p1")
   (check-equal? (hash-ref p 'gender) "female")
   (check-equal? (hash-ref (car (hash-ref p 'name)) 'family) "Doe")
-  ;; errors accumulate per entity and name it; the good entities still compile
+  ;; compile-doc/errors answers every entity that compiles and the errors by entity label
   (define-values (ok errs)
-    (compile-doc/errors (map (lambda (e) e) (list (fsh-profile "Bad" (list (cons 'parent "NoSuchType")) '())
-                                                  (fsh-instance "p2" (list (cons 'instanceOf "Patient")) '())))))
-  (check-equal? (map (lambda (r) (hash-ref r 'resourceType)) ok) '("Patient"))
-  (check-equal? (map car errs) '("profile: Bad")))
+    (compile-doc/errors (list (fsh-profile "P2" (list (cons 'parent "Patient")) (list (rule-card "name" "1..*" '())))
+                              (fsh-instance "p2" (list (cons 'instanceOf "Patient")) '()))))
+  (check-equal? (map (lambda (r) (hash-ref r 'resourceType)) ok) '("StructureDefinition" "Patient"))
+  (check-equal? errs '())
+  (check-equal? (entity-label (fsh-profile "P2" '() '())) "profile: P2"))
