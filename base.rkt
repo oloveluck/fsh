@@ -12,6 +12,7 @@
          (only-in fhir/r5/schemas)                     ; register the R5 tower (compile + from-json)
          (only-in fhir/serialize/from-json from-json)
          (only-in fhir/result/result ok? ok-value)
+         (only-in fhir/registry register-resources!)
          "compile.rkt")
 
 (provide (except-out (all-from-out racket/base) #%module-begin)
@@ -27,6 +28,10 @@
      #'(#%module-begin
         (define document (list form ...))
         (define compiled (compile-doc document))          ; (listof FHIR jsexpr)
+        ;; the module system as the FHIR registry: what this file defines resolves by canonical
+        ;; (fhir/registry) — a profile for `#:profile`, a value set for `$expand`, a logical model
+        ;; for a map's `uses` — once the module is required
+        (register-resources! compiled #:source (variable-reference->module-source (#%variable-reference)))
         (define resources                                 ; (listof typed fhir node | jsexpr)
           (for/list ([j (in-list compiled)])
             (let ([r (from-json j #:lenient? #t)]) (if (ok? r) (ok-value r) j))))
