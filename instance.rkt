@@ -22,7 +22,16 @@
          (only-in fhir/sd/sd-index resolve-sd-raw resolve-canonical-raw sd-index-available?)
          (only-in fhir/sd/logical register-structure-definition!)
          "context.rkt")
-(provide coerce compile-instance external-sd instance-base)
+(provide
+ (contract-out
+  ;; an Instance -> the resource JSON, given the aliases and the local profiles (name -> (parent . sd))
+  [compile-instance (-> fsh-instance? hash? hash? hash?)]
+  ;; the base resource type of an InstanceOf, through local profile chains
+  [instance-base (->* (string? hash?) (exact-nonnegative-integer?) (or/c string? #f))]
+  ;; a dependency package's profile by name, id or url (a constraint SD), when the SD index has it
+  [external-sd (-> string? (or/c hash? #f))]
+  ;; an assigned FSH value as the element's JSON, by the element's ftype
+  [coerce (-> any/c any/c any/c)]))
 ;; ---- Instance -> a plain resource ----------------------------------------------------------
 (define (compile-instance e aliases profiles)
   (define meta (fsh-instance-metadata e))

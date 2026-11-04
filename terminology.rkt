@@ -21,7 +21,10 @@
          (only-in fhir/sd/logical register-structure-definition!)
          "context.rkt"
          "caret-apply.rkt")
-(provide compile-codesystem compile-valueset)
+(provide
+ (contract-out
+  [compile-valueset (-> fsh-valueset? hash? hash?)]
+  [compile-codesystem (-> fsh-codesystem? hash? hash?)]))
 ;; ---- ValueSet / CodeSystem -----------------------------------------------------------------
 (define (compile-valueset e aliases)
   (define meta (fsh-valueset-metadata e))

@@ -24,7 +24,20 @@
          "context.rkt"
          "instance.rkt"
          "caret-apply.rkt")
-(provide apply-mapping card-lo compile-invariant compile-logical-resource compile-profile rule-path-of)
+(provide
+ (contract-out
+  ;; a Profile / Extension -> its StructureDefinition (differential), the Invariants by name
+  [compile-profile (->* ((or/c fsh-profile? fsh-extension?)) (hash?) hash?)]
+  ;; a Logical / Resource -> its StructureDefinition (specialization)
+  [compile-logical-resource (-> (or/c fsh-logical? fsh-resource?) hash?)]
+  ;; an Invariant -> the constraint source compile-profile reads
+  [compile-invariant (-> fsh-invariant? hash?)]
+  ;; a Mapping injected into its Source StructureDefinition among the compiled SDs
+  [apply-mapping (-> list? fsh-mapping? list?)]
+  ;; the path an element rule addresses, #f for other rules
+  [rule-path-of (-> any/c (or/c string? #f))]
+  ;; "1..*" -> 1 ; the low end of a cardinality
+  [card-lo (-> string? exact-nonnegative-integer?)]))
 ;; attach a snapshot to a built StructureDefinition when emit-snapshot? is on
 (define (maybe-snapshot sd)
   (if (emit-snapshot?)
