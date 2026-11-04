@@ -8,6 +8,7 @@
 (define deps '("base" "fhir" "fhirpath" "fhir-validation" "brag-lib" "br-parser-tools-lib"))
 ;; fhir-spec (the core and dependency packages) is needed for real projects and the IG tests; fhir-server
 ;; only for `raco fsh check --capability` (loaded on demand)
-(define build-deps '("rackunit-lib"))
+(define build-deps '("rackunit-lib" "scribble-lib" "racket-doc"))
+(define scribblings '(("scribblings/fsh.scrbl" ())))
 (define raco-commands '(("fsh" (submod fsh/cli main) "compile FSH to FHIR JSON (SUSHI-style), check a project, decompile FHIR to FSH" #f)))
-(define test-omit-paths '("tests/vendor"))
+(define test-omit-paths '("tests/vendor" "scribblings"))

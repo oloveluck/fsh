@@ -4,6 +4,7 @@ A from-scratch FHIR Shorthand compiler (the SUSHI authoring language) and its re
 
 Part of **fhir — FHIR as a family of Racket `#lang`s** ([oloveluck/fhir](https://github.com/oloveluck/fhir)).
 Collection `fsh`. `#lang fsh` — a `.fsh` file is a module; `racket file` prints the compiled JSON.
+Reference: [oloveluck.github.io/fsh](https://oloveluck.github.io/fsh/).
 
 ## Install
 
