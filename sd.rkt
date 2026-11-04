@@ -449,3 +449,23 @@
             'expression expr))
    'expressionValid
    (and expr (with-handlers ([(lambda (_) #t) (lambda (_) #f)]) (parse-fhirpath expr) #t))))
+
+;; ---- living examples ------------------------------------------------------------------------
+(module+ test
+  (require rackunit (only-in fhir/r5/schemas))
+  ;; cardinalities and rule paths
+  (check-equal? (card-lo "1..*") 1) (check-equal? (card-lo "0..1") 0) (check-equal? (card-lo "..1") 0)
+  (check-equal? (rule-path-of (rule-card "component" "1..*" '())) "component")
+  (check-false (rule-path-of 'not-a-rule))
+  ;; element-loc: an FSH path to the ElementDefinition id, path and slice name SUSHI would write
+  (define (loc base p) (call-with-values (lambda () (element-loc base p)) list))
+  (check-equal? (loc "Observation" ".") '("Observation" "Observation" #f))
+  (check-equal? (loc "Observation" "component.code") '("Observation.component.code" "Observation.component.code" #f))
+  (check-equal? (loc "Observation" "component[systolic].code")
+                '("Observation.component:systolic.code" "Observation.component.code" #f))
+  (check-equal? (loc "Observation" "component[systolic]")
+                '("Observation.component:systolic" "Observation.component" "systolic"))
+  ;; a type-specific choice name is the type slice
+  (check-equal? (loc "Observation" "valueQuantity")
+                '("Observation.value[x]:valueQuantity" "Observation.value[x]" "valueQuantity"))
+  (check-equal? (loc "Observation" "value[x]") '("Observation.value[x]" "Observation.value[x]" #f)))
