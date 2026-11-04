@@ -118,6 +118,13 @@ now resolves the package's own dependencies from fhir-spec. `tests/pack-test.rkt
 package; the fhir repo's fhir-server/tests/fsh-ig-server-r4-test.rkt serves it: 0 unmet requirements, and **283/283**
 of the examples we compile validate against the profiles we compile (as the published package does).
 
+A project may hold `.map` files: `project.rkt` parses them through `fml/project` (dynamic-require —
+fsh does not depend on fml; a missing fml is a diagnostic), their StructureMaps join the artifacts
+(packed as conformance resources), and `check.rkt` runs `check-project-map` on each in the package
+context the compile used: paths against the structures, the examples of the source structure
+transformed and validated against the target. `compile.rkt` registers a document's `Logical:`
+models and custom resources as types (fhir/sd/logical) before instances compile, so `InstanceOf: <a
+logical model>` builds. The worked project: fhir-examples/examples/intake-maps.
 `raco fsh check <dir> [--capability id]` validates every example against the project's profiles and
 positions each problem in the FSH (`check.rkt`, on fhir-validation; `--capability` loads fhir-server on
 demand; see the main repo's CLAUDE.md, "The spec-author's loop"). `project-sd-packages` records the

@@ -27,6 +27,8 @@ raco fsh input/fsh/ -o out/      # compile a folder SUSHI-style, recursively (or
 raco fsh input/fsh/ --fhir-version 4.0.1 --canonical http://example.org/fhir   # an R4 IG
 raco fsh profile.fsh --snapshot  # also emit snapshots (needs: raco pkg install fhir-spec)
 raco fsh --decompile StructureDefinition-x.json
+raco fsh check ig/               # examples against the profiles, and the project's .map files
+                                 # (FHIR Mapping Language, needs fml) against its structures
 ```
 
 ## Develop

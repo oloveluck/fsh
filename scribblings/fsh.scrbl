@@ -76,6 +76,15 @@ raco fhir-server serve-ig example.notes-0.1.0.tgz --capability <id>    serve it 
 raco fsh --decompile StructureDefinition-x.json                          FHIR to FSH
 }
 
+@bold{Maps in the project.} A project may hold @tt{.map} files (the FHIR Mapping Language, the
+@tt{fml} package, loaded on demand): the arrows between its structures. Their StructureMaps join the
+artifacts, so the package carries both, and @tt{check} checks each map against the structures: an
+element path neither structure has, a value that cannot go into its element, a group call that does
+not fit, a required target element never assigned; then every example of the map's source structure
+is transformed and the result validated against the target, findings positioned in the map. A
+@tt{Logical:} model is registered as a type when it compiles, so an @tt{Instance:} of it builds like
+any resource. The worked project is @tt{fhir-examples/examples/intake-maps}.
+
 @tt{check} prints each problem with its source line and a caret, naming the profile rule an example
 breaks, then a summary, and exits 1 on an error:
 
@@ -203,11 +212,12 @@ tower.}
 
 @defstruct*[project ([config (or/c ig-config? #f)] [fhir-version string?] [files (listof path?)] [texts hash?]
                      [located list?] [artifacts (listof hash?)] [diagnostics list?] [missing list?]
-                     [sd-packages (listof path?)])]{
+                     [sd-packages (listof path?)] [maps list?])]{
 A compiled project: its sushi-config, the source texts by file, the entities with their locations,
-the resources, every diagnostic (parse errors per file; a failing entity positioned at its
-declaration), the dependencies not found, and the packages the compile resolved against
-(dependencies, then core), which @racket[check-fsh-project] validates in.}
+the resources (the maps' StructureMaps among them), every diagnostic (parse errors per file; a
+failing entity positioned at its declaration), the dependencies not found, the packages the compile
+resolved against (dependencies, then core), which @racket[check-fsh-project] validates in, and the
+maps as @racket[(cons file fml-map)].}
 @defproc[(compile-project [src path-string?]
                           [#:canonical canonical (or/c string? #f) #f]
                           [#:fhir-version fhir-version (or/c string? #f) #f]
@@ -217,6 +227,7 @@ the R4 tower. Never exits: everything wrong is in @racket[project-diagnostics].}
 @defproc[(pack-project! [p project?] [out path-string?]) path?]{The FHIR NPM package (needs the config).}
 @defproc[(find-config [src path-string?]) (or/c path? #f)]{sushi-config.yaml beside the sources or up to two levels up.}
 @defproc[(fsh-files [src path-string?]) (listof path?)]{A file, or every @tt{.fsh} under a directory.}
+@defproc[(map-files [src path-string?]) (listof path?)]{Every @tt{.map} or @tt{.fml} under a directory.}
 
 @subsection[#:style 'unnumbered]{@tt{fsh/ig-config}}
 @defmodule[fsh/ig-config]
@@ -246,7 +257,9 @@ The project end to end: compile; validate every example against the project's pr
 package context (the project's own artifacts ahead of its dependencies and core); with a
 CapabilityStatement id, the generated server's unmet requirements (loads @tt{fhir-server} on demand).
 Every problem is a @tt{fhir/diagnostic} positioned in the FSH: a validation issue is traced to the
-instance rule that wrote the element and names the profile rule it breaks.}
+instance rule that wrote the element and names the profile rule it breaks. The project's maps are
+checked against its structures in the same context (@tt{fml/project}, on demand), their findings
+positioned in the map.}
 @defstruct*[check-report ([diagnostics list?] [texts hash?] [examples exact-nonnegative-integer?]
                           [invalid exact-nonnegative-integer?] [artifacts list?])]
 @defproc[(trace-rule [rules list?] [issue-path string?]) (or/c any/c #f)]{
