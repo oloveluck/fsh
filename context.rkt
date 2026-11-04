@@ -78,3 +78,21 @@
 (define (sd-url t)
   (if (regexp-match? #px"^https?:" t) t (string-append "http://hl7.org/fhir/StructureDefinition/" t)))
 (define (last-url-seg s) (if (regexp-match? #rx"/" s) (last (string-split s "/")) s))
+
+(module+ test
+  (require rackunit)
+  ;; names, aliases, codes and canonicals
+  (check-equal? (resolve-alias "$loinc" (hash "$loinc" "http://loinc.org")) "http://loinc.org")
+  (check-equal? (resolve-alias "Patient" (hash)) "Patient")
+  (check-equal? (strip# "#final") "final")
+  (check-equal? (strip# "final") "final")
+  (let-values ([(sys code) (split-code "http://loinc.org#85354-9")]) (check-equal? (list sys code) '("http://loinc.org" "85354-9")))
+  (let-values ([(sys code) (split-code "#final")]) (check-equal? (list sys code) '(#f "final")))
+  (check-equal? (capitalize "quantity") "Quantity")
+  (check-equal? (sd-url "Observation") "http://hl7.org/fhir/StructureDefinition/Observation")
+  (check-equal? (sd-url "http://example.org/StructureDefinition/X") "http://example.org/StructureDefinition/X")
+  (check-equal? (last-url-seg "http://example.org/fhir/Patient") "Patient")
+  (check-equal? (last-url-seg "Patient") "Patient")
+  (check-equal? (code-text* (code-tok "x")) "x")
+  (check-equal? (resolve-reference "Reference(Patient/1)" (hash)) "Patient/1")
+  (check-equal? (resolve-reference "Patient/1" (hash)) "Patient/1"))

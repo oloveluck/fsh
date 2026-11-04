@@ -372,3 +372,21 @@
   (cond [(and (hash? a) (hash? b)) (for/and ([(k v) (in-hash a)]) (and (hash-has-key? b k) (json-subset? v (hash-ref b k))))]
         [(and (list? a) (list? b)) (for/and ([x (in-list a)]) (ormap (lambda (y) (json-subset? x y)) b))]
         [else (equal? a b)]))
+
+(module+ test
+  (require rackunit (only-in fhir/r5/schemas))
+  ;; coerce: what an assigned FSH value becomes in the element's JSON
+  (check-equal? (coerce (fsh-code "http://loinc.org#8480-6" "Systolic") (vector 'type 'Coding))
+                (hasheq 'system "http://loinc.org" 'code "8480-6" 'display "Systolic"))
+  (check-equal? (coerce (fsh-code "#final" #f) (vector 'prim "code")) "final")
+  (check-equal? (coerce (fsh-code "Sys#completed" #f) (vector 'prim "code")) "completed")
+  (check-equal? (coerce 2020 (vector 'prim "date")) "2020")
+  (check-equal? (coerce 42 (vector 'prim "integer")) 42)
+  (check-equal? (coerce (fsh-quantity 120 "mm[Hg]" #f) (vector 'type 'Quantity))
+                (hasheq 'value 120 'unit "mm[Hg]" 'code "mm[Hg]" 'system "http://unitsofmeasure.org"))
+  (check-equal? (coerce (fsh-reference "Patient/1" "Ann") (vector 'type 'Reference)) (hasheq 'reference "Patient/1" 'display "Ann"))
+  (check-equal? (coerce #t (vector 'prim "boolean")) #t)
+  ;; instance-base: a base type stays, a local profile goes to its parent, chains end at the base
+  (check-equal? (instance-base "Patient" (hash)) "Patient")
+  (check-equal? (instance-base "MyPatient" (hash "MyPatient" (cons "Patient" "my-patient"))) "Patient")
+  (check-equal? (instance-base "Deeper" (hash "Deeper" (cons "MyPatient" "deeper") "MyPatient" (cons "Patient" "my-patient"))) "Patient"))
