@@ -29,7 +29,8 @@
          (only-in fhir/serialize/jsexpr-util drop-false)
          (only-in fhirpath/parser/parse parse-fhirpath)
          (only-in fhir/sd/snapshot generate-snapshot)
-         (only-in fhir/sd/sd-index resolve-sd-raw resolve-canonical-raw sd-index-available?))
+         (only-in fhir/sd/sd-index resolve-sd-raw resolve-canonical-raw sd-index-available?)
+         (only-in fhir/sd/logical register-structure-definition!))
 
 (provide (contract-out
           [canonical-base (parameter/c string?)]
@@ -189,6 +190,12 @@
                 (hash-set! memo e js)
                 js]))
   (define (inline? e) (and (fsh-instance? e) (equal? (assoc-ref (fsh-instance-metadata e) 'usage) "#inline")))
+  ;; this document's logical models and custom resources are registered as types (fhir/sd/logical,
+  ;; the same registry the FHIR towers fill), so an Instance of one builds like any resource
+  (for ([e (in-list entities)] #:when (or (fsh-logical? e) (fsh-resource? e)))
+    (define sd (with-handlers ([exn:fail? (lambda (_) #f)])
+                 (compile-entity (expand-entity-inserts e rulesets param-rulesets) aliases profiles invariants)))
+    (when (hash? sd) (register-structure-definition! sd)))
   ;; this document's Profiles compiled on demand (name/id/url -> StructureDefinition jsexpr), for the
   ;; required values an Instance inherits from its InstanceOf profile
   (define profile-entities

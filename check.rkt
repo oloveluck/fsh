@@ -25,7 +25,7 @@
          (only-in "pack.rkt" pack-package!)
          (only-in "ig-config.rkt" ig-config)
          (only-in "project.rkt" compile-project pack-project! project-artifacts project-diagnostics project-located
-                  project-sd-packages project-config project-texts project-fhir-version)
+                  project-sd-packages project-config project-texts project-fhir-version project-maps)
          (only-in "compile.rkt" rule-path-of)
          (only-in "parser/ast.rkt" fsh-instance? fsh-instance-name fsh-instance-metadata fsh-instance-rules
                   fsh-profile? fsh-profile-name fsh-profile-metadata fsh-profile-rules
@@ -45,12 +45,34 @@
   (define p (compile-project dir))
   (define compile-diags (project-diagnostics p))
   (define-values (examples invalid validation-diags) (validate-examples p))
+  (define map-diags (check-maps p examples))
   (define server-diags (if capability (server-gaps p capability) '()))
-  (check-report (append compile-diags validation-diags server-diags)
+  (check-report (append compile-diags validation-diags map-diags server-diags)
                 (project-texts p)
                 (length examples)
                 invalid
                 (project-artifacts p)))
+
+;; ---- the project's maps, against its structures ----------------------------------------------------
+;; check-maps : project examples -> diagnostics   each map (fml/project, loaded on demand) checked in
+;; the package context the compile used, the project's own artifacts first: element paths against the
+;; structures, then the examples of its source structure transformed and validated against its target
+(define (check-maps p examples)
+  (define maps (project-maps p))
+  (define check (and (pair? maps) (with-handlers ([exn:fail? (lambda (_) #f)]) (dynamic-require 'fml/project 'check-project-map))))
+  (cond
+    [(not check) '()]
+    [else
+     (define artifacts (project-artifacts p))
+     (define profiles (filter (lambda (a) (equal? (hash-ref a 'resourceType #f) "StructureDefinition")) artifacts))
+     (define tmp (make-temporary-directory "fsh-check-~a"))
+     (define own (artifacts-package! tmp (project-config p) artifacts))
+     (define ds
+       (parameterize ([current-sd-packages (cons own (project-sd-packages p))])
+         (append* (for/list ([m (in-list maps)])
+                    (check (cdr m) (map strip-jnum examples) profiles #:source (car m))))))
+     (delete-directory/files tmp #:must-exist? #f)
+     ds]))
 
 ;; ---- validation, traced to the FSH ----------------------------------------------------------------
 
