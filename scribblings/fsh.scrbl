@@ -25,7 +25,8 @@ dependency packages).
 @section{Install}
 
 @verbatim{
-raco pkg install --link --auto fhir/fhir fhir/fhir-spec fhirpath vcl fhir/fhir-validation fsh   # from source
+raco pkg install --link --auto fhir/fhir fhir/fhir-spec fhirpath vcl fhir/fhir-validation fsh
+    # from source
 }
 
 @section{Writing FSH}
@@ -66,8 +67,10 @@ id, version) and @tt{input/fsh/*.fsh}. Dependencies are found in @tt{fhir-spec} 
 @tt{<id>-<version>.tgz} and put ahead of core when names resolve.
 
 @verbatim{
-raco fsh ig/                     compile every .fsh under ig/ to ig/fsh-generated/<Type>-<id>.json
-raco fsh check ig/               validate every example against the project's profiles; problems on their FSH lines
+raco fsh ig/
+    compile every .fsh under ig/ to ig/fsh-generated/<Type>-<id>.json
+raco fsh check ig/
+    validate every example against the project's profiles; problems on their FSH lines
 raco fsh ig/ --pack              also write the FHIR NPM package, <id>-<version>.tgz
 raco fhir-server serve-ig example.notes-0.1.0.tgz --capability <id>    serve it (fhir-server)
 raco fsh --decompile StructureDefinition-x.json                          FHIR to FSH
@@ -77,14 +80,16 @@ raco fsh --decompile StructureDefinition-x.json                          FHIR to
 breaks, then a summary, and exits 1 on an error:
 
 @verbatim{
-input/fsh/examples.fsh:5:3: fsh validate error: instance tumor-1: Observation.component.value[x]: valueString is not allowed in slice 'longest' (value[x]: Quantity) (constrained by profile TumorSize at input/fsh/profiles.fsh:10:3)
+input/fsh/examples.fsh:5:3: fsh validate error: instance tumor-1: Observation.component.value[x]:
+    valueString is not allowed in slice 'longest' (value[x]: Quantity)
+    (constrained by profile TumorSize at input/fsh/profiles.fsh:10:3)
  5 | * component[longest].valueString = "big"
    |   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 fsh check: 3 examples, 1 with errors; 1 error(s), 0 warning(s)
 }
 
-@tt{--format json} or @tt{outcome} gives the same to a program. Flags: @tt{-o <dir>},
-@tt{--fhir-version 4.0.1|5.0.0}, @tt{--canonical <url>}, @tt{--snapshot}, @tt{--pack [out.tgz]},
+@litchar{--format json} or @tt{outcome} gives the same to a program. Flags: @litchar{-o <dir>},
+@litchar{--fhir-version 4.0.1|5.0.0}, @litchar{--canonical <url>}, @litchar{--snapshot}, @litchar{--pack [out.tgz]},
 @tt{check --capability <CapabilityStatement id>} (also reports what the generated server would not
 do). Exit codes: 0, 1 on an FSH error, 2 on usage.
 
@@ -96,7 +101,8 @@ leniently). The target is R5 with the default canonical; a project with a config
 
 @racketblock[
 (require (only-in "profile.fsh" [compiled clinic]))
-(parameterize ([current-data-source (resources->data-source clinic)])   (code:comment "the profile is now resolvable")
+(code:comment "the profile is now resolvable")
+(parameterize ([current-data-source (resources->data-source clinic)])
   (ensure-valid reading #:profile "http://example.org/StructureDefinition/screening-blood-pressure"))
 ]
 
@@ -107,7 +113,8 @@ leniently). The target is R5 with the default canonical; a project with a config
 (fsh->fhir text)                                   (code:comment "source -> (listof jsexpr)")
 (define p (compile-project "ig/"))                 (code:comment "with its sushi-config.yaml")
 (project-artifacts p) (project-diagnostics p)
-(parameterize ([current-sd-packages (project-sd-packages p)])   (code:comment "validate in the same context")
+(code:comment "validate in the same context")
+(parameterize ([current-sd-packages (project-sd-packages p)])
   (apply-operation "$validate" resource))
 (check-report-diagnostics (check-fsh-project "ig/"))
 (fhir->fsh sd)                                     (code:comment "jsexpr -> FSH text")
