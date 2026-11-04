@@ -151,10 +151,7 @@
   (when (fml-entry 'parse-map-file)
     (define d2 (make-temporary-directory))
     (call-with-output-file (build-path d2 "model.fsh")
-      (λ (o) (void (write-string "Logical: TLeft
-Id: TLeft
-* a 0..1 string "a"
-" o))))
+      (λ (o) (void (write-string "Logical: TLeft\nId: TLeft\n* a 0..1 string \"a\"\n" o))))
     (call-with-output-file (build-path d2 "copy.map")
       (λ (o) (void (write-string (string-append "map \"http://example.org/StructureMap/copy\" = \"copy\"\n"
                                           "uses \"http://example.org/StructureDefinition/TLeft\" alias TLeft as source\n"
