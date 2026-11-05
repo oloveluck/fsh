@@ -278,7 +278,9 @@
        (define base? (member id sliced-base-ids))
        (cond
          [(and (hash-ref elt 'sliceName #f) base?) (append (element->rules elt (rel-of elt) #t) (list (contains-for id)))]
-         [(hash-ref elt 'sliceName #f) '()]
+         ;; a plain slice: its card and flags ride in the `contains`; what else it says (a pattern,
+         ;; a binding, a short, its constraints) is written at `path[slice]`
+         [(hash-ref elt 'sliceName #f) (filter (lambda (r) (not (rule-flag? r))) (element->rules elt (rel-of elt) #t))]
          [base? (append (element->rules elt (rel-of elt) #t) (list (contains-for id)))]
          [else (element->rules elt (rel-of elt) #f)]))))
   ;; `status` is NOT excluded: the forward compiler defaults it, so an overriding value must be caret'd
@@ -310,16 +312,23 @@
       [(or (hash-has-key? elt 'min) (hash-has-key? elt 'max))
        (add! (rule-card rel (format "~a..~a" (hash-ref elt 'min "") (hash-ref elt 'max "")) flags))]
       [(pair? flags) (add! (rule-flag rel '() flags))]))
+  ;; an explicit `mustSupport: false` is not a flag; it is said as a caret
+  (when (eq? (hash-ref elt 'mustSupport 'absent) #f) (add! (rule-caret rel "^mustSupport" #f)))
   (let ([b (hash-ref elt 'binding #f)])
     (when (and b (hash-ref b 'valueSet #f))
-      (add! (rule-binding rel (hash-ref b 'valueSet) (string->symbol (hash-ref b 'strength "required"))))))
+      (add! (rule-binding rel (hash-ref b 'valueSet) (string->symbol (hash-ref b 'strength "required")))))
+    ;; the binding's description and extensions (additional bindings) follow as carets
+    (when (hash? b)
+      (for ([prop (in-list (value->carets "^binding" (hash-remove (hash-remove b 'valueSet) 'strength)))])
+        (add! (caret-on rel prop)))))
   (let ([ts (hash-ref elt 'type #f)])
     (when ts (add! (rule-only rel (map type->fsh-str ts)))))
   (let ([cs (hash-ref elt 'constraint #f)])
     (when cs (add! (rule-obeys rel (for/list ([c (in-list cs)]) (hash-ref c 'key))))))
-  ;; fixed[x] / pattern[x] / slicing / any other element property -> caret rule on this element
+  ;; fixed[x] / pattern[x] / slicing / short / definition / any other element property -> caret rule
+  ;; on this element
   (for ([prop (in-list (caret-rest elt '(path id min max base mustSupport isSummary isModifier
-                                         binding type short definition constraint sliceName mapping)))])
+                                         binding type constraint sliceName mapping)))])
     (add! (caret-on rel prop)))
   (reverse out))
 
@@ -353,14 +362,19 @@
   (define segs (string-split path "."))
   (if (> (length segs) 1) (string-join (cdr segs) ".") ""))
 
-;; an ElementDefinition.type entry -> its FSH `only`-target string, preserving Reference/Canonical targets
+;; an ElementDefinition.type entry -> its FSH `only`-target string: Reference/Canonical targets kept,
+;; a profile of the type named by its canonical (`only <url>`; the compiler takes its base type as the
+;; code), version pins dropped
 (define (type->fsh-str t)
   (define code (hash-ref t 'code))
   (define tps (hash-ref t 'targetProfile '()))
-  (if (pair? tps)
-      (format "~a(~a)" (case code [("canonical") "Canonical"] [else code])
-              (string-join (map last-seg tps) " or "))
-      code))
+  (define pfs (let ([p (hash-ref t 'profile '())]) (if (list? p) p '())))
+  (cond [(pair? tps)
+         (format "~a(~a)" (case code [("canonical") "Canonical"] [else code])
+                 (string-join (map (lambda (u) (unpin (last-seg u))) tps) " or "))]
+        [(pair? pfs) (string-join (map unpin pfs) " or ")]
+        [else code]))
+(define (unpin s) (car (string-split s "|")))
 (define (last-seg s) (last (string-split s "/")))
 (define (hash-ref* js k1 k2)
   (let ([a (hash-ref js k1 #f)]) (if (hash? a) (hash-ref a k2 '()) '())))
