@@ -38,6 +38,8 @@
            (ig-fsh-report-pairs r) (ig-fsh-report-exact r) (ig-fsh-report-contained r)
            (ig-fsh-report-elements-ok r) (ig-fsh-report-elements-total r))
    (for ([e (in-list (ig-fsh-report-errors r))]) (eprintf "     compile error ~a: ~a\n" (car e) (cdr e)))
+   (printf "  difference classes (published vs ours), largest first:\n")
+   (print-classes r)
    (check-equal? (ig-fsh-report-errors r) '())
    (check-equal? (ig-fsh-report-ours-unmatched r) '())
    (check-equal? (map car (ig-fsh-report-published-unmatched r)) '("ImplementationGuide"))

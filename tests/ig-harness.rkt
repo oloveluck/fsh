@@ -19,7 +19,12 @@
 ;;;   errors     — entities that failed to compile; unmatched — pairing failures both ways
 ;;;
 ;;; Data: (ig-fsh-report pairs exact contained elements-ok elements-total errors ours-unmatched
-;;;                      published-unmatched diffs)   diffs : (listof (list key first-difference))
+;;;                      published-unmatched diffs classes)
+;;;   diffs   : (listof (list key first-difference))
+;;;   classes : (listof (list class count examples)) — every published value absent or different in
+;;;             ours, grouped by WHAT differs (kind + path with indices and ids generalised, e.g.
+;;;             "missing differential.element[].short"), largest class first, with up to three
+;;;             (key published ours) examples each: the work list for fidelity to SUSHI
 
 (require racket/contract racket/list racket/string racket/file racket/match
          json file/gunzip file/untar
@@ -32,7 +37,7 @@
   [check-fsh-ig (->* (path-string? path-string? string?) (#:fhir-version string?) ig-fsh-report?)]))
 
 (struct ig-fsh-report (pairs exact contained elements-ok elements-total errors ours-unmatched
-                             published-unmatched diffs)
+                             published-unmatched diffs classes)
   #:transparent)
 
 ;; published package resources keyed by (type . id)
@@ -103,6 +108,47 @@
         [(and (list? a) (list? b)) (and (<= (length a) (length b)) (for/and ([x a] [y b]) (subset? x y)))]
         [else (equal? a b)]))
 
+;; all-diffs : published ours path -> (listof Diff)   every published value absent or different in
+;; ours; lists of elements with ids pair BY ID (snapshot order is SUSHI's business, the content ours)
+;; A Diff is (list 'missing path value) | (list 'differs path published ours) | (list 'short-list path n m)
+(define (all-diffs a b path)
+  (cond
+    [(and (hash? a) (hash? b))
+     (append* (for/list ([(k v) (in-hash a)])
+                (if (hash-has-key? b k)
+                    (all-diffs v (hash-ref b k) (cons k path))
+                    (list (list 'missing (reverse (cons k path)) v)))))]
+    [(and (list? a) (list? b) (ids? a) (ids? b))
+     (define ours (for/hash ([e (in-list b)]) (values (hash-ref e 'id) e)))
+     (append* (for/list ([e (in-list a)])
+                (define o (hash-ref ours (hash-ref e 'id) #f))
+                (if o (all-diffs e o (cons (hash-ref e 'id) path))
+                    (list (list 'missing (reverse (cons (hash-ref e 'id) path)) e)))))]
+    [(and (list? a) (list? b))
+     (append (if (> (length a) (length b)) (list (list 'short-list (reverse path) (length a) (length b))) '())
+             (append* (for/list ([x a] [y b] [i (in-naturals)]) (all-diffs x y (cons i path)))))]
+    [(equal? a b) '()]
+    [else (list (list 'differs (reverse path) a b))]))
+(define (ids? l) (and (pair? l) (andmap (lambda (e) (and (hash? e) (string? (hash-ref e 'id #f)))) l)))
+
+;; diff-class : Diff -> String   the kind and the path with indices and element ids generalised
+(define (diff-class d)
+  (string-append (symbol->string (car d)) " "
+                 (string-join (for/list ([seg (in-list (cadr d))])
+                                (cond [(symbol? seg) (symbol->string seg)]
+                                      [(number? seg) "[]"]
+                                      [else "<id>"]))
+                              ".")))
+;; classes-of : (listof (cons key Diff)) -> (listof (list class count examples))   largest first
+(define (classes-of keyed)
+  (define groups (for/fold ([h (hash)]) ([kd (in-list keyed)])
+                   (hash-update h (diff-class (cdr kd)) (lambda (l) (cons kd l)) '())))
+  (sort (for/list ([(class kds) (in-hash groups)])
+          (list class (length kds)
+                (for/list ([kd (in-list (take (reverse kds) (min 3 (length kds))))])
+                  (list (car kd) (cddr (cdr kd))))))   ; (key (published ours)) or (key (value))
+        > #:key cadr))
+
 (define (first-diff a b path)
   (cond [(and (hash? a) (hash? b))
          (for/or ([(k v) (in-hash a)])
@@ -140,4 +186,15 @@
                  (sort (for/list ([k (in-hash-keys ours)] #:unless (hash-ref pub k #f)) k) string<? #:key car)
                  (sort (for/list ([k (in-hash-keys pub)] #:unless (hash-ref ours k #f)) k) string<? #:key car)
                  (for/list ([p (in-list pairs)] #:unless (subset? (cadr p) (caddr p)))
-                   (list (car p) (first-diff (cadr p) (caddr p) '())))))
+                   (list (car p) (first-diff (cadr p) (caddr p) '())))
+                 (classes-of (for*/list ([p (in-list pairs)] [d (in-list (all-diffs (cadr p) (caddr p) '()))])
+                               (cons (car p) d)))))
+
+;; print-classes : ig-fsh-report [n] -> void   the work list, largest class first, with examples
+(provide print-classes)
+(define (print-classes r [n 25])
+  (define (short v) (let ([s (format "~s" v)]) (if (> (string-length s) 100) (string-append (substring s 0 100) "…") s)))
+  (for ([c (in-list (take (ig-fsh-report-classes r) (min n (length (ig-fsh-report-classes r)))))])
+    (printf "    ~a  ~a\n" (cadr c) (car c))
+    (for ([ex (in-list (caddr c))])
+      (printf "        ~a/~a: ~a\n" (car (car ex)) (cdr (car ex)) (string-join (map short (cadr ex)) "  |  ")))))
