@@ -31,7 +31,11 @@
   ;; a dependency package's profile by name, id or url (a constraint SD), when the SD index has it
   [external-sd (-> string? (or/c hash? #f))]
   ;; an assigned FSH value as the element's JSON, by the element's ftype
-  [coerce (-> any/c any/c any/c)]))
+  [coerce (-> any/c any/c any/c)]
+  ;; what `extension[Name]` may name besides a slice: an alias, a local profile, a url, a packaged Extension
+  [extension-url-of (-> string? (or/c string? #f))]
+  ;; the constraints an Instance of a profile inherits, by element id (local chain over snapshots)
+  [profile-elements (->* (string?) (exact-nonnegative-integer?) hash?)]))
 ;; ---- Instance -> a plain resource ----------------------------------------------------------
 (define (compile-instance e aliases profiles)
   (define meta (fsh-instance-metadata e))
@@ -44,7 +48,8 @@
                     [j (if (type-registered? (string->symbol type-str))
                            j
                            (assign-required j (profile-elements type-str) (slice-positions e aliases)))]
-                    [j (fill-nested-extension-urls j (nested-slice-mentions e aliases))])
+                    [j (fill-nested-extension-urls j (nested-slice-mentions e aliases)
+                                                   (if (type-registered? (string->symbol type-str)) (hash) (profile-elements type-str)) base)])
                (definitional-url j (assoc-ref meta 'usage))))
   ;; stamp meta.profile when InstanceOf named a profile (not a base type), using the profile's id-URL
   (define prof (and (not (type-registered? (string->symbol type-str))) (hash-ref profiles type-str #f)))
@@ -247,15 +252,17 @@
   (case kind
     [(list) (hash-set js fname (list-set* (hash-ref js fname '()) idx v))]
     [else   (hash-set js fname v)]))
+;; a repeating element named without an index is its FIRST element (`* focus = …` is focus[0], so a
+;; second such assignment replaces the first, as SUSHI does); soft indices are numbers by now
 (define (update-field js fname kind idx f)
   (case kind
     [(list)
      (define cur (hash-ref js fname '()))
-     (define i (if (eq? idx 'end) (max 0 (sub1 (length cur))) (or idx (if (null? cur) 0 (sub1 (length cur))))))
+     (define i (if (eq? idx 'end) (max 0 (sub1 (length cur))) (or idx 0)))
      (hash-set js fname (list-update* cur i f))]
     [else (hash-set js fname (f (hash-ref js fname #f)))]))
 (define (list-set* lst idx v)
-  (define i (if (or (eq? idx 'end) (not idx)) (length lst) idx))
+  (define i (cond [(eq? idx 'end) (length lst)] [(not idx) 0] [else idx]))
   (list-pad lst i v))
 (define (list-update* lst i f)
   (let ([lst (extend lst (add1 i))]) (for/list ([x (in-list lst)] [j (in-naturals)]) (if (= j i) (f x) x))))
@@ -373,17 +380,21 @@
 ;; fill-nested-extension-urls : jsexpr mentions -> jsexpr   a named slice of an extension inside an
 ;; extension (`extension[USCoreRace].extension[ombCategory]`) gets its url from the enclosing
 ;; extension's definition: the slice's `url` (fixed), else the slice name
-(define (fill-nested-extension-urls js mentions)
+(define (fill-nested-extension-urls js mentions [elements (hash)] [type #f])
   (for/fold ([js js]) ([m (in-list mentions)])
     (define steps (car m))
     (define parent (walk js (drop-right steps 1)))
     (define parent-url (and (hash? parent) (hash-ref parent 'url #f)))
     (define entry (walk js steps))
+    ;; the slice as the InstanceOf profile declares it (`Condition.bodySite.extension:laterality`)
+    (define declared (and type (hash-ref elements (string-append type "." (string-join (map car steps) ".") ":" (cdr m)) #f)))
+    (define declared-url (and declared (let ([pr (extension-profile declared)]) (and (pair? pr) (car pr)))))
     (cond
-      [(not (and (string? parent-url) (hash? entry) (not (hash-has-key? entry 'url)))) js]
-      [else
-       (define url (or (nested-extension-url parent-url (cdr m)) (cdr m)))
-       (update-at js steps (lambda (e) (hash-set e 'url url)))])))
+      [(not (and (hash? entry) (not (hash-has-key? entry 'url)))) js]
+      [declared-url (update-at js steps (lambda (e) (hash-set e 'url declared-url)))]
+      [(string? parent-url)
+       (update-at js steps (lambda (e) (hash-set e 'url (or (nested-extension-url parent-url (cdr m)) (cdr m)))))]
+      [else js])))
 ;; nested-extension-url : extension-url slice -> url|#f   from the Extension's definition (this
 ;; document's, else the packages'): the element Extension.extension:<slice>.url, fixed
 (define (nested-extension-url ext-url slice)
@@ -392,9 +403,12 @@
   (define els (and (hash? sd) (append (hash-ref (hash-ref sd 'differential (hasheq)) 'element '())
                                       (hash-ref (hash-ref sd 'snapshot (hasheq)) 'element '()))))
   (define url-id (string-append "Extension.extension:" slice ".url"))
+  (define slice-id (string-append "Extension.extension:" slice))
   (and (list? els)
-       (for/or ([e (in-list els)])
-         (and (equal? (hash-ref e 'id #f) url-id) (hash-ref e 'fixedUri #f)))))
+       (or (for/or ([e (in-list els)]) (and (equal? (hash-ref e 'id #f) url-id) (hash-ref e 'fixedUri #f)))
+           ;; a sub-extension typed with another Extension: its url is that extension's canonical
+           (for/or ([e (in-list els)]) (and (equal? (hash-ref e 'id #f) slice-id)
+                                            (let ([pr (extension-profile e)]) (and (pair? pr) (car pr))))))))
 ;; walk : jsexpr steps -> jsexpr|#f   down (name . index|#f) steps
 (define (walk js steps)
   (for/fold ([j js]) ([st (in-list steps)])

@@ -5,7 +5,7 @@
 (require racket/match
          racket/string
          racket/contract
-         (only-in racket/list append-map make-list last filter-map remove-duplicates index-of drop-right)
+         (only-in racket/list append-map make-list last filter-map remove-duplicates index-of drop-right take)
          "parser/ast.rkt"
          "parser/path.rkt"
          "caret.rkt"
@@ -67,7 +67,12 @@
     (define els (and parent-sd (let ([sn (hash-ref parent-sd 'snapshot #f)]) (and (hash? sn) (hash-ref sn 'element '())))))
     (define el (and (list? els) (findf (lambda (e) (equal? (hash-ref e 'path #f) path)) els)))
     (if el (hash-ref el 'type '()) '()))
-  (define-values (elems0 order0) (fold-sd-rules base-type rules invariants self-url #:parent-types parent-types))
+  ;; the Parent's elements (a local chain over the packages' snapshots): `extension[us-core-birthsex]`
+  ;; names the slice typed with that extension
+  (define parent-elements (if (or local-parent parent-sd) (profile-elements parent) (hash)))
+  (define-values (elems00 order00)
+    (fold-sd-rules base-type (rewrite-extension-slices rules parent-elements base-type) invariants self-url #:parent-types parent-types))
+  (define-values (elems0 order0) (add-slice-parents elems00 order00))
   (define-values (elems order)
     (if ext? (add-extension-scaffold elems0 order0 self-url meta) (values elems0 order0)))
   (define diff (snapshot-order base-type (for/list ([k (in-list (reverse order))]) (hash-ref elems k))))
@@ -142,6 +147,57 @@
                   [(rule-flag p (? pair? extra) flags) (cons (rule-flag p '() flags) (for/list ([q (in-list extra)]) (rule-flag q '() flags)))]
                   [_ (list r)]))
               rules))
+;; map-rule-path : (path -> path) rule -> rule   the rule with its path(s) mapped
+(define (map-rule-path f r)
+  (define (j p) (if (string? p) (f p) p))
+  (match r
+    [(rule-card p c fl) (rule-card (j p) c fl)]
+    [(rule-flag p ps fl) (rule-flag (j p) (map j ps) fl)]
+    [(rule-binding p v st) (rule-binding (j p) v st)]
+    [(rule-assign p v x) (rule-assign (j p) v x)]
+    [(rule-contains p items) (rule-contains (j p) items)]
+    [(rule-only p ts) (rule-only (j p) ts)]
+    [(rule-obeys p is) (rule-obeys (j p) is)]
+    [(rule-caret p cp v) (rule-caret (j p) cp v)]
+    [(rule-insert p ref) (rule-insert (j p) ref)]
+    [(rule-path p) (rule-path (j p))]
+    [(rule-add-element p c fl ts sh d) (rule-add-element (j p) c fl ts sh d)]
+    [_ r]))
+;; rewrite-extension-slices : rules parent-elements base-type -> rules   a leading
+;; `extension[Name]` whose Name is not one of the Parent's slices but names an Extension (an alias,
+;; a url, a profile) means the Parent's slice typed with it: `extension[us-core-birthsex] MS` is
+;; the slice `birthsex` of US Core's Patient
+(define (rewrite-extension-slices rules parent-elements base-type)
+  (define (slice-for field name)
+    (cond
+      [(hash-has-key? parent-elements (string-append base-type "." field ":" name)) name]
+      [(extension-url-of name)
+       => (lambda (url)
+            (or (for/or ([(id el) (in-hash parent-elements)])
+                  (define m (regexp-match (pregexp (string-append "^" (regexp-quote (string-append base-type "." field ":")) "([^.]+)$")) id))
+                  (and m (let ([ts (hash-ref el 'type '())])
+                           (and (pair? ts) (member url (let ([pr (hash-ref (car ts) 'profile '())]) (if (list? pr) pr '()))) (cadr m)))))
+                name))]
+      [else name]))
+  (define (fix p)
+    (regexp-replace #px"^((?:modifierE|e)xtension)\\[([^\\]]+)\\]" p
+                    (lambda (all field name) (string-append field "[" (slice-for field name) "]"))))
+  (if (hash-empty? parent-elements) rules (map (lambda (r) (map-rule-path fix r)) rules)))
+;; add-slice-parents : elems order -> (values elems order)   a slice whose children the rules
+;; constrain is in the differential itself (SUSHI puts it there, bare but for its sliceName, as the
+;; IG Publisher needs it to place the children)
+(define (add-slice-parents elems order)
+  (for*/fold ([es elems] [os order]) ([id (in-list (hash-keys elems))]
+                                       [anc (in-list (slice-ancestors id))] #:unless (hash-has-key? es anc))
+    (define segs (string-split anc "."))
+    (define path (string-join (map (lambda (sg) (regexp-replace #rx":.*$" sg "")) segs) "."))
+    (define slice (cadr (regexp-match #rx":(.*)$" (last segs))))
+    (values (hash-set es anc (hasheq 'id anc 'path path 'sliceName slice)) (cons anc os))))
+;; slice-ancestors : element-id -> ids   its proper prefixes (at `.`) that end in a slice
+(define (slice-ancestors id)
+  (define segs (string-split id "."))
+  (for/list ([n (in-range 1 (length segs))] #:when (regexp-match? #rx":" (list-ref segs (sub1 n))))
+    (string-join (take segs n) ".")))
 ;; fold SD rules into an id-keyed differential-element accumulator (shared by profile/ext/logical)
 ;; parent-types : path -> (listof type) — the Parent's snapshot element at that path, for `only`
 (define (fold-sd-rules base-type rules invariants self-url #:parent-types [parent-types (lambda (_) '())])
@@ -172,7 +228,8 @@
     (match r
       [(rule-card p card flags) (upd elems order rid rpath rslice (lambda (h) (apply-card (apply-flags h flags) card)))]
       [(rule-flag p _ flags)    (upd elems order rid rpath rslice (lambda (h) (apply-flags h flags)))]
-      [(rule-binding p vs str)  (upd elems order rid rpath rslice (lambda (h) (hash-set h 'binding (drop-false (hasheq 'strength (and str (symbol->string str)) 'valueSet (and vs (valueset-url vs)))))))]
+      ;; `from VS` without a strength is a required binding (FSH's default)
+      [(rule-binding p vs str)  (upd elems order rid rpath rslice (lambda (h) (hash-set h 'binding (drop-false (hasheq 'strength (if str (symbol->string str) "required") 'valueSet (and vs (valueset-url vs)))))))]
       [(rule-only p types)
        ;; types in the base element's order (SUSHI), unknown ones after
        (define base-codes (or (base-type-codes base-type rpath) '()))
@@ -432,14 +489,22 @@
      (if complex? '()
          (list (lambda (es os) (upd es os "Extension.extension" "Extension.extension" #f
                                     (lambda (h) (hash-set h 'max "0"))))))
-     ;; per sub-extension slice: forbid nested extension, fix its url to the slice name
+     ;; per inline sub-extension slice: forbid nested extension, fix its url to the slice name
+     ;; (a slice typed with another Extension gets neither: that extension defines them)
      (append-map
       (lambda (sn)
-        (list (lambda (es os) (upd es os (format "Extension.extension:~a.extension" sn)
-                                   "Extension.extension.extension" #f (lambda (h) (hash-set h 'max "0"))))
-              (lambda (es os) (upd es os (format "Extension.extension:~a.url" sn)
-                                   "Extension.extension.url" #f (lambda (h) (hash-set h 'fixedUri sn))))))
+        (define slice-el (hash-ref elems (string-append "Extension.extension:" sn) (hash)))
+        (define typed? (for/or ([t (in-list (hash-ref slice-el 'type '()))]) (pair? (hash-ref t 'profile '()))))
+        (if typed? '()
+            (list (lambda (es os) (upd es os (format "Extension.extension:~a.extension" sn)
+                                       "Extension.extension.extension" #f (lambda (h) (hash-set h 'max "0"))))
+                  (lambda (es os) (upd es os (format "Extension.extension:~a.url" sn)
+                                       "Extension.extension.url" #f (lambda (h) (hash-set h 'fixedUri sn)))))))
       slice-names)
+     ;; a complex extension carries no value
+     (if complex?
+         (list (lambda (es os) (upd es os "Extension.value[x]" "Extension.value[x]" #f (lambda (h) (hash-set h 'max "0")))))
+         '())
      ;; the extension's own url is fixed to its canonical
      (list (lambda (es os) (upd es os "Extension.url" "Extension.url" #f
                                (lambda (h) (hash-set h 'fixedUri self-url)))))))
@@ -514,6 +579,18 @@
   (check-equal? (hash-ref (car (hash-ref (el "Observation.basedOn") 'type)) 'code) "Reference")
   (check-equal? (hash-ref (car (hash-ref (el "Observation.basedOn") 'type)) 'targetProfile)
                 '("http://hl7.org/fhir/StructureDefinition/ServiceRequest" "http://hl7.org/fhir/StructureDefinition/CarePlan"))
+  ;; slice ancestors and the bare slice elements SUSHI writes for constrained children
+  (check-equal? (slice-ancestors "DiagnosticReport.category:Genetics.coding") '("DiagnosticReport.category:Genetics"))
+  (check-equal? (slice-ancestors "Observation.component:a.extension:b.url") '("Observation.component:a" "Observation.component:a.extension:b"))
+  (check-equal? (slice-ancestors "Observation.code") '())
+  (let-values ([(es os) (add-slice-parents (hash "DiagnosticReport.category:Genetics.coding" (hasheq 'min 1)) '("DiagnosticReport.category:Genetics.coding"))])
+    (check-equal? (hash-ref es "DiagnosticReport.category:Genetics") (hasheq 'id "DiagnosticReport.category:Genetics" 'path "DiagnosticReport.category" 'sliceName "Genetics")))
+  ;; an extension slice named by the extension's url is the Parent's slice typed with it
+  (define pe (hash "Patient.extension:birthsex" (hasheq 'type (list (hasheq 'code "Extension" 'profile '("http://hl7.org/fhir/us/core/StructureDefinition/us-core-birthsex"))))))
+  (check-equal? (rule-path-of (car (rewrite-extension-slices (list (rule-flag "extension[http://hl7.org/fhir/us/core/StructureDefinition/us-core-birthsex]" '() '(MS))) pe "Patient")))
+                "extension[birthsex]")
+  (check-equal? (rule-path-of (car (rewrite-extension-slices (list (rule-card "extension[birthsex].value[x]" "1..1" '())) pe "Patient")))
+                "extension[birthsex].value[x]")
   ;; cardinalities and rule paths
   (check-equal? (card-lo "1..*") 1) (check-equal? (card-lo "0..1") 0) (check-equal? (card-lo "..1") 0)
   (check-equal? (rule-path-of (rule-card "component" "1..*" '())) "component")

@@ -13,6 +13,7 @@
          (only-in fhir/r4/schemas)                         ; IPS is FHIR 4.0.1
          (only-in fhir/spec-package spec-package-path)
          (only-in fhir/sd/sd-index current-sd-packages)
+         (only-in fsh/project compile-project project-artifacts)
          "ig-harness.rkt")
 
 (define-runtime-path ips "vendor/ips-2.0.1")
@@ -31,10 +32,15 @@
    (for ([e (in-list (ig-fsh-report-errors r))]) (eprintf "     compile error ~a: ~a\n" (car e) (cdr e)))
    (printf "  difference classes (published vs ours), largest first:\n")
    (print-classes r)
+   ;; DEBUG (one run): our Composition section elements
+   (let ([p (parameterize ([current-sd-packages (list r4-core)]) (compile-project ips))])
+     (for ([a (in-list (project-artifacts p))] #:when (equal? (hash-ref a 'id #f) "Composition-uv-ips"))
+       (printf "  DEBUG Composition ids: ~s\n"
+               (for/list ([e (in-list (hash-ref (hash-ref a 'differential) 'element))] #:when (regexp-match? #rx"sectionProblems" (hash-ref e 'id))) (hash-ref e 'id)))))
    (check-equal? (ig-fsh-report-errors r) '())
    (check-equal? (sort (map cdr (ig-fsh-report-ours-unmatched r)) string<?) '("Consumer" "Creator" "Server")) ; ActorDefinition
    (check-equal? (map car (ig-fsh-report-published-unmatched r)) '("Basic" "Basic" "Basic" "ImplementationGuide"))
    (check-true (>= (ig-fsh-report-pairs r) 114))
    (check-true (>= (ig-fsh-report-exact r) 83) "fewer exact resources than the floor")
-   (check-true (>= (ig-fsh-report-contained r) 99) "fewer fully-matching resources than the floor")
-   (check-true (>= (ig-fsh-report-elements-ok r) 395) "fewer matching differential elements than the floor")])
+   (check-true (>= (ig-fsh-report-contained r) 104) "fewer fully-matching resources than the floor")
+   (check-true (>= (ig-fsh-report-elements-ok r) 417) "fewer matching differential elements than the floor")])
