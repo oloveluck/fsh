@@ -9,8 +9,8 @@
 ;;;   top level   text, snapshot, date, version, publisher, contact, jurisdiction; meta except profile;
 ;;;               publisher-assigned OID identifiers on conformance resources
 ;;;   anywhere    structuredefinition-wg / -fmm / -standards-status / -normative-version extensions;
-;;;               a `|<version>` pin on hl7.org/fhir canonicals; xml:lang/lang on narrative divs and
-;;;               their whitespace; the `text` of a nested resource (Bundle entries: generated
+;;;               a `|<version>` pin on hl7.org/fhir canonicals; xml:lang/lang on narrative divs, their
+;;;               whitespace and <x></x> vs <x/>; the `text` of a nested resource (Bundle entries: generated
 ;;;               narratives); a bare `{id, path}` differential element (the publisher inserts a root
 ;;;               or an intermediate element on some profiles, by processing order);
 ;;;               a compose component `version` the publisher pinned where ours has none
@@ -88,7 +88,10 @@
       j))
 ;; narratives are publisher output: a resource's `text` (Bundle entries too) is dropped, and the
 ;; XHTML of a hand-written one (Composition sections) is compared with its whitespace collapsed
-(define (collapse-xhtml s) (string-trim (regexp-replace* #px">\\s+<" (regexp-replace* #px"\\s+" s " ") "><")))
+(define (collapse-xhtml s)
+  (regexp-replace* #px"<(\\w+)></\\1>"                       ; the publisher writes an empty element <span/>
+                   (string-trim (regexp-replace* #px">\\s+<" (regexp-replace* #px"\\s+" s " ") "><"))
+                   "<\\1/>"))
 
 (define (norm j0 #:top? [top? #t])
   (define j (if top? (drop-content-free-elements (drop-publisher-oids j0)) j0))

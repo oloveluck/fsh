@@ -177,12 +177,20 @@
                              (compile-entity (expand-entity-inserts e rulesets param-rulesets) aliases profiles invariants)))
                 (hash-set! memo e js)
                 js]))
+  ;; logical models and custom resources by name, id and url -> their canonical url
+  (define logicals (for*/hash ([e (in-list entities)] #:when (or (fsh-logical? e) (fsh-resource? e))
+                               [name (in-value (if (fsh-logical? e) (fsh-logical-name e) (fsh-resource-name e)))]
+                               [id (in-value (or (assoc-ref (if (fsh-logical? e) (fsh-logical-metadata e) (fsh-resource-metadata e)) 'id) name))]
+                               [url (in-value (string-append (canonical-base) "/StructureDefinition/" id))]
+                               [key (in-list (remove-duplicates (list name id url)))])
+                     (values key url)))
   (define (inline? e) (and (fsh-instance? e) (equal? (assoc-ref (fsh-instance-metadata e) 'usage) "#inline")))
   ;; this document's logical models and custom resources are registered as types (fhir/sd/logical,
   ;; the same registry the FHIR towers fill), so an Instance of one builds like any resource
   (for ([e (in-list entities)] #:when (or (fsh-logical? e) (fsh-resource? e)))
     (define sd (with-handlers ([exn:fail? (lambda (_) #f)])
-                 (compile-entity (expand-entity-inserts e rulesets param-rulesets) aliases profiles invariants)))
+                 (parameterize ([current-aliases aliases] [current-logicals logicals])
+                   (compile-entity (expand-entity-inserts e rulesets param-rulesets) aliases profiles invariants))))
     (when (hash? sd) (register-structure-definition! sd)))
   ;; this document's Profiles compiled on demand (name/id/url -> StructureDefinition jsexpr), for the
   ;; required values an Instance inherits from its InstanceOf profile
@@ -238,7 +246,7 @@
   (define compiled
     (parameterize ([current-instance-resolver resolve-instance] [current-instance-ref instance-ref]
                    [current-profile-sd resolve-profile-sd]
-                   [current-aliases aliases] [current-profiles profiles]
+                   [current-aliases aliases] [current-profiles profiles] [current-logicals logicals]
                    [current-slice-orders slice-orders-of]
                    [current-local-canonical (lambda (n) (hash-ref local-canonicals n #f))])
     (for*/list ([e (in-list entities)]
@@ -273,7 +281,7 @@
        ;; plain `insert RuleSet` — ref is the ruleset name string
        [(and (rule-insert? r) (string? (rule-insert-ref r)))
         (define rs (hash-ref rulesets (rule-insert-ref r) #f))
-        (if rs (expand-rules rs rulesets param-rulesets) (list r))]
+        (if rs (under (rule-insert-path r) (expand-rules rs rulesets param-rulesets)) (list r))]
        ;; parameterized `insert RuleSet(args)` — ref is (name param-token …)
        [(and (rule-insert? r) (pair? (rule-insert-ref r)))
         (define ref (rule-insert-ref r))
@@ -282,9 +290,31 @@
           [(not pr) (list r)]
           [else
            (define args (filter-map param-arg (cdr ref)))
-           (expand-rules (instantiate-ruleset (car pr) (cdr pr) args) rulesets param-rulesets)])]
+           (under (rule-insert-path r) (expand-rules (instantiate-ruleset (car pr) (cdr pr) args) rulesets param-rulesets))])]
        [else (list r)]))
    rules))
+;; under : path|#f rules -> rules   `* sectionProblems insert M` (or an insert indented under a rule)
+;; applies the RuleSet's rules under that path: a rule's path is joined to it, a path-less one (an
+;; SD-level caret) becomes a rule on the element itself
+(define (under prefix rules)
+  (if (and (string? prefix) (not (member prefix '("" "."))))
+      (map (lambda (r) (prefix-rule prefix r)) rules)
+      rules))
+(define (prefix-rule prefix r)
+  (define (j p) (cond [(or (not p) (equal? p "") (equal? p ".")) prefix] [else (string-append prefix "." p)]))
+  (match r
+    [(rule-card p c f) (rule-card (j p) c f)]
+    [(rule-flag p ps f) (rule-flag (j p) (map j ps) f)]
+    [(rule-binding p v st) (rule-binding (j p) v st)]
+    [(rule-assign p v x) (rule-assign (j p) v x)]
+    [(rule-contains p items) (rule-contains (j p) items)]
+    [(rule-only p ts) (rule-only (j p) ts)]
+    [(rule-obeys p is) (rule-obeys (j p) is)]
+    [(rule-caret p cp v) (rule-caret (j p) cp v)]
+    [(rule-insert p ref) (rule-insert (j p) ref)]
+    [(rule-path p) (rule-path (j p))]
+    [(rule-add-element p c f ts s d) (rule-add-element (j p) c f ts s d)]
+    [_ r]))
 ;; a (parameter|lastParameter "v,") token -> its cleaned argument value
 (define (param-arg x)
   (match x
@@ -360,7 +390,15 @@
   (define cm-target (car (hash-ref (car (hash-ref (car (hash-ref cm 'group)) 'element)) 'target)))
   (check-equal? (hash-ref cm-target 'display) "Aortic structure (body structure)")
   (check-equal? (hash-ref cm-target 'code) "15825003")
+  ;; an insert under a path: the RuleSet's rules apply to that element (a path-less caret too)
+  (define under-path (car (fsh->fhir (string-append
+                                      "RuleSet: M\n* ^comment = \"mandatory\"\n* ^short = \"m\"\n\n"
+                                      "Profile: P\nParent: Observation\n* code 1..1\n* code insert M\n"))))
+  (define code-el (findf (lambda (e) (equal? (hash-ref e 'id) "Observation.code")) (hash-ref (hash-ref under-path 'differential) 'element)))
+  (check-equal? (hash-ref code-el 'comment #f) "mandatory")
+  (check-equal? (hash-ref code-el 'short #f) "m")
   ;; a plain RuleSet whose rules insert a parameterized one: the nested insert expands too
+  (printf "nested-insert parse: ~s\n" (parse-fsh-doc "RuleSet: NotUsed(path)\n* {path} ^short = \"Not used\"\n\nRuleSet: Common\n* subject 1..1\n* insert NotUsed(device)\n"))
   (define nested (car (fsh->fhir (string-append
                                   "RuleSet: NotUsed(path)\n* {path} ^short = \"Not used\"\n\n"
                                   "RuleSet: Common\n* subject 1..1\n* insert NotUsed(device)\n\n"

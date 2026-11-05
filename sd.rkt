@@ -109,6 +109,11 @@
   (define parent (or (assoc-ref meta 'parent) (if logical? "Base" "DomainResource")))
   (define id (or (assoc-ref meta 'id) name))
   (define self-url (string-append (canonical-base) "/StructureDefinition/" id))
+  ;; `Characteristics: #can-be-target, #has-size`: one type-characteristics extension per code
+  (define characteristics
+    (for/list ([c (in-list (or (assoc-ref meta 'characteristics) '()))])
+      (hasheq 'url "http://hl7.org/fhir/StructureDefinition/structuredefinition-type-characteristics"
+              'valueCode (strip# (regexp-replace #px"[\\s,]+$" c "")))))
   ;; the element paths of a logical/custom resource root at the entity id, not a FHIR type
   (define root (drop-false (hasheq 'id id 'path id
                                    'short (assoc-ref meta 'title) 'definition (assoc-ref meta 'description))))
@@ -123,7 +128,10 @@
               'status "active" 'fhirVersion (fsh-fhir-version)
               'kind (if logical? "logical" "resource")
               'type (if logical? self-url id)
-              'baseDefinition (sd-url parent) 'derivation "specialization"
+              ;; a Parent that is a logical model of this document is named by its url
+              'baseDefinition (or (hash-ref (current-logicals) (resolve-alias parent (current-aliases)) #f) (sd-url parent))
+              'derivation "specialization"
+              'extension (and (pair? characteristics) characteristics)
               'differential (hasheq 'element diff)))
      'abstract #f)
     rules)))
@@ -187,7 +195,13 @@
                                                                         (hash-ref! element-counters rid make-hash))))
                                     (values elems order))]
       [(rule-obeys p invs)      (let-values ([(oid opath oslice) (if p (values rid rpath rslice) (values base-type base-type #f))])
-                                  (upd elems order oid opath oslice (lambda (h) (hash-set h 'constraint (map constraint-of invs)))))]
+                                  ;; several `obeys` on one element accumulate (each key once, first wins)
+                                  (upd elems order oid opath oslice
+                                       (lambda (h) (define have (hash-ref h 'constraint '()))
+                                         (hash-set h 'constraint
+                                                   (append have (for/list ([k (in-list invs)]
+                                                                           #:unless (member k (map (lambda (c) (hash-ref c 'key #f)) have)))
+                                                                  (constraint-of k)))))))]
       [(rule-add-element p card flags types short def)
        (upd elems order rid rpath rslice
             (lambda (h) (hash-set* (apply-card (apply-flags h flags) card)
@@ -372,7 +386,8 @@
     [(list _ "Canonical" inner) (hasheq 'code "canonical" 'targetProfile (target-urls inner))]
     [(list _ kind inner) (hasheq 'code kind 'targetProfile (target-urls inner))]
     [_ (define n (resolve-alias t (current-aliases)))
-       (cond [(hash-ref (current-profiles) n #f)
+       (cond [(hash-ref (current-logicals) n #f) => (lambda (url) (hasheq 'code url))]   ; a logical type is its url
+             [(hash-ref (current-profiles) n #f)
               => (lambda (p) (hasheq 'code (instance-base n (current-profiles))
                                      'profile (list (local-profile-url p))))]
              [(regexp-match? #px"^https?:" n)
@@ -453,7 +468,8 @@
         (inject-mapping sd mid decl (fsh-mapping-rules m))
         sd)))
 (define (inject-mapping sd mid decl rules)
-  (define base-type (hash-ref sd 'type))
+  ;; element ids start with the type name — for a logical model (whose type is its url) with its id
+  (define base-type (if (equal? (hash-ref sd 'kind #f) "logical") (hash-ref sd 'id) (hash-ref sd 'type)))
   (define sd1 (hash-update sd 'mapping (lambda (ms) (append (if (list? ms) ms '()) (list decl))) '()))
   (define diff (hash-ref (hash-ref sd1 'differential (hasheq)) 'element '()))
   (define diff2

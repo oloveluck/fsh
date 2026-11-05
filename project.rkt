@@ -29,7 +29,7 @@
   [fsh-files       (-> path-string? (listof path?))]
   [map-files       (-> path-string? (listof path?))]
   [compile-project (->* (path-string?) (#:canonical (or/c string? #f) #:fhir-version (or/c string? #f)
-                                        #:snapshot? boolean?)
+                                        #:snapshot? boolean? #:texts (hash/c string? string?))
                         project?)]
   [pack-project!   (-> project? path-string? path?)]))
 
@@ -79,7 +79,9 @@
         [(file-exists? src) (list (if (path? src) src (string->path src)))]
         [else '()]))
 
-(define (compile-project src #:canonical [canonical* #f] #:fhir-version [fhir-version* #f] #:snapshot? [snapshot? #f])
+;; #:texts — the text of a file as an editor holds it (by its complete path), in place of the disk
+(define (compile-project src #:canonical [canonical* #f] #:fhir-version [fhir-version* #f] #:snapshot? [snapshot? #f]
+                         #:texts [overrides (hash)])
   (define cfg (let ([f (find-config src)]) (and f (read-ig-config f))))
   (define canonical (or canonical* (and cfg (ig-config-canonical cfg))))
   (define fhir-version (or fhir-version* (and cfg (ig-config-fhir-version cfg)) "5.0.0"))
@@ -94,7 +96,8 @@
   (define mfiles (map-files src))
   ;; a leading #lang line is blanked, not removed, so line numbers stay true
   (define texts (for/hash ([f (in-list (append files mfiles))])
-                  (values (path->string f) (regexp-replace #px"^#lang[^\n]*" (file->string f) ""))))
+                  (define text (or (hash-ref overrides (path->string (simplify-path (path->complete-path f))) #f) (file->string f)))
+                  (values (path->string f) (regexp-replace #px"^#lang[^\n]*" text ""))))
   (define-values (maps map-diags) (parse-maps mfiles))
   (define structuremaps (let ([to-sm (fml-entry 'map-structuremap)]) (if to-sm (map (lambda (p) (to-sm (cdr p))) maps) '())))
   (define parse-errors '())
@@ -145,6 +148,11 @@
   (check-equal? (map (λ (d) (loc-column (diagnostic-loc d))) ds) '(3 3 3))
   (check-true (for/and ([d (in-list ds)]) (regexp-match? #rx"is not an element of Patient" (diagnostic-message d))))
   (check-equal? (length (project-artifacts p)) 2)
+  ;; an editor's unsaved text stands in for the file on disk
+  (define p* (compile-project dir #:texts (hash (path->string (simplify-path (path->complete-path (build-path dir "bad.fsh"))))
+                                                "Profile: Good\nParent: Patient\n* name 1..1 MS\n")))
+  (check-equal? (project-diagnostics p*) '())
+  (check-equal? (length (project-artifacts p*)) 1)
   (delete-directory/files dir)
   ;; a project with a map (when the fml package is installed): the StructureMap joins the artifacts,
   ;; a parse error in the map is a diagnostic positioned in it

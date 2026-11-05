@@ -21,7 +21,7 @@
          (only-in fhir/sd/snapshot generate-snapshot)
          (only-in fhir/sd/sd-index resolve-sd-raw resolve-canonical-raw sd-index-available?)
          (only-in fhir/sd/logical register-structure-definition!))
-(provide assoc-ref canonical-base capitalize code-text* current-aliases current-instance-ref current-instance-resolver current-local-canonical current-profile-sd current-profiles current-rule-diagnostics current-slice-orders emit-snapshot? external-canonical fsh-fhir-version last-url-seg resolve resolve-alias sd-url split-code strip#)
+(provide assoc-ref canonical-base capitalize code-text* current-aliases current-instance-ref current-instance-resolver current-local-canonical current-logicals current-profile-sd current-profiles current-rule-diagnostics current-slice-orders emit-snapshot? external-canonical fsh-fhir-version last-url-seg resolve resolve-alias sd-url split-code strip#)
 ;; the IG canonical URL base (SUSHI default in the golden corpus is http://example.org)
 (define canonical-base (make-parameter "http://example.org"))
 (define fsh-fhir-version (make-parameter "5.0.0"))
@@ -47,6 +47,9 @@
 (define current-slice-orders (make-parameter (lambda (_) (hash))))
 ;; current-profiles : the document's Profiles/Extensions by name/id/url -> (cons parent id)
 (define current-profiles (make-parameter (hash)))
+;; current-logicals : the document's Logical models and custom Resources by name/id/url -> canonical
+;; url (a logical type is named by its url: as a Parent, as an element's type)
+(define current-logicals (make-parameter (hash)))
 ;; ---- misc ----------------------------------------------------------------------------------
 (define (assoc-ref alist key) (cond [(assq key alist) => cdr] [else #f]))
 (define (resolve v aliases)
@@ -59,11 +62,13 @@
        [#f v])]
     ;; Canonical(Name) / Canonical(Name|version): an alias, this document's profiles, value sets and
     ;; code systems, or a definition in the packages, as its canonical url (the version kept)
-    [(struct fsh-canonical (t))
+    [(struct fsh-canonical (t0))
+     (define t (match (regexp-match #px"^\\s*Canonical\\s*\\(\\s*(.*?)\\s*\\)\\s*$" t0) [(list _ inner) inner] [#f t0]))
      (match-define (list _ n ver) (regexp-match #px"^([^|]*)(\\|.*)?$" t))
      (define r (resolve-alias (string-trim n) aliases))
      (define url (or (let ([p (hash-ref (current-profiles) r #f)])
                        (and p (string-append (canonical-base) "/StructureDefinition/" (cdr p))))
+                     (hash-ref (current-logicals) r #f)
                      ((current-local-canonical) r)
                      (external-canonical "StructureDefinition" r)
                      (external-canonical "ValueSet" r)
