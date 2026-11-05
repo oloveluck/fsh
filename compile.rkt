@@ -471,10 +471,13 @@
                            "* class contains group 0..1\n* class[group].type = http://x/cc#group\n\n"
                            "Profile: MM3\nParent: Parameters\n* parameter ^slicing.discriminator.type = #value\n* parameter ^slicing.discriminator.path = \"name\"\n* parameter ^slicing.rules = #open\n"
                            "* parameter contains Cov 1..1\n* parameter[Cov].name = \"Cov\" (exactly)\n* parameter[Cov].resource only CV\n\n"
-                           "Instance: in2\nInstanceOf: MM3\nUsage: #example\n* parameter[Cov].resource\n  * resourceType = \"Coverage\"\n  * status = #active\n  * class[group].value = \"CB135\"\n  * class[+].value = \"P7\"\n")))
+                           "Instance: in2\nInstanceOf: MM3\nUsage: #example\n* parameter[Cov].resource\n  * resourceType = \"Coverage\"\n  * status = #active\n  * class[group].value = \"CB135\"\n  * class[+]\n    * type = http://x/cc#subplan\n    * value = \"P7\"\n")))
+  ;; … and a bare `class[+]` after `class[group]` is element 0 (SUSHI's counters are per path WITH the
+  ;; slice name), so it writes over the slice's element: the value replaced, the slice's pattern coding
+  ;; ahead of the instance's own
   (define cov2 (hash-ref (car (hash-ref (caddr emb2) 'parameter)) 'resource))
-  (check-equal? (map (lambda (c) (hash-ref c 'value)) (hash-ref cov2 'class)) '("CB135" "P7"))
-  (check-equal? (hash-ref (car (hash-ref (hash-ref (car (hash-ref cov2 'class)) 'type) 'coding)) 'code) "group")
+  (check-equal? (map (lambda (c) (hash-ref c 'value)) (hash-ref cov2 'class)) '("P7"))
+  (check-equal? (map (lambda (c) (hash-ref c 'code)) (hash-ref (hash-ref (car (hash-ref cov2 'class)) 'type) 'coding)) '("group" "subplan"))
   ;; a document: an alias resolves, a profile becomes a differential, an instance a resource
   (define out (fsh->fhir (string-append
                           "Alias: $sct = http://snomed.info/sct\n\n"

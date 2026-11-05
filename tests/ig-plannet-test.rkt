@@ -22,8 +22,8 @@
 (define uscore311 (fetched-package "hl7.fhir.us.core" "3.1.1" "a998fa41cb5a0618d22ed8671c71ca9954b1ac8c"))
 (define r4-core (spec-package-path "hl7.fhir.r4.core.tgz" #:optional? #t))
 ;; what SUSHI loads implicitly for an R4 project: the extensions package (optional here — absent, a
-;; name only it defines stays unresolved)
-(define extensions (fetched-package "hl7.fhir.uv.extensions.r4" "5.2.0"))
+;; name only it defines stays unresolved; Plan-Net's `OrgPeriod` is one)
+(define extensions (fetched-package "hl7.fhir.uv.extensions.r4" "5.2.0" "2c7e21436dfa35ba7209696d63247538b851968a"))
 (define cfg (read-ig-config (build-path plannet "sushi-config.yaml")))
 
 (check-equal? (ig-config-dependencies cfg)
@@ -56,4 +56,4 @@
    (check-true (>= (ig-fsh-report-pairs r) 109))
    (check-true (>= (ig-fsh-report-exact r) 78) "fewer exact resources than the floor")
    (check-true (>= (ig-fsh-report-contained r) 94) "fewer fully-matching resources than the floor")
-   (check-true (>= (ig-fsh-report-elements-ok r) 320) "fewer matching differential elements than the floor")])
+   (check-true (>= (ig-fsh-report-elements-ok r) 321) "fewer matching differential elements than the floor")])

@@ -226,8 +226,7 @@
       (hash-set! allocated key #t)
       (define ordered (hash-ref prealloc nk '()))
       (for ([n (in-list ordered)] [i (in-naturals)])
-        (hash-set! slices (cons key n) i) (hash-set! owner (cons key i) n) (hash-set! slots (list key n 0) i) (hash-set! high key i))
-      (when (pair? ordered) (hash-set! counters key (sub1 (length ordered))))))
+        (hash-set! slices (cons key n) i) (hash-set! owner (cons key i) n) (hash-set! slots (list key n 0) i) (hash-set! high key i))))
   (for/list ([steps (in-list paths)])
     (let loop ([steps steps] [prefix ""] [ctx '()] [acc '()])
       (cond
@@ -274,7 +273,9 @@
                            (hash-set! slots (list key (fsh-bracket-value b) k) n)
                            (hash-set! owner (cons key n) (fsh-bracket-value b))
                            n)))
-                   (hash-set! counters key n)
+                   ;; a bare `[+]`/`[=]` on the same array does NOT continue from the slice: SUSHI keeps
+                   ;; one counter per path WITH its slice name, so `class[+]` after `class[group]` is
+                   ;; element 0 (mCODE's bundle: "the first unnamed slice entry must be numbered")
                    (loop rest (cons (fsh-bracket 'index n) acc))]
                   [else (loop (cdr bs) (cons b acc))])])))
          (for ([b (in-list brackets)] #:when (eq? (fsh-bracket-kind b) 'index))
@@ -467,7 +468,7 @@
                                 named-url)))
        (define en (list-ref lst (cdr pos)))
        (define pinned (let ([v (and slice-el (pinned-value slice-el))]) (and (hash? v) v)))
-       (define entry (merge-missing (merge-missing (if (and ext-url (not (hash-has-key? en 'url))) (hash-set en 'url ext-url) en)
+       (define entry (merge-missing (merge-pattern (if (and ext-url (not (hash-has-key? en 'url))) (hash-set en 'url ext-url) en)
                                                    (or pinned (hasheq)))
                                     (if slice-el (required-children elements (hash-ref slice-el 'id slice-id)) (hasheq))))
        (hash-set js field (for/list ([x (in-list lst)] [i (in-naturals)]) (if (= i (cdr pos)) entry x)))])))
@@ -590,6 +591,17 @@
       (for/fold ([a a]) ([(k v) (in-hash b)])
         (hash-set a k (if (hash-has-key? a k) (merge-missing (hash-ref a k) v) v)))
       a))
+;; merge-pattern : jsexpr jsexpr -> jsexpr   `a` holding the pattern `b`: the keys only `b` has
+;; (recursively), and a list `b` has entries of that no entry of `a`'s list contains go FIRST — a
+;; pattern means "contains", and SUSHI puts the slice's codings ahead of the ones the instance wrote
+;; (HRex's member-match: `class[+].type = #subplan` on the `group` slice's element -> [group, subplan])
+(define (merge-pattern a b)
+  (cond [(and (hash? a) (hash? b))
+         (for/fold ([a a]) ([(k v) (in-hash b)])
+           (hash-set a k (if (hash-has-key? a k) (merge-pattern (hash-ref a k) v) v)))]
+        [(and (list? a) (list? b))
+         (append (filter (lambda (x) (not (ormap (lambda (y) (json-subset? x y)) a))) b) a)]
+        [else a]))
 ;; repeats? : elements id -> boolean   the element at `id` repeats: its max, else the base model's
 (define (repeats? elements id)
   (define mx (let ([el (hash-ref elements (regexp-replace* #rx":[^.]+" id "") #f)]) (and el (hash-ref el 'max #f))))
@@ -661,6 +673,14 @@
   (define filled (fill-nested-extension-urls js (list (cons '(("extension" . 0) ("extension" . 1)) "text"))))
   (check-equal? (hash-ref (walk filled '(("extension" . 0) ("extension" . 1))) 'url) "text")
   (check-equal? (coerce #t (vector 'prim "boolean")) #t)
+  ;; merge-pattern: a pattern's codings the element lacks go first; present ones are not repeated
+  (define group (hasheq 'code "group" 'system "http://x"))
+  (check-equal? (merge-pattern (hasheq 'type (hasheq 'coding (list (hasheq 'code "subplan" 'system "http://x"))) 'value "P7")
+                               (hasheq 'type (hasheq 'coding (list group))))
+                (hasheq 'type (hasheq 'coding (list group (hasheq 'code "subplan" 'system "http://x"))) 'value "P7"))
+  (check-equal? (merge-pattern (hasheq 'type (hasheq 'coding (list (hasheq 'code "group" 'system "http://x" 'display "G"))))
+                               (hasheq 'type (hasheq 'coding (list group)) 'value "x"))
+                (hasheq 'type (hasheq 'coding (list (hasheq 'code "group" 'system "http://x" 'display "G"))) 'value "x"))
   ;; instance-base: a base type stays, a local profile goes to its parent, chains end at the base
   (check-equal? (instance-base "Patient" (hash)) "Patient")
   (check-equal? (instance-base "MyPatient" (hash "MyPatient" (cons "Patient" "my-patient"))) "Patient")
