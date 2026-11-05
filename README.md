@@ -1,6 +1,6 @@
 # fsh — FHIR Shorthand for Racket
 
-A from-scratch FHIR Shorthand compiler (the SUSHI authoring language) and its reverse (GoFSH-style FHIR → FSH): profiles, extensions, logical models, instances, value sets, code systems, rule sets, mappings and slicing, for R4 or R5. Measured on real IGs: the International Patient Summary 2.0.1, mCODE 4.0.0 and Da Vinci Plan-Net 1.2.0 compile from their own FSH sources with no errors, and their published packages come out resource for resource (IPS 84 of 114 identical, 106 with all published content; mCODE 225/328 of 349; Plan-Net 78/94 of 109); `CLAUDE.md` lists the known gaps.
+A from-scratch FHIR Shorthand compiler (the SUSHI authoring language) and its reverse (GoFSH-style FHIR → FSH): profiles, extensions, logical models, instances, value sets, code systems, rule sets, mappings and slicing, for R4 or R5. Measured on real IGs: the International Patient Summary 2.0.1, mCODE 4.0.0 and Da Vinci Plan-Net 1.2.0 compile from their own FSH sources with no errors, and their published packages come out resource for resource (IPS 84 of 114 identical, 106 with all published content; mCODE 225/329 of 349; Plan-Net 78/94 of 109); `CLAUDE.md` lists the known gaps.
 
 Part of **fhir — FHIR as a family of Racket `#lang`s** ([oloveluck/fhir](https://github.com/oloveluck/fhir)).
 Collection `fsh`. `#lang fsh` — a `.fsh` file is a module; `racket file` prints the compiled JSON.

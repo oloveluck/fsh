@@ -158,8 +158,8 @@ type, so an @tt{Instance:} of it builds like any resource. The worked project is
 @section{Limits}
 
 Measured against the IGs' published packages: IPS 2.0.1 pairs 114 resources, 84 identical, 106 with
-all published content, 435 of 438 differential elements; mCODE 4.0.0 pairs 349, 225 identical, 328
-complete, 471 of 473 differential elements; Plan-Net 1.2.0 (its package and US Core 3.1.1 fetched from
+all published content, 435 of 438 differential elements; mCODE 4.0.0 pairs 349, 225 identical, 329
+complete, 472 of 473 differential elements; Plan-Net 1.2.0 (its package and US Core 3.1.1 fetched from
 the registry when the tests run) pairs 109, 78 identical, 94 complete, 320 of 321 differential
 elements. The tests print every remaining difference, classified, largest first. The differences:
 

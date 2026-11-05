@@ -243,8 +243,9 @@
   (let ([flags (elt-flags elt)])
     (cond
       [skip-card? (when (pair? flags) (add! (rule-flag rel '() flags)))]
+      ;; only what the element states: `1..` when it has no max (a round trip must not invent "*")
       [(or (hash-has-key? elt 'min) (hash-has-key? elt 'max))
-       (add! (rule-card rel (format "~a..~a" (hash-ref elt 'min 0) (hash-ref elt 'max "*")) flags))]
+       (add! (rule-card rel (format "~a..~a" (hash-ref elt 'min "") (hash-ref elt 'max "")) flags))]
       [(pair? flags) (add! (rule-flag rel '() flags))]))
   (let ([b (hash-ref elt 'binding #f)])
     (when (and b (hash-ref b 'valueSet #f))

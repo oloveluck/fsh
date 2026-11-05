@@ -45,5 +45,5 @@
    (check-equal? (map car (ig-fsh-report-published-unmatched r)) '("ImplementationGuide"))
    (check-true (>= (ig-fsh-report-pairs r) 349))
    (check-true (>= (ig-fsh-report-exact r) 225) "fewer exact resources than the floor")
-   (check-true (>= (ig-fsh-report-contained r) 328) "fewer fully-matching resources than the floor")
-   (check-true (>= (ig-fsh-report-elements-ok r) 471) "fewer matching differential elements than the floor")])
+   (check-true (>= (ig-fsh-report-contained r) 329) "fewer fully-matching resources than the floor")
+   (check-true (>= (ig-fsh-report-elements-ok r) 472) "fewer matching differential elements than the floor")])

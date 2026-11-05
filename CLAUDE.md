@@ -78,7 +78,7 @@ published `hl7.fhir.us.mcode-4.0.0.tgz`. mCODE builds on US Core 6.1.0 and Genom
 each dependency in fhir-spec (`<id>-<version>.tgz`); the packages go ahead of core in
 `current-sd-packages`. `raco fsh <dir>` does the same when it finds a sushi-config.yaml (next to the
 sources or up to two levels up); flags override it, missing dependencies are reported.
-Current: **0 compile errors; 349 paired; 225 exact; 328 with all published content; 471/473 differential
+Current: **0 compile errors; 349 paired; 225 exact; 329 with all published content; 472/473 differential
 elements** — ratcheted. It drove: profiles of DEPENDENCY packages for Parent and InstanceOf (`external-sd`:
 base type, canonical, `meta.profile`), aliases on InstanceOf and along Parent chains; SUSHI's required
 values (`assign-required`: an element the InstanceOf profile requires with fixed[x]/pattern[x] is
