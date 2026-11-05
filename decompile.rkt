@@ -251,11 +251,33 @@
     (append (let ([p (hash-ref js 'baseDefinition #f)]) (if p (list (cons 'parent (parent-name p))) '()))
             (id-meta js)
             (sd-meta js)))
-  (define elements (hash-ref* js 'differential 'element))
-  ;; the root element's rules are written at `.` (a bare caret would be the definition's own)
-  (define (rel-of elt) (let ([r (id->fsh-rel base-type (hash-ref elt 'id (hash-ref elt 'path)))]) (if (equal? r "") "." r)))
+  (define elements0 (hash-ref* js 'differential 'element))
+  ;; SUSHI's derived elements are not written: a slice child copied into every slice of the sliced
+  ;; element (`section:X.extension:note` repeating `section.extension:note` — the compiler copies
+  ;; them again) and a type slice's `[x]` parent slicing (made by the choice path)
+  (define by-id (for/hash ([e (in-list elements0)] #:when (hash-ref e 'id #f)) (values (hash-ref e 'id) e)))
+  (define (sans e) (hash-remove (hash-remove e 'id) 'path))
+  (define (derived-copy? e)
+    (define id (hash-ref e 'id ""))
+    (define m (regexp-match #px"^([^:]+):[^.]+([.].*:.*)$" id))
+    (and m (let ([u (hash-ref by-id (string-append (cadr m) (caddr m)) #f)]) (and u (equal? (sans u) (sans e))))))
+  (define (type-slice? e)
+    (define id (hash-ref e 'id ""))
+    (define m (regexp-match #px"^(.*[.]|)([A-Za-z]+)\\[x\\]:([A-Za-z]+)$" id))
+    (and m (hash-ref e 'sliceName #f) (string-prefix? (cadddr m) (caddr m))))
+  (define type-sliced-ids
+    (remove-duplicates (for/list ([e (in-list elements0)] #:when (type-slice? e)) (regexp-replace #px":[^.:]+$" (hash-ref e 'id) ""))))
+  (define elements
+    (for/list ([e (in-list elements0)] #:unless (derived-copy? e))
+      (if (member (hash-ref e 'id #f) type-sliced-ids) (hash-remove e 'slicing) e)))
+  ;; the root element's rules are written at `.` (a bare caret would be the definition's own); a
+  ;; type slice (`performed[x]:performedDateTime`) is the choice path `performedDateTime`
+  (define (rel-of elt)
+    (define id (hash-ref elt 'id (hash-ref elt 'path)))
+    (define r (id->fsh-rel base-type (if (type-slice? elt) (regexp-replace #px"[A-Za-z]+\\[x\\]:([A-Za-z]+)$" id "\\1") id)))
+    (if (equal? r "") "." r))
   ;; slices: elements with a sliceName define a slice; group them under their base element id
-  (define slice-defs (filter (lambda (e) (hash-ref e 'sliceName #f)) elements))
+  (define slice-defs (filter (lambda (e) (and (hash-ref e 'sliceName #f) (not (type-slice? e)))) elements))
   ;; the base element a slice belongs to: a reslice (id …:Lab/Chem) bases on …:Lab; else drop :slice
   (define (base-id-of e)
     (define id (hash-ref e 'id))
@@ -289,6 +311,9 @@
          [(and (hash-ref elt 'sliceName #f) base?) (append (element->rules elt (rel-of elt) #t) (list (contains-for id)))]
          ;; a plain slice: its card and flags ride in the `contains`; what else it says (a pattern,
          ;; a binding, a short, its constraints) is written at `path[slice]`
+         ;; a type slice is written at its choice path with its own card (the compiler makes the
+         ;; `[x]` element's type slicing from it)
+         [(type-slice? elt) (element->rules elt (rel-of elt) #f)]
          [(hash-ref elt 'sliceName #f)
           (filter (lambda (r) (not (or (rule-flag? r) (and (extension-profile-of elt) (rule-only? r)))))
                   (element->rules elt (rel-of elt) #t))]
