@@ -443,6 +443,28 @@
                                  "Instance: inner\nInstanceOf: Patient\nUsage: #inline\n* gender = #female\n\n"
                                  "Instance: t1\nInstanceOf: Task\nUsage: #example\n* status = #requested\n* intent = #order\n* contained[0] = inner\n* for = Reference(inner)\n"))))
   (check-equal? (hash-ref (hash-ref task 'for) 'reference) "#inner")
+  ;; SUSHI's required values through a choice's type slice: the profile pins valueIdentifier.type on
+  ;; a required slice, the instance writes only the value
+  (define tslice (fsh->fhir (string-append
+                             "Profile: MM\nParent: Parameters\n* parameter ^slicing.discriminator.type = #value\n* parameter ^slicing.discriminator.path = \"name\"\n* parameter ^slicing.rules = #open\n"
+                             "* parameter contains MemberIdentifier 1..1\n* parameter[MemberIdentifier].name = \"MemberIdentifier\" (exactly)\n"
+                             "* parameter[MemberIdentifier].valueIdentifier 1..\n* parameter[MemberIdentifier].valueIdentifier.type 1..\n* parameter[MemberIdentifier].valueIdentifier.type = http://x/cs#UMB\n\n"
+                             "Instance: out\nInstanceOf: MM\nUsage: #example\n* parameter[MemberIdentifier].valueIdentifier.value = \"55678\"\n")))
+  (define out-param (car (hash-ref (cadr tslice) 'parameter)))
+  (check-equal? (hash-ref out-param 'name) "MemberIdentifier")
+  (check-equal? (hash-ref (car (hash-ref (hash-ref (hash-ref out-param 'valueIdentifier) 'type) 'coding)) 'code) "UMB")
+  (check-equal? (hash-ref (hash-ref out-param 'valueIdentifier) 'value) "55678")
+  ;; and through an embedded resource the slice constrains to a profile: the profile's required
+  ;; slice (category disclosure) is filled into the Consent the instance embeds
+  (define embedded (fsh->fhir (string-append
+                               "Profile: C\nParent: Consent\n* category ^slicing.discriminator.type = #value\n* category ^slicing.discriminator.path = \"$this\"\n* category ^slicing.rules = #open\n"
+                               "* category contains disclosure 1..1\n* category[disclosure] = http://x/act#IDSCL\n\n"
+                               "Profile: MM2\nParent: Parameters\n* parameter ^slicing.discriminator.type = #value\n* parameter ^slicing.discriminator.path = \"name\"\n* parameter ^slicing.rules = #open\n"
+                               "* parameter contains Consent 1..1\n* parameter[Consent].name = \"Consent\" (exactly)\n* parameter[Consent].resource 1..\n* parameter[Consent].resource only C\n\n"
+                               "Instance: in\nInstanceOf: MM2\nUsage: #example\n* parameter[Consent].resource\n  * resourceType = \"Consent\"\n  * status = #active\n  * scope = http://x/scope#patient-privacy\n")))
+  (define consent (hash-ref (car (hash-ref (caddr embedded) 'parameter)) 'resource))
+  (check-equal? (hash-ref consent 'status) "active")
+  (check-equal? (hash-ref (car (hash-ref (car (hash-ref consent 'category)) 'coding)) 'code) "IDSCL")
   ;; a document: an alias resolves, a profile becomes a differential, an instance a resource
   (define out (fsh->fhir (string-append
                           "Alias: $sct = http://snomed.info/sct\n\n"

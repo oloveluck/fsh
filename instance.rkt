@@ -402,7 +402,32 @@
 ;; recursively); a required slice gets its entry appended unless an entry already carries it; a named
 ;; slice the instance uses is completed the same way (and gets its own pattern even when optional).
 (define (assign-required js elements [positions (hash)])
-  (assign-required* (fill-slice-children js elements positions) elements))
+  (fill-embedded-profiles (assign-required* (fill-slice-children js elements positions) elements) elements positions))
+;; fill-embedded-profiles : jsexpr elements positions -> jsexpr   a Resource-typed element of a used
+;; slice (`parameter[Consent].resource only HRexConsent`) holds an embedded resource: it gets the
+;; required values of the profile the slice names, as SUSHI fills it (the profile's own, by its id;
+;; a dependency's, by its url)
+(define (fill-embedded-profiles js elements positions)
+  (define type (hash-ref js 'resourceType))
+  (for*/fold ([js js]) ([(pos slice) (in-hash positions)]
+                        [(cid el) (in-hash elements)]
+                        [m (in-value (regexp-match (pregexp (string-append "^" (regexp-quote (string-append type "." (car pos) ":" slice)) "[.]([A-Za-z]+)$")) cid))]
+                        #:when m
+                        [url (in-value (let ([pr (extension-profile el)]) (and (pair? pr) (car pr))))] #:when url)
+    (define field (string->symbol (car pos)))
+    (define child (string->symbol (cadr m)))
+    (define lst (hash-ref js field #f))
+    (define entry (and (list? lst) (< (cdr pos) (length lst)) (list-ref lst (cdr pos))))
+    (define embedded (and (hash? entry) (hash-ref entry child #f)))
+    (cond
+      [(not (and (hash? embedded) (string? (hash-ref embedded 'resourceType #f)))) js]
+      [else
+       (define key (let ([p (hash-ref (current-profiles) url #f)]) (if p (cdr p) url)))
+       (define pes (profile-elements key))
+       (if (hash-empty? pes)
+           js
+           (hash-set js field (for/list ([x (in-list lst)] [i (in-naturals)])
+                                (if (= i (cdr pos)) (hash-set x child (assign-required* embedded pes)) x))))])))
 ;; fill-slice-children : jsexpr elements positions -> jsexpr
 ;; a named slice the instance used gets the slice's pattern and its required children's values
 (define (fill-slice-children js elements positions)
@@ -523,20 +548,28 @@
         [else (merge-missing (or own (hasheq)) kids)]))
 ;; required-children : elements id -> (hash field -> jsexpr)   the direct children of `id` that are
 ;; required and have a required-entry; a child's required named slices are its entries (in place of
-;; the unsliced element's), a list when the child repeats
+;; the unsliced element's), a list when the child repeats; a choice's required TYPE slice
+;; (`value[x]:valueIdentifier`, min 1 with a pinned child) is the entry under that type's own key
 (define (required-children elements id)
   (define prefix (string-append id "."))
   (define groups                                     ; field -> (listof (cons slice|#f value))
     (for*/fold ([g (hash)]) ([(cid el) (in-hash elements)]
                              [rest (in-value (and (string-prefix? cid prefix) (substring cid (string-length prefix))))]
-                             [m (in-value (and rest (regexp-match #px"^([A-Za-z]+)(?::([^.]+))?$" rest)))]
-                             #:when (and m (required-in? elements cid) (not (member (cadr m) '("extension" "modifierExtension" "id"))))
+                             [m (in-value (and rest (regexp-match #px"^([A-Za-z]+(?:\\[x\\])?)(?::([^.]+))?$" rest)))]
+                             #:when (and m (required-in? elements cid) (not (member (cadr m) '("extension" "modifierExtension" "id")))
+                                         (or (not (regexp-match? #rx"\\[x\\]$" (cadr m))) (caddr m)))
                              [v (in-value (required-entry elements cid))] #:when v)
       (hash-update g (cadr m) (lambda (l) (cons (cons (caddr m) v) l)) '())))
-  (for/hasheq ([(name vs) (in-hash groups)])
-    (define sliced (map cdr (sort (filter car vs) string<? #:key car)))
-    (define vals (if (pair? sliced) sliced (list (cdr (assf not vs)))))
-    (values (string->symbol name) (if (repeats? elements (string-append id "." name)) vals (car vals)))))
+  (for*/hasheq ([(name vs) (in-hash groups)]
+                [kv (in-list
+                     (cond
+                       [(regexp-match? #rx"\\[x\\]$" name)         ; one entry per type slice, under its key
+                        (for/list ([sv (in-list vs)]) (cons (string->symbol (car sv)) (cdr sv)))]
+                       [else
+                        (define sliced (map cdr (sort (filter car vs) string<? #:key car)))
+                        (define vals (if (pair? sliced) sliced (list (cdr (assf not vs)))))
+                        (list (cons (string->symbol name) (if (repeats? elements (string-append id "." name)) vals (car vals))))]))])
+    (values (car kv) (cdr kv))))
 (define (assf f l) (for/first ([p (in-list l)] #:when (f (car p))) p))
 ;; merge-missing : jsexpr jsexpr -> jsexpr   `a` with the keys only `b` has (objects, recursively)
 (define (merge-missing a b)
