@@ -35,6 +35,6 @@
    (check-equal? (sort (map cdr (ig-fsh-report-ours-unmatched r)) string<?) '("Consumer" "Creator" "Server")) ; ActorDefinition
    (check-equal? (map car (ig-fsh-report-published-unmatched r)) '("Basic" "Basic" "Basic" "ImplementationGuide"))
    (check-true (>= (ig-fsh-report-pairs r) 114))
-   (check-true (>= (ig-fsh-report-exact r) 84) "fewer exact resources than the floor")
-   (check-true (>= (ig-fsh-report-contained r) 106) "fewer fully-matching resources than the floor")
-   (check-true (>= (ig-fsh-report-elements-ok r) 435) "fewer matching differential elements than the floor")])
+   (check-true (>= (ig-fsh-report-exact r) 85) "fewer exact resources than the floor")
+   (check-true (>= (ig-fsh-report-contained r) 108) "fewer fully-matching resources than the floor")
+   (check-true (>= (ig-fsh-report-elements-ok r) 437) "fewer matching differential elements than the floor")])

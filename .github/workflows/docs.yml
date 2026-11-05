@@ -39,7 +39,7 @@ jobs:
             "https://github.com/oloveluck/fml.git" \
             "https://github.com/oloveluck/fhir.git?path=fhir-server"
       - name: Test projects, the checker and the planted-mistake corpus
-        run: raco test support.rkt support/symbols.rkt support/complete.rkt compile.rkt print.rkt decompile.rkt sd.rkt context.rkt instance.rkt project.rkt check.rkt caret.rkt parser/parse.rkt tests/golden-test.rkt tests/roundtrip-test.rkt tests/features-test.rkt tests/check-r4-test.rkt tests/ig-ips-test.rkt tests/ig-mcode-test.rkt tests/ig-plannet-test.rkt tests/ig-hrex-test.rkt tests/pack-test.rkt
+        run: raco test support.rkt support/symbols.rkt support/complete.rkt compile.rkt print.rkt decompile.rkt sd.rkt context.rkt instance.rkt project.rkt check.rkt caret.rkt parser/parse.rkt tests/golden-test.rkt tests/roundtrip-test.rkt tests/features-test.rkt tests/check-r4-test.rkt tests/ig-ips-test.rkt tests/ig-mcode-test.rkt tests/ig-plannet-test.rkt tests/ig-hrex-test.rkt tests/gofsh-ips-test.rkt tests/pack-test.rkt
       - name: Build the documentation
         run: |
           raco scribble +m --html --dest site --dest-name index.html --redirect-main https://docs.racket-lang.org/ scribblings/fsh.scrbl

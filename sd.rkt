@@ -236,19 +236,24 @@
 ;; binding / extensions: the caret EDITS the inherited value (SUSHI starts from the parent's element),
 ;; so the differential carries it whole — IPS's ImagingStudy keeps the base's display-hint ahead of
 ;; its obligations, and its procedureCode binding keeps the base's strength and value set (without
-;; the core package's bindingName extension, which SUSHI does not carry)
+;; the core package's bindingName and explicit-type-name annotations, which SUSHI does not carry:
+;; IPS's Composition.section has its obligations alone)
 (define (seed-caret-target h cp pe)
   (define key (cond [(regexp-match? #px"^\\^?binding([.\\[]|$)" cp) 'binding]
                     [(regexp-match? #px"^\\^?extension([.\\[]|$)" cp) 'extension]
                     [else #f]))
   (define inherited (and key pe (hash? pe) (hash-ref pe key #f)))
+  (define (without-core-hints exts)                       ; the core package's own annotations SUSHI drops
+    (filter (lambda (e) (not (member (hash-ref e 'url #f) '("http://hl7.org/fhir/StructureDefinition/elementdefinition-bindingName"
+                                                            "http://hl7.org/fhir/StructureDefinition/structuredefinition-explicit-type-name"))))
+            (if (list? exts) exts '())))
   (cond
     [(or (not inherited) (hash-has-key? h key)) h]
     [(eq? key 'binding)
-     (define exts (filter (lambda (e) (not (equal? (hash-ref e 'url #f) "http://hl7.org/fhir/StructureDefinition/elementdefinition-bindingName")))
-                          (let ([x (hash-ref inherited 'extension '())]) (if (list? x) x '()))))
+     (define exts (without-core-hints (hash-ref inherited 'extension '())))
      (hash-set h 'binding (if (null? exts) (hash-remove inherited 'extension) (hash-set inherited 'extension exts)))]
-    [else (hash-set h key inherited)]))
+    [else (define exts (without-core-hints inherited))
+          (if (null? exts) h (hash-set h key exts))]))
 (define (fold-sd-rules base-type rules invariants self-url #:parent-types [parent-types (lambda (_) '())]
                        #:parent-element [parent-element (lambda (_) #f)])
   (define (constraint-of key)

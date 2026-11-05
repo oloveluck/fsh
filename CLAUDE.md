@@ -37,8 +37,8 @@ The International Patient Summary IG's own FSH sources (`tests/vendor/ips-2.0.1`
 2.0.1, 123 files / 274 entities) are compiled for R4 and compared with the PUBLISHED package
 (fhir-spec's `hl7.fhir.uv.ips.tgz` — SUSHI + IG Publisher output for the same sources), paired by
 (resourceType, id) after normalising publisher-only content (narrative, snapshots, dates, config
-metadata, version pins). Current: **0 compile errors; 114 resources paired; 84 exact; 106 with all
-published content; 435/438 differential elements** — ratcheted. This is the honest conformance
+metadata, version pins). Current: **0 compile errors; 114 resources paired; 85 exact; 108 with all
+published content; 437/438 differential elements** — ratcheted. This is the honest conformance
 number; the 22 golden pairs below are hand-authored and far easier.
 It drove these fixes: STAR lexing after trailing whitespace / blank lines; `40` lexed as TIME;
 keyword names in paths (`system`); triple-quoted strings (trim + dedent); unknown string escapes
@@ -78,7 +78,7 @@ published `hl7.fhir.us.mcode-4.0.0.tgz`. mCODE builds on US Core 6.1.0 and Genom
 each dependency in fhir-spec (`<id>-<version>.tgz`); the packages go ahead of core in
 `current-sd-packages`. `raco fsh <dir>` does the same when it finds a sushi-config.yaml (next to the
 sources or up to two levels up); flags override it, missing dependencies are reported.
-Current: **0 compile errors; 349 paired; 225 exact; 329 with all published content; 472/473 differential
+Current: **0 compile errors; 349 paired; 226 exact; 330 with all published content; 472/473 differential
 elements** — ratcheted. It drove: profiles of DEPENDENCY packages for Parent and InstanceOf (`external-sd`:
 base type, canonical, `meta.profile`), aliases on InstanceOf and along Parent chains; SUSHI's required
 values (`assign-required`: an element the InstanceOf profile requires with fixed[x]/pattern[x] is
@@ -115,7 +115,7 @@ pin it), and returns #f offline (the test skips with a note; CI has the network)
 on `hl7.fhir.us.core 3.1.1` and nothing else — which the fetcher follows (`stub-dependency`) to the real
 package; the test pins the real one. US Core 7.0.0, 6.1.0 and HRex are declared too but no rule reaches
 them. Current: **0 compile errors; 109 paired (the CapabilityStatement, SearchParameters and IG are not
-FSH-authored); 78 exact, 94 with all published content; 320/321 differential elements** — ratcheted.
+FSH-authored); 78 exact, 94 with all published content; 321/321 differential elements** — ratcheted.
 It drove: a code's system part as a CodeSystem NAME (`LanguageProficiencyCS#30`, this document's or a
 dependency's — `resolve-system`); `[slice][k]` as the k-th slot of a slice (base+k while no other slice
 holds it, else the next unused position — `daysOfWeek[5]` written after `allDay` lands after it);
@@ -126,8 +126,12 @@ mapping declarations (SUSHI), not the Parent's; a value assigned to a slice's va
 discriminator element makes it required (`identifier[displayName].use = #usual` -> min 1,
 `require-discriminator`; mCODE's RadiotherapyVolume). A nested extension's sub-slices take the required ones first too, in the
 Extension's own declaration order (`declared` follows the context's slices into their Extensions;
-HansSoloRole1: `code`, `status`, then the optional `issuer`). Remaining: `OrgPeriod named org-period` resolving to core's `organization-period` (whose R4 name is `period` — SUSHI
-finds it through the extensions package it loads implicitly).
+HansSoloRole1: `code`, `status`, then the optional `issuer`). `OrgPeriod named org-period` resolves to
+`organization-period` through the extensions package SUSHI loads implicitly: `ig-config.rkt`'s
+`implicit-packages` puts the newest `hl7.fhir.uv.extensions.<r4|r5>` and `hl7.terminology.<r4|r5>`
+found in `current-package-directories` or fhir-spec into every project's SD context (project.rkt),
+and the Plan-Net and HRex tests fetch extensions 5.2.0 (pinned). Remaining: 31 resources differ in
+details the CI output names (instance details, a few `min`s).
 
 ## Real-IG corpus 4: Da Vinci HRex 1.1.0 (`tests/ig-hrex-test.rkt`)
 Health Record Exchange's own FSH (`tests/vendor/hrex-1.1.0`, HL7/davinci-ehrx at tag 1.1.0, 46 files /
@@ -136,7 +140,7 @@ versions (7.0.0, and 6.1.0 / 3.1.1 as `.v610`/`.v311` aliases; 6.1.0 from fhir-s
 fetched) and pins Parents and Reference targets to one (`Parent: USCoreProvenance|7.0.0`,
 `Reference(USCorePatientProfile|7.0.0)`); the packages go into the SD context in the declared order.
 Current: **0 compile errors; 46 paired (a Basic, a Binary, the IG and one JSON-kept SD are not
-FSH-authored); 20 exact, 40 with all published content; 138/138 differential elements** — ratcheted.
+FSH-authored); 25 exact, 45 with all published content; 138/138 differential elements** — ratcheted.
 It drove: a Reference target by package NAME with its `|version` kept on the canonical
 (`target-urls`); a parameterized RuleSet inserting another parameterized RuleSet (the nested
 reference re-texts with its paren — HRex's concept maps, 500 `insert map…` rows); a failing
@@ -149,9 +153,16 @@ aliased urls (`^extension[$compliesWithProfile]`); `1..` / `..3` keep the other 
 min 0 / max 1 before); an assigned discriminator gets min 1 only where the base is optional
 (Parameters.parameter.name is 1..1 — SUSHI writes what changes); `^binding.extension…` on an element
 the Parent binds starts from the inherited binding; `Reference(X)` to a contained instance is `#id`;
-the harness `#:dump`s named resources' (id min max). Remaining: the required pattern of an embedded
-resource's profile (`resource only HRexConsent` → Consent.category) and of a type slice
-(`valueIdentifier.type = UMB`) filled into instances; one example's repeated `class` blocks.
+the harness `#:dump`s named resources' (id min max; the whole normalised JSON of other resources).
+Required values reach further, as SUSHI's do: a type slice's pattern (`valueIdentifier.type = UMB`
+fills `valueIdentifier.type`), an embedded resource's profile (`parameter[Consent].resource only
+HRexConsent` fills Consent.category) and the slices an embedded resource USES
+(`fill-embedded-profiles`, positions from `embedded-slice-positions`). Two SUSHI index rules:
+a bare `[+]`/`[=]` on an array has its OWN counter, independent of the named slices (`class[+]`
+after `class[group]` is element 0 — mCODE's bundle says "the first unnamed slice entry must be
+numbered"), and a slice's pattern MERGES with what the instance wrote, the pattern's codings first
+(`merge-pattern`: member-match-in-provider's `[group, subplan]`). Remaining: one resource (named in
+the CI output).
 
 ## Projects and packages (`fsh/project.rkt`, `fsh/pack.rkt`, `raco fsh <dir> --pack [out.tgz]`)
 `compile-project` finds the files and sushi-config.yaml, parses each file (diagnostics name the file),
@@ -226,9 +237,25 @@ a coded quantity unit → system+code+unit; `system|version#code`; Instance `Tit
 fill title/description. The harness drops what the IG Publisher adds and SUSHI does not: a bare
 `{id, path}` differential element (a root on some profiles — by processing order, see
 PublisherBase.generateSnapshot), nested resources' narratives, narrative whitespace/quotes/`<x/>`.
-Remaining (named in the CI output): IPS's ImagingStudy caret-extension order (display-hint among
-obligation `[+]` entries), mCODE examples whose published JSON differs from the tagged FSH (eve-
-anyperson), one `.use` min, a `{Base}` UCUM unit.
+A caret into an element's `binding` or `extension` EDITS what the Parent's element carries — a
+base type's snapshot element included (`profile-elements` serves base types; `seed-caret-target`):
+IPS's ImagingStudy keeps the base's display-hint ahead of its `^extension[obligation][+]` entries
+and its procedureCode binding keeps the base's strength and value set, without the core package's
+bindingName and explicit-type-name annotations (SUSHI drops those: Composition.section has its
+obligations alone). A Logical whose Parent is a logical model of the document carries the parent's
+type-characteristics before its own (IPSSectionsLM). The harness drops the Publisher's OID from an
+R4 ConceptMap too (a single Identifier there).
+Remaining (named in the CI output): mCODE examples whose published JSON differs from the tagged FSH
+(eve-anyperson), a `{Base}` UCUM unit, a must-support type extension; IPS Bundle narratives and one
+numeric-looking entry.
+
+## The decompiler's oracle (`tests/gofsh-ips-test.rkt`)
+The GoFSH direction measured on a real package: every resource of the PUBLISHED IPS 2.0.1 package
+(32 StructureDefinitions, 36 ValueSets, the CapabilityStatement, the examples) is decompiled with
+`fhir->fsh`, written as FSH (one file per resource type), compiled back, and held to the package by
+the same harness (`check-fsh-ig`: pairs, exact, complete, differential elements, difference classes).
+A conformance resource decompiles as a `#definition` instance (`definition-types`). Floors ratchet
+from the first CI run's numbers.
 
 ## Editor and agent support (`fsh/support.rkt`)
 What FSH offers the family's hubs through `fhir/lang/support` (the contract in the foundation): the

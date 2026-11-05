@@ -57,10 +57,17 @@
     [else                    (decompile-instance js)]))
 
 ;; ---- Instance — per-leaf assignment walk (lossless) ----------------------------------------
+;; a conformance resource (one the IG Publisher keeps in package/, not package/example/) is a
+;; `#definition` instance; GoFSH does the same
+(define definition-types
+  '("CapabilityStatement" "OperationDefinition" "SearchParameter" "CompartmentDefinition" "ImplementationGuide"
+    "StructureMap" "GraphDefinition" "ExampleScenario" "MessageDefinition" "NamingSystem" "ConceptMap"
+    "TerminologyCapabilities" "Questionnaire" "ActivityDefinition" "PlanDefinition" "Measure" "Library"))
 (define (decompile-instance js)
   (define type (hash-ref js 'resourceType))
   (define id (hash-ref js 'id "Example"))
-  (fsh-instance (str id) (list (cons 'instanceOf type) (cons 'usage "#example")) (walk js "" #t)))
+  (define usage (if (member type definition-types) "#definition" "#example"))
+  (fsh-instance (str id) (list (cons 'instanceOf type) (cons 'usage usage)) (walk js "" #t)))
 
 (define (walk js path top?)
   (cond

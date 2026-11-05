@@ -166,12 +166,13 @@ invariants, the base type's elements at a path, flags), and the tools @tt{fsh_ch
 
 @section{Limits}
 
-Measured against the IGs' published packages: IPS 2.0.1 pairs 114 resources, 84 identical, 106 with
-all published content, 435 of 438 differential elements; mCODE 4.0.0 pairs 349, 225 identical, 329
+Measured against the IGs' published packages: IPS 2.0.1 pairs 114 resources, 85 identical, 108 with
+all published content, 437 of 438 differential elements; mCODE 4.0.0 pairs 349, 226 identical, 330
 complete, 472 of 473 differential elements; Plan-Net 1.2.0 (its package and US Core 3.1.1 fetched from
-the registry when the tests run) pairs 109, 78 identical, 94 complete, 320 of 321 differential
-elements; HRex 1.1.0 (three US Core versions in context) pairs 46, 20 identical, 40 complete, all 138
-differential elements. The tests print every remaining difference, classified, largest first. The differences:
+the registry when the tests run) pairs 109, 78 identical, 94 complete, all 321 differential
+elements; HRex 1.1.0 (three US Core versions in context) pairs 46, 25 identical, 45 complete, all 138
+differential elements. The decompiler is measured the same way: the published IPS package decompiled
+to FSH, compiled back and compared (@filepath{tests/gofsh-ips-test.rkt}). The tests print every remaining difference, classified, largest first. The differences:
 
 @itemlist[
 @item{A few caret extensions on one IPS profile land in a different order (a url-keyed extension
