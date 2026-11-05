@@ -47,7 +47,7 @@
   (define js (let* ([j (build-instance-json e t aliases)]
                     [j (if (type-registered? (string->symbol type-str))
                            j
-                           (assign-required j (profile-elements type-str) (slice-positions e aliases)))]
+                           (assign-required j (profile-elements type-str) (slice-positions e aliases) (embedded-slice-positions e aliases)))]
                     [j (fill-nested-extension-urls j (nested-slice-mentions e aliases)
                                                    (if (type-registered? (string->symbol type-str)) (hash) (profile-elements type-str)) base)])
                (definitional-url (titled j meta) (assoc-ref meta 'usage))))
@@ -104,6 +104,18 @@
               [b (in-list (fsh-step-brackets (car o)))] #:when (eq? (fsh-bracket-kind b) 'slice)
               [rb (in-list (fsh-step-brackets (car r)))] #:when (eq? (fsh-bracket-kind rb) 'index))
     (values (cons (fsh-step-name (car o)) (fsh-bracket-value rb)) (fsh-bracket-value b))))
+;; embedded-slice-positions : instance aliases -> (hash (list field index child) -> positions)   the
+;; named slices an instance uses inside a resource it embeds two steps down
+;; (`parameter[i].resource.class[group]`), as the embedded resource's own positions hash
+(define (embedded-slice-positions e aliases)
+  (define-values (orig resolved) (instance-paths e aliases))
+  (for*/fold ([h (hash)]) ([(o r) (in-parallel orig resolved)]
+                           #:when (and (>= (length o) 3) (>= (length r) 3))
+                           [b (in-list (fsh-step-brackets (list-ref o 2)))] #:when (eq? (fsh-bracket-kind b) 'slice)
+                           [rb (in-list (fsh-step-brackets (list-ref r 2)))] #:when (eq? (fsh-bracket-kind rb) 'index)
+                           [i0 (in-value (for/or ([x (in-list (fsh-step-brackets (list-ref r 0)))]) (and (eq? (fsh-bracket-kind x) 'index) (fsh-bracket-value x))))])
+    (define key (list (fsh-step-name (list-ref r 0)) (or i0 0) (fsh-step-name (list-ref r 1))))
+    (hash-update h key (lambda (ps) (hash-set ps (cons (fsh-step-name (list-ref r 2)) (fsh-bracket-value rb)) (fsh-bracket-value b))) (hash))))
 ;; nested-slice-mentions : instance aliases -> (listof (cons steps slice-name))   every named slice
 ;; of an extension below the top level (`extension[USCoreRace].extension[ombCategory]`), as the
 ;; resolved steps (name . index|#f) down to it; shortest first, so parents come before children
@@ -401,13 +413,13 @@
 ;; (min >= 1) gets its `required-entry` (its fixed[x]/pattern[x], completed by its required children,
 ;; recursively); a required slice gets its entry appended unless an entry already carries it; a named
 ;; slice the instance uses is completed the same way (and gets its own pattern even when optional).
-(define (assign-required js elements [positions (hash)])
-  (fill-embedded-profiles (assign-required* (fill-slice-children js elements positions) elements) elements positions))
+(define (assign-required js elements [positions (hash)] [embedded-positions (hash)])
+  (fill-embedded-profiles (assign-required* (fill-slice-children js elements positions) elements) elements positions embedded-positions))
 ;; fill-embedded-profiles : jsexpr elements positions -> jsexpr   a Resource-typed element of a used
 ;; slice (`parameter[Consent].resource only HRexConsent`) holds an embedded resource: it gets the
 ;; required values of the profile the slice names, as SUSHI fills it (the profile's own, by its id;
 ;; a dependency's, by its url)
-(define (fill-embedded-profiles js elements positions)
+(define (fill-embedded-profiles js elements positions [embedded-positions (hash)])
   (define type (hash-ref js 'resourceType))
   (for*/fold ([js js]) ([(pos slice) (in-hash positions)]
                         [(cid el) (in-hash elements)]
@@ -426,8 +438,9 @@
        (define pes (profile-elements key))
        (if (hash-empty? pes)
            js
-           (hash-set js field (for/list ([x (in-list lst)] [i (in-naturals)])
-                                (if (= i (cdr pos)) (hash-set x child (assign-required* embedded pes)) x))))])))
+           (let ([eps (hash-ref embedded-positions (list (car pos) (cdr pos) (cadr m)) (hash))])
+             (hash-set js field (for/list ([x (in-list lst)] [i (in-naturals)])
+                                  (if (= i (cdr pos)) (hash-set x child (assign-required* (fill-slice-children embedded pes eps) pes)) x)))))])))
 ;; fill-slice-children : jsexpr elements positions -> jsexpr
 ;; a named slice the instance used gets the slice's pattern and its required children's values
 (define (fill-slice-children js elements positions)

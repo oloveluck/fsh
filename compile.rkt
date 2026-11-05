@@ -465,6 +465,16 @@
   (define consent (hash-ref (car (hash-ref (caddr embedded) 'parameter)) 'resource))
   (check-equal? (hash-ref consent 'status) "active")
   (check-equal? (hash-ref (car (hash-ref (car (hash-ref consent 'category)) 'coding)) 'code) "IDSCL")
+  ;; a slice the embedded resource USES gets its profile's pattern (Coverage.class:group's type)
+  (define emb2 (fsh->fhir (string-append
+                           "Profile: CV\nParent: Coverage\n* class ^slicing.discriminator.type = #pattern\n* class ^slicing.discriminator.path = \"type\"\n* class ^slicing.rules = #open\n"
+                           "* class contains group 0..1\n* class[group].type = http://x/cc#group\n\n"
+                           "Profile: MM3\nParent: Parameters\n* parameter ^slicing.discriminator.type = #value\n* parameter ^slicing.discriminator.path = \"name\"\n* parameter ^slicing.rules = #open\n"
+                           "* parameter contains Cov 1..1\n* parameter[Cov].name = \"Cov\" (exactly)\n* parameter[Cov].resource only CV\n\n"
+                           "Instance: in2\nInstanceOf: MM3\nUsage: #example\n* parameter[Cov].resource\n  * resourceType = \"Coverage\"\n  * status = #active\n  * class[group].value = \"CB135\"\n  * class[+].value = \"P7\"\n")))
+  (define cov2 (hash-ref (car (hash-ref (caddr emb2) 'parameter)) 'resource))
+  (check-equal? (map (lambda (c) (hash-ref c 'value)) (hash-ref cov2 'class)) '("CB135" "P7"))
+  (check-equal? (hash-ref (car (hash-ref (hash-ref (car (hash-ref cov2 'class)) 'type) 'coding)) 'code) "group")
   ;; a document: an alias resolves, a profile becomes a differential, an instance a resource
   (define out (fsh->fhir (string-append
                           "Alias: $sct = http://snomed.info/sct\n\n"

@@ -17,13 +17,17 @@
 
 (require racket/contract racket/string racket/list racket/file racket/match
          json file/gunzip file/untar
-         (only-in fhir/spec-package spec-package-path))
+         (only-in fhir/spec-package spec-package-path current-package-directories))
 
 (provide
  (struct-out ig-config)
  (contract-out
   [read-ig-config      (-> path-string? ig-config?)]
-  [dependency-packages (-> (listof (cons/c string? string?)) (values (listof path?) (listof (cons/c string? string?))))]))
+  [dependency-packages (-> (listof (cons/c string? string?)) (values (listof path?) (listof (cons/c string? string?))))]
+  ;; implicit-packages : fhir-version -> (listof tgz-path)   the packages SUSHI loads without being
+  ;; asked — hl7.fhir.uv.extensions and hl7.terminology for the version — when a copy is at hand
+  ;; (current-package-directories, then fhir-spec; the newest version of each), else none
+  [implicit-packages (-> (or/c string? #f) (listof path?))]))
 
 ;; ig-config : what compiling and packaging read — any may be #f / '()
 ;;   canonical fhir-version dependencies   (compile)
@@ -93,6 +97,35 @@
                     (and q (equal? (package-version q) (cdr d)) q))))
     (if p (values (cons p found) missing) (values found (cons d missing)))))
 
+;; the implicit packages, by the suffix the registry gives their FHIR-version builds
+(define (implicit-packages fhir-version)
+  (define suffix (cond [(and fhir-version (regexp-match? #rx"^4[.]" fhir-version)) "r4"]
+                       [(and fhir-version (regexp-match? #rx"^5[.]" fhir-version)) "r5"]
+                       [else #f]))
+  (define dirs (append (current-package-directories)
+                       (let ([core (spec-package-path "hl7.fhir.r4.core.tgz" #:optional? #t)])
+                         (if core (let-values ([(d _n _m) (split-path core)]) (if (path? d) (list d) '())) '()))))
+  (if (not suffix)
+      '()
+      (for*/list ([id (in-list (list (string-append "hl7.fhir.uv.extensions." suffix) (string-append "hl7.terminology." suffix)))]
+                  [found (in-value (newest-package id dirs))] #:when found)
+        found)))
+;; newest-package : id dirs -> tgz-path|#f   <id>-<version>.tgz with the highest version in the dirs
+(define (newest-package id dirs)
+  (define rx (pregexp (string-append "^" (regexp-quote id) "-([0-9][^/]*)[.]tgz$")))
+  (define found
+    (for*/list ([d (in-list dirs)] #:when (directory-exists? d)
+                [f (in-list (directory-list d))]
+                [m (in-value (regexp-match rx (path->string f)))] #:when m)
+      (cons (cadr m) (build-path d f))))
+  (and (pair? found) (cdr (car (sort found version>? #:key car)))))
+(define (version>? a b)
+  (let loop ([as (string-split a ".")] [bs (string-split b ".")])
+    (cond [(null? as) #f] [(null? bs) #t]
+          [else (define x (string->number (car as))) (define y (string->number (car bs)))
+                (cond [(and x y (not (= x y))) (> x y)]
+                      [(and (not (and x y)) (not (equal? (car as) (car bs)))) (string>? (car as) (car bs))]
+                      [else (loop (cdr as) (cdr bs))])])))
 ;; package-version : tgz -> string|#f   package/package.json's version
 (define (package-version tgz)
   (define v #f)
@@ -110,7 +143,7 @@
   v)
 
 (module+ test
-  (require rackunit)
+  (require rackunit racket/path)
   (define f (make-temporary-file))
   (with-output-to-file f #:exists 'truncate
     (lambda () (display "canonical: http://hl7.org/fhir/us/mcode\nfhirVersion: 4.0.1\ndependencies:\n  hl7.fhir.uv.genomics-reporting: 2.0.0\n#  hl7.fhir.uv.extensions: 5.1.0-cibuild\n  hl7.fhir.us.core: \n    version: 6.1.0\n    id: hl7fhiruscore\nextension:\n  - url: x\n")))
@@ -118,6 +151,16 @@
   (check-equal? (ig-config-canonical c) "http://hl7.org/fhir/us/mcode")
   (check-equal? (ig-config-fhir-version c) "4.0.1")
   (check-equal? (ig-config-dependencies c) '(("hl7.fhir.uv.genomics-reporting" . "2.0.0") ("hl7.fhir.us.core" . "6.1.0")))
+  ;; the implicit packages: the newest copy of each, none for an unknown version
+  (check-false (version>? "5.2.0" "5.10.0"))
+  (check-true (version>? "5.10.0" "5.2.0"))
+  (check-equal? (implicit-packages "3.0.2") '())
+  (let ([dir (make-temporary-file "implicit-~a" 'directory)])
+    (for ([n '("hl7.fhir.uv.extensions.r4-1.0.0.tgz" "hl7.fhir.uv.extensions.r4-5.2.0.tgz" "other.tgz")])
+      (with-output-to-file (build-path dir n) (lambda () (display "x"))))
+    (parameterize ([current-package-directories (list dir)])
+      (check-equal? (map (lambda (p) (path->string (file-name-from-path p))) (implicit-packages "4.0.1")) '("hl7.fhir.uv.extensions.r4-5.2.0.tgz")))
+    (delete-directory/files dir))
   (define g (make-temporary-file))
   (with-output-to-file g #:exists 'truncate
     (lambda () (display "id: hl7.fhir.uv.ips\nversion: 2.0.1\ntitle: \"IPS\"\nlicense: CC0-1.0\npublisher:\n  name: HL7 International\n  url: http://hl7.org\n")))

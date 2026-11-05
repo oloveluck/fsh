@@ -25,6 +25,9 @@
 (define uscore6 (spec-package-path "hl7.fhir.us.core-6.1.0.tgz" #:optional? #t))
 (define uscore3 (fetched-package "hl7.fhir.us.core" "3.1.1" "a998fa41cb5a0618d22ed8671c71ca9954b1ac8c"))  ; declared as hl7.fhir.us.core.v311
 (define r4-core (spec-package-path "hl7.fhir.r4.core.tgz" #:optional? #t))
+;; what SUSHI loads implicitly for an R4 project: the extensions package (optional here — absent, a
+;; name only it defines stays unresolved)
+(define extensions (fetched-package "hl7.fhir.uv.extensions.r4" "5.2.0"))
 (define cfg (read-ig-config (build-path hrex "sushi-config.yaml")))
 
 (printf "  HRex declares: ~s\n" (ig-config-dependencies cfg))
@@ -35,8 +38,9 @@
    (printf "  HRex IG corpus: skipped (needs the published package and US Core 7.0.0 from packages.fhir.org, and fhir-spec)\n")]
   [else
    (define r (parameterize ([current-package-directories (list packages-dir)]
-                            [current-sd-packages (list uscore7 uscore6 uscore3 r4-core)])
-               (check-fsh-ig (build-path hrex "input" "fsh") published (ig-config-canonical cfg))))
+                            [current-sd-packages (append (list uscore7 uscore6 uscore3) (if extensions (list extensions) '()) (list r4-core))])
+               (check-fsh-ig (build-path hrex "input" "fsh") published (ig-config-canonical cfg)
+                             #:dump '("member-match-in-provider"))))
    (printf "  HRex 1.1.0 from FSH: ~a resources paired; ~a exact, ~a with all published content; SD differential ~a/~a elements\n"
            (ig-fsh-report-pairs r) (ig-fsh-report-exact r) (ig-fsh-report-contained r)
            (ig-fsh-report-elements-ok r) (ig-fsh-report-elements-total r))
@@ -51,6 +55,6 @@
    (check-equal? (remove-duplicates (map car (ig-fsh-report-published-unmatched r)))
                  '("Basic" "Binary" "ImplementationGuide" "StructureDefinition"))
    (check-true (>= (ig-fsh-report-pairs r) 46))
-   (check-true (>= (ig-fsh-report-exact r) 20) "fewer exact resources than the floor")
-   (check-true (>= (ig-fsh-report-contained r) 40) "fewer fully-matching resources than the floor")
+   (check-true (>= (ig-fsh-report-exact r) 22) "fewer exact resources than the floor")
+   (check-true (>= (ig-fsh-report-contained r) 42) "fewer fully-matching resources than the floor")
    (check-true (>= (ig-fsh-report-elements-ok r) 138) "fewer matching differential elements than the floor")])

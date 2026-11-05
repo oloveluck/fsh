@@ -21,6 +21,9 @@
 ;; sushi-config declares hl7.fhir.us.core.v311 3.1.1 — a version-alias stub (sha1 5abae31a…) for this package
 (define uscore311 (fetched-package "hl7.fhir.us.core" "3.1.1" "a998fa41cb5a0618d22ed8671c71ca9954b1ac8c"))
 (define r4-core (spec-package-path "hl7.fhir.r4.core.tgz" #:optional? #t))
+;; what SUSHI loads implicitly for an R4 project: the extensions package (optional here — absent, a
+;; name only it defines stays unresolved)
+(define extensions (fetched-package "hl7.fhir.uv.extensions.r4" "5.2.0"))
 (define cfg (read-ig-config (build-path plannet "sushi-config.yaml")))
 
 (check-equal? (ig-config-dependencies cfg)
@@ -36,7 +39,7 @@
      (printf "  US Core 3.1.1 (~a): us-core-location resolves: ~a\n" uscore311
              (and (resolve-sd-raw "http://hl7.org/fhir/us/core/StructureDefinition/us-core-location") #t)))
    (define r (parameterize ([current-package-directories (list packages-dir)]
-                            [current-sd-packages (list uscore311 r4-core)])
+                            [current-sd-packages (append (list uscore311) (if extensions (list extensions) '()) (list r4-core))])
                (check-fsh-ig (build-path plannet "input" "fsh") published (ig-config-canonical cfg))))
    (printf "  Plan-Net 1.2.0 from FSH: ~a resources paired; ~a exact, ~a with all published content; SD differential ~a/~a elements\n"
            (ig-fsh-report-pairs r) (ig-fsh-report-exact r) (ig-fsh-report-contained r)

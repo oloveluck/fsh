@@ -90,7 +90,9 @@
   (define r4? (regexp-match? #rx"^4[.]" fhir-version))
   (define sd-packages
     (let ([core (spec-package-path (if r4? "hl7.fhir.r4.core.tgz" "hl7.fhir.r5.core.tgz") #:optional? #t)])
-      (append dep-packages (if core (list core) '()))))
+      ;; after the declared dependencies, the packages SUSHI loads implicitly (extensions,
+      ;; terminology) when a copy is at hand, then core
+      (append dep-packages (implicit-packages fhir-version) (if core (list core) '()))))
   (dynamic-require (if r4? 'fhir/r4/schemas 'fhir/r5/schemas) #f)
   (define files (fsh-files src))
   (define mfiles (map-files src))
