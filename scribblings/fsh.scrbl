@@ -155,6 +155,15 @@ against the target; findings are positioned in the map. A @tt{Logical:} model is
 type, so an @tt{Instance:} of it builds like any resource. The worked project is
 @tt{fhir-examples/examples/intake-maps}; the fml document walks through it.
 
+@section{In an editor, for an agent}
+
+@tt{fsh/support} is what the family's language server (fhir-lsp) and MCP server (fhir-mcp) load for
+FSH: a document's diagnostics with its project, the project's files, the outline, hover (an element
+path in the base type; a name's declaration), go to definition across the project, completion
+(keywords, Parent and InstanceOf types and profiles, value sets after @tt{from}, rule sets,
+invariants, the base type's elements at a path, flags), and the tools @tt{fsh_check},
+@tt{fsh_compile} and @tt{fsh_decompile}. It is a @tt{fhir/lang/support} value; the hubs know no FSH.
+
 @section{Limits}
 
 Measured against the IGs' published packages: IPS 2.0.1 pairs 114 resources, 84 identical, 106 with
