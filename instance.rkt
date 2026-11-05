@@ -296,7 +296,7 @@
           [else (hash-set js sib (into (hash-ref js sib #f)))])]
        [else
         (update-field js (step-sym step) kind (step-index step)
-                      (lambda (child) (assign (or child (hasheq)) (ftype->type ftype) more value)))])]))
+                      (lambda (child) (assign (or child (hasheq)) (ftype->type ftype child) more value)))])]))
 (define (step-sym s) (string->symbol (fsh-step-name s)))
 (define (step-index s)
   (for/or ([b (in-list (fsh-step-brackets s))])
@@ -323,8 +323,15 @@
   (let ([lst (extend lst (add1 i))]) (for/list ([x (in-list lst)] [j (in-naturals)]) (if (= j i) v x))))
 (define (extend lst n) (append lst (make-list (max 0 (- n (length lst))) #f)))
 (define json-number-primitives '("integer" "decimal" "positiveInt" "unsignedInt" "boolean"))
-(define (ftype->type ftype)
-  (case (ftype-tag ftype) [(type) (ftype-type-name ftype)] [else 'object]))
+;; ftype->type : ftype [child] -> type symbol | 'object   the type to build a child under; a
+;; Resource-typed element (`parameter.resource`, `contained`, `entry.resource`) is typed by the
+;; resourceType the rules gave it (`* parameter[x].resource.resourceType = "Patient"` first, SUSHI)
+(define (ftype->type ftype [child #f])
+  (case (ftype-tag ftype)
+    [(type) (ftype-type-name ftype)]
+    [(resource) (let ([rt (and (hash? child) (hash-ref child 'resourceType #f))])
+                  (if (and (string? rt) (type-registered? (string->symbol rt))) (string->symbol rt) 'object))]
+    [else 'object]))
 ;; coerce an FSH value to jsexpr given the target ftype
 (define (coerce v ftype)
   (define tag (ftype-tag ftype))
@@ -463,9 +470,15 @@
            (for/or ([e (in-list els)]) (and (equal? (hash-ref e 'id #f) slice-id)
                                             (let ([pr (extension-profile e)]) (and (pair? pr) (car pr))))))))
 ;; walk : jsexpr steps -> jsexpr|#f   down (name . index|#f) steps
+;; a primitive's extensions live in its `_name` sibling: the walkers look there when `name` holds
+;; no object (`multipleOr.extension[…]` is `_multipleOr.extension`)
+(define (json-key js name)
+  (define k (string->symbol name))
+  (define v (and (hash? js) (hash-ref js k #f)))
+  (if (or (hash? v) (and (list? v) (ormap hash? v))) k (let ([u (string->symbol (string-append "_" name))]) (if (and (hash? js) (hash-has-key? js u)) u k))))
 (define (walk js steps)
   (for/fold ([j js]) ([st (in-list steps)])
-    (define v (and (hash? j) (hash-ref j (string->symbol (car st)) #f)))
+    (define v (and (hash? j) (hash-ref j (json-key j (car st)) #f)))
     (cond [(and (list? v) (cdr st) (< (cdr st) (length v))) (list-ref v (cdr st))]
           [(list? v) (and (pair? v) (not (cdr st)) (car v))]
           [else v])))
@@ -474,7 +487,7 @@
   (match steps
     ['() (f js)]
     [(cons (cons name idx) more)
-     (define key (string->symbol name))
+     (define key (json-key js name))
      (define v (hash-ref js key #f))
      (cond [(list? v) (hash-set js key (for/list ([x (in-list v)] [i (in-naturals)]) (if (= i (or idx 0)) (update-at x more f) x)))]
            [(hash? v) (hash-set js key (update-at v more f))]

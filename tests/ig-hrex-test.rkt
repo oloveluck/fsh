@@ -35,7 +35,8 @@
   [else
    (define r (parameterize ([current-package-directories (list packages-dir)]
                             [current-sd-packages (list uscore7 uscore6 uscore3 r4-core)])
-               (check-fsh-ig (build-path hrex "input" "fsh") published (ig-config-canonical cfg))))
+               (check-fsh-ig (build-path hrex "input" "fsh") published (ig-config-canonical cfg)
+                             #:dump '("hrex-parameters-member-match-out"))))
    (printf "  HRex 1.1.0 from FSH: ~a resources paired; ~a exact, ~a with all published content; SD differential ~a/~a elements\n"
            (ig-fsh-report-pairs r) (ig-fsh-report-exact r) (ig-fsh-report-contained r)
            (ig-fsh-report-elements-ok r) (ig-fsh-report-elements-total r))

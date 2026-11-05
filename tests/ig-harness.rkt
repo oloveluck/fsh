@@ -182,7 +182,7 @@
         [(equal? a b) #f]
         [else (list 'differs (reverse path) a b)]))
 
-(define (check-fsh-ig fsh-dir published-tgz canonical #:fhir-version [fv "4.0.1"])
+(define (check-fsh-ig fsh-dir published-tgz canonical #:fhir-version [fv "4.0.1"] #:dump [dump '()])
   (define files (sort (for/list ([f (in-directory fsh-dir)] #:when (regexp-match? #rx"[.]fsh$" (path->string f))) f)
                       string<? #:key path->string))
   (define-values (out errors)
@@ -194,6 +194,11 @@
   (define pairs (for/list ([(k o) (in-hash ours)] #:when (hash-ref pub k #f))
                   (define no (norm o))
                   (list k (unpin-versions (norm (hash-ref pub k)) no) no)))
+  ;; #:dump: the differential elements (id min max) of the named resources, published then ours
+  (for ([p (in-list pairs)] #:when (member (cdr (car p)) dump))
+    (define (els sd) (for/list ([e (in-list (hash-ref (hash-ref sd 'differential (hash)) 'element '()))])
+                       (list (hash-ref e 'id #f) (hash-ref e 'min '-) (hash-ref e 'max '-))))
+    (printf "  dump ~a published: ~s\n  dump ~a ours: ~s\n" (cdr (car p)) (els (cadr p)) (cdr (car p)) (els (caddr p))))
   (define-values (el-ok el-total)
     (for*/fold ([ok 0] [t 0]) ([p (in-list pairs)] #:when (equal? (car (car p)) "StructureDefinition"))
       (define (by-id sd) (for/hash ([e (in-list (hash-ref (hash-ref sd 'differential (hash)) 'element '()))])

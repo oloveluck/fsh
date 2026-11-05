@@ -566,10 +566,13 @@
      (list (lambda (es os) (upd es os "Extension.url" "Extension.url" #f
                                (lambda (h) (hash-set h 'fixedUri self-url)))))))
   (for/fold ([es elems] [os order]) ([step (in-list steps)]) (step es os)))
+;; apply-card : element "lo..hi" -> element   a bound left out (`1..`, `..3`) stays as it was
 (define (apply-card h card)
   (match (regexp-match #px"^([0-9]*)\\.\\.([0-9]*|\\*)$" card)
-    [(list _ lo hi) (drop-false (hash-set (hash-set h 'min (and (positive? (string-length lo)) (string->number lo)))
-                                          'max (and (positive? (string-length hi)) hi)))]
+    [(list _ lo hi)
+     (let* ([h (if (positive? (string-length lo)) (hash-set h 'min (string->number lo)) h)]
+            [h (if (positive? (string-length hi)) (hash-set h 'max hi) h)])
+       h)]
     [_ h]))
 (define mod-flag (string->symbol "?!"))
 (define (apply-flags h flags)

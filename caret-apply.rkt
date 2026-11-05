@@ -35,7 +35,10 @@
       [(rule-code-caret '() cp v) (typed-caret-set js cp v type counters)]
       [_ js])))
 ;; typed-caret-set : jsexpr caret-path fsh-value type counters -> jsexpr
-(define (typed-caret-set js cp v type counters)
+(define (typed-caret-set js cp0 v type counters)
+  ;; `^extension[$alias]`: the url in a bracket may be an alias
+  (define cp (regexp-replace* #px"\\[(\\$[^\\]]+)\\]" cp0
+                              (lambda (all a) (string-append "[" (resolve-alias a (current-aliases)) "]"))))
   (if (and type (type-registered? type))
       (caret-set js cp v #:type type #:counters counters
                  #:coerce (lambda (val ftype) (coerce (resolve val (current-aliases)) ftype)))

@@ -119,9 +119,21 @@
             'url (string-append (canonical-base) "/CodeSystem/" id)
             'version "0.1.0" 'name (fsh-codesystem-name e) 'status "active"
             'title (assoc-ref meta 'title) 'description (assoc-ref meta 'description)
-            'content "complete" 'concept (and (pair? concepts) concepts)
+            'content "complete" 'concept (and (pair? concepts) (apply-concept-carets concepts (fsh-codesystem-rules e)))
             'count (and (pair? concepts) (count-concepts concepts))))
    (fsh-codesystem-rules e)))
+;; apply-concept-carets : concepts rules -> concepts   a caret on a concept (`* #a ^property[0].code =
+;; #abstract`, or indented under the concept) sets that concept's property, designation, …
+(define (apply-concept-carets concepts rules)
+  (for/fold ([cs concepts]) ([r (in-list rules)] #:when (and (rule-code-caret? r) (pair? (rule-code-caret-codes r))))
+    (update-concept cs (map strip# (rule-code-caret-codes r))
+                    (lambda (c) (typed-caret-set c (rule-code-caret-caret-path r) (rule-code-caret-value r) #f (make-hash))))))
+;; update-concept : concepts code-chain f -> concepts   f applied to the concept the chain names
+(define (update-concept concepts codes f)
+  (for/list ([c (in-list concepts)])
+    (cond [(not (equal? (hash-ref c 'code #f) (car codes))) c]
+          [(null? (cdr codes)) (f c)]
+          [else (hash-update c 'concept (lambda (sub) (update-concept sub (cdr codes) f)) '())])))
 ;; insert a code (chain of ancestor codes ending in the defined code) into the concept tree
 (define (insert-concept concepts codes display def)
   (define code (car codes))
