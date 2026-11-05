@@ -53,4 +53,4 @@
    (check-true (>= (ig-fsh-report-pairs r) 109))
    (check-true (>= (ig-fsh-report-exact r) 77) "fewer exact resources than the floor")
    (check-true (>= (ig-fsh-report-contained r) 91) "fewer fully-matching resources than the floor")
-   (check-true (>= (ig-fsh-report-elements-ok r) 319) "fewer matching differential elements than the floor")])
+   (check-true (>= (ig-fsh-report-elements-ok r) 320) "fewer matching differential elements than the floor")])

@@ -130,10 +130,30 @@
   ;; take positions as the rules mention them
   (define elements (if of (profile-elements of) (hash)))
   (define type (and of (instance-base of (current-profiles))))
-  (define (required-slice? field slice)
-    (define el (hash-ref elements (format "~a.~a:~a" type field slice) #f))
-    (and el (let ([m (hash-ref el 'min 0)]) (and (number? m) (>= m 1)))))
-  (values orig (resolve-soft-indices orig #:slice-order (if of ((current-slice-orders) of) (hash)) #:required? required-slice?)))
+  ;; declared : ctx field -> the required slices of that array in declaration order. The context's
+  ;; steps are followed through the profile's elements: a slice typed with an Extension of this
+  ;; document continues in that Extension's elements (its own `contains`), rooted at Extension
+  (define (declared ctx field)
+    (let loop ([ctx ctx] [root type] [elements elements] [profile of])
+      (cond
+        [(not profile) '()]
+        [(null? ctx)
+         (filter (lambda (n) (let ([el (hash-ref elements (format "~a.~a:~a" root field n) #f)])
+                               (and el (let ([m (hash-ref el 'min 0)]) (and (number? m) (>= m 1))))))
+                 (hash-ref ((current-slice-orders) profile) field '()))]
+        [else
+         (define step (car ctx))
+         (define path (string-append root "." (car step)))
+         (cond
+           [(not (cdr step)) (loop (cdr ctx) path elements profile)]
+           [else
+            (define el (hash-ref elements (string-append path ":" (cdr step)) #f))
+            (define url (and el (let ([pr (extension-profile el)]) (and (pair? pr) (car pr)))))
+            (define local (and url (hash-ref (current-profiles) url #f)))
+            (if local
+                (loop (cdr ctx) "Extension" (profile-elements (cdr local)) (cdr local))
+                '())])])))
+  (values orig (resolve-soft-indices orig #:declared declared)))
 (define (build-instance-json e resource-type aliases)
   ;; an instance of a logical model (registered with Element as its parent: no resourceType on the
   ;; wire, no id element unless the model declares one) is not stamped with an id
@@ -152,38 +172,51 @@
 ;; `[=]` reuses it, an explicit `[n]` sets it. In an Instance a SLICE NAME (`section[problems]`)
 ;; denotes one element of the array: its first mention takes the next index, later mentions reuse it.
 ;; Rules are processed in order.
-(define (resolve-soft-indices paths #:slice-order [slice-order (hash)] #:required? [required? (lambda (field slice) #t)])
+(define (resolve-soft-indices paths #:declared [declared (lambda (ctx field) '())])
   (define counters (make-hash))
   (define slices (make-hash))                       ; (key . slice-name) -> the slice's first index
   (define within (make-hash))                       ; (key . slice-name) -> the highest k of [slice][k]
   (define slots (make-hash))                        ; (key slice-name k) -> the position of [slice][k]
   (define owner (make-hash))                        ; (key . position) -> the slice holding it
   (define high (make-hash))                         ; key -> the highest index used so far
-  ;; a top-level array's named slices take positions in the PROFILE's declaration order (SUSHI), so
-  ;; allocate them up front: the slices this instance uses, profile order first, then any others
-  (define used (make-hash))                         ; key -> slice names, first mention order
-  (for ([steps (in-list paths)] #:when (pair? steps))
-    (define st (car steps))
-    (for ([b (in-list (fsh-step-brackets st))] #:when (eq? (fsh-bracket-kind b) 'slice))
-      (define key (string-append "." (fsh-step-name st)))
-      (unless (member (fsh-bracket-value b) (hash-ref used key '()))
-        (hash-update! used key (lambda (l) (append l (list (fsh-bracket-value b)))) '()))))
-  (for ([(key names) (in-hash used)])
-    (define field (substring key 1))
-    (define declared (filter (lambda (n) (required? field n)) (hash-ref slice-order field '())))
-    (define ordered (append (filter (lambda (n) (member n names)) declared)
-                            (filter (lambda (n) (not (member n declared))) names)))
-    (when (pair? declared)
+  ;; an array's REQUIRED named slices take positions in their declaration order (SUSHI assigns them
+  ;; before any rule), so allocate them up front: the slices this instance uses, declared order
+  ;; first, then any others as mentioned. An array is named by its context — the enclosing steps
+  ;; as (name . slice|#f) — and its field, so a sub-extension's slices (`extension[qualification].
+  ;; extension[status]`) follow the Extension's own declaration order; the resolved key (with the
+  ;; indices) is only known in the main pass, which copies the allocation over on first use.
+  (define (slice-of st) (for/or ([b (in-list (fsh-step-brackets st))]) (and (eq? (fsh-bracket-kind b) 'slice) (fsh-bracket-value b))))
+  (define used (make-hash))                         ; (ctx . field) -> slice names, first mention order
+  (for ([steps (in-list paths)])
+    (let loop ([steps steps] [ctx '()])
+      (unless (null? steps)
+        (define st (car steps)) (define sl (slice-of st))
+        (when sl
+          (define nk (cons (reverse ctx) (fsh-step-name st)))
+          (unless (member sl (hash-ref used nk '())) (hash-update! used nk (lambda (l) (append l (list sl))) '())))
+        (loop (cdr steps) (cons (cons (fsh-step-name st) sl) ctx)))))
+  (define prealloc (make-hash))                     ; (ctx . field) -> the slice names in position order
+  (for ([(nk names) (in-hash used)])
+    (define decl (declared (car nk) (cdr nk)))
+    (when (pair? decl)
+      (hash-set! prealloc nk (append (filter (lambda (n) (member n names)) decl)
+                                     (filter (lambda (n) (not (member n decl))) names)))))
+  (define allocated (make-hash))                    ; the resolved keys already allocated
+  (define (allocate! key nk)
+    (unless (hash-ref allocated key #f)
+      (hash-set! allocated key #t)
+      (define ordered (hash-ref prealloc nk '()))
       (for ([n (in-list ordered)] [i (in-naturals)])
         (hash-set! slices (cons key n) i) (hash-set! owner (cons key i) n) (hash-set! slots (list key n 0) i) (hash-set! high key i))
-      (hash-set! counters key (sub1 (length ordered)))))
+      (when (pair? ordered) (hash-set! counters key (sub1 (length ordered))))))
   (for/list ([steps (in-list paths)])
-    (let loop ([steps steps] [prefix ""] [acc '()])
+    (let loop ([steps steps] [prefix ""] [ctx '()] [acc '()])
       (cond
         [(null? steps) (reverse acc)]
         [else
          (define st (car steps))
          (define key (string-append prefix "." (fsh-step-name st)))
+         (when (slice-of st) (allocate! key (cons (reverse ctx) (fsh-step-name st))))
          (define brackets
            (let loop ([bs (fsh-step-brackets st)] [acc '()])
              (cond
@@ -199,9 +232,11 @@
                    (define sk (cons key (fsh-bracket-value b)))
                    ;; a slice mentioned again reuses its first position; a new one takes the next
                    ;; UNUSED position (after re-mentioning an earlier slice the counter points back)
+                   (define (next-unused) (add1 (max (hash-ref counters key -1) (hash-ref high key -1))))
                    (define base (or (hash-ref slices sk #f)
-                                    (let ([n (add1 (max (hash-ref counters key -1) (hash-ref high key -1)))])
-                                      (hash-set! slices sk n) (hash-set! owner (cons key n) (fsh-bracket-value b)) n)))
+                                    (let ([n (next-unused)])
+                                      (hash-set! slices sk n) (hash-set! owner (cons key n) (fsh-bracket-value b))
+                                      (hash-set! slots (list key (fsh-bracket-value b) 0) n) n)))
                    ;; `[slice][k]` (or [+]/[=] after the slice): the k-th element of the slice, a
                    ;; contiguous block from its first position
                    (define-values (k rest)
@@ -211,13 +246,12 @@
                        [(cons (fsh-bracket 'soft= _) more) (values (max 0 (hash-ref within sk 0)) more)]
                        [more (values 0 more)]))
                    (hash-set! within sk (max k (hash-ref within sk -1)))
-                   ;; the k-th element's position: the one it had, else base+k while no other slice
-                   ;; holds it (daysOfWeek[5] after allDay took that position), else the next unused
+                   ;; the k-th element's position: the one it had, else base+k while nothing holds it
+                   ;; (daysOfWeek[5] after allDay took that position), else the next unused
                    (define n
                      (or (hash-ref slots (list key (fsh-bracket-value b) k) #f)
                          (let* ([want (+ base k)]
-                                [free? (equal? (hash-ref owner (cons key want) (fsh-bracket-value b)) (fsh-bracket-value b))]
-                                [n (if free? want (add1 (max (hash-ref counters key -1) (hash-ref high key -1))))])
+                                [n (if (hash-has-key? owner (cons key want)) (next-unused) want)])
                            (hash-set! slots (list key (fsh-bracket-value b) k) n)
                            (hash-set! owner (cons key n) (fsh-bracket-value b))
                            n)))
@@ -231,7 +265,7 @@
            (string-append key (apply string-append
                                      (for/list ([b (in-list brackets)])
                                        (format "[~a]" (or (fsh-bracket-value b) (fsh-bracket-kind b)))))))
-         (loop (cdr steps) next-prefix (cons resolved acc))]))))
+         (loop (cdr steps) next-prefix (cons (cons (fsh-step-name st) (slice-of st)) ctx) (cons resolved acc))]))))
 (define (inject-meta-profile js url)
   (if (and url (hash? js))
       (hash-update js 'meta (lambda (m) (hash-set (if (hash? m) m (hasheq)) 'profile (list url))) (hasheq))

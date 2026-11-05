@@ -105,6 +105,28 @@ entry). These came from the FSH -> package -> server loop (below): 250 -> 283/28
 Remaining (measured): 28 profiles whose differential lacks elements SUSHI writes (mostly genomics and
 performance-status profiles), a few instance details.
 
+## Real-IG corpus 3: Da Vinci PDex Plan-Net 1.2.0, its oracle fetched (`tests/ig-plannet-test.rkt`, `tests/ig-fetch.rkt`)
+Plan-Net's own FSH (`tests/vendor/plannet-1.2.0`, HL7/davinci-pdex-plan-net at tag 1.2.0, 9 files /
+119 entities, CC0) against its published package. Neither the package nor its dependency is in
+fhir-spec: `ig-fetch.rkt` downloads a package once from packages.fhir.org into `tests/vendor/packages/`
+(gitignored), verifies it against a pinned sha1 (or the registry's own shasum, printed so the test can
+pin it), and returns #f offline (the test skips with a note; CI has the network). sushi-config declares
+`hl7.fhir.us.core.v311 3.1.1`: on the registry that is a VERSION-ALIAS STUB — a package.json depending
+on `hl7.fhir.us.core 3.1.1` and nothing else — which the fetcher follows (`stub-dependency`) to the real
+package; the test pins the real one. US Core 7.0.0, 6.1.0 and HRex are declared too but no rule reaches
+them. Current: **0 compile errors; 109 paired (the CapabilityStatement, SearchParameters and IG are not
+FSH-authored); 77 exact, 91 with all published content; 320/321 differential elements** — ratcheted.
+It drove: a code's system part as a CodeSystem NAME (`LanguageProficiencyCS#30`, this document's or a
+dependency's — `resolve-system`); `[slice][k]` as the k-th slot of a slice (base+k while no other slice
+holds it, else the next unused position — `daysOfWeek[5]` written after `allDay` lands after it);
+a type slice below a nested extension (`extension[x].value[x]:valueCodeableConcept`) typed through
+`Extension.extension`'s datatype (`base-element` dives); a RuleSet argument ending in an escaped paren
+(`Canonical(TG263CS\)`) kept whole; profiles of a dependency's profile carry the BASE resource's core
+mapping declarations (SUSHI), not the Parent's. Remaining: a nested extension's sub-slices in
+required-first order (HansSoloRole1: SUSHI puts `status` 1..1 before the optional `issuer`);
+`OrgPeriod named org-period` resolving to core's `organization-period` (whose R4 name is `period` — SUSHI
+finds it through the extensions package it loads implicitly).
+
 ## Projects and packages (`fsh/project.rkt`, `fsh/pack.rkt`, `raco fsh <dir> --pack [out.tgz]`)
 `compile-project` finds the files and sushi-config.yaml, parses each file (diagnostics name the file),
 compiles with the dependency packages in the SD context, and never exits: parse errors and failing

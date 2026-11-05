@@ -214,9 +214,9 @@
   ;; first. SUSHI creates a profile's required slices before applying an instance's rules (in profile
   ;; order); every other slice takes its place in the order the instance first mentions it.
   (define own-slice-orders
-    (for*/hash ([e (in-list entities)] #:when (fsh-profile? e)
-                [k (in-list (remove-duplicates (list (fsh-profile-name e) (or (assoc-ref (fsh-profile-metadata e) 'id) (fsh-profile-name e)))))])
-      (values k (for/fold ([h (hash)]) ([r (in-list (fsh-profile-rules e))] #:when (rule-contains? r))
+    (for*/hash ([e (in-list entities)] #:when (or (fsh-profile? e) (fsh-extension? e))
+                [k (in-list (remove-duplicates (list (entity-name e) (or (assoc-ref (entity-meta e) 'id) (entity-name e)))))])
+      (values k (for/fold ([h (hash)]) ([r (in-list (entity-rules e))] #:when (rule-contains? r))
                   (hash-update h (rule-contains-path r)
                                (lambda (l) (append l (for/list ([it (in-list (rule-contains-items r))]
                                                                 #:when (let ([c (contains-item-card it)]) (and (string? c) (>= (card-lo c) 1))))
@@ -273,6 +273,8 @@
   (cond [(fsh-profile? e) (fsh-profile-name e)] [(fsh-extension? e) (fsh-extension-name e)] [else #f]))
 (define (entity-meta e)
   (cond [(fsh-profile? e) (fsh-profile-metadata e)] [(fsh-extension? e) (fsh-extension-metadata e)] [else '()]))
+(define (entity-rules e)
+  (cond [(fsh-profile? e) (fsh-profile-rules e)] [(fsh-extension? e) (fsh-extension-rules e)] [else '()]))
 ;; ---- insert / RuleSet expansion (plain + parameterized) ------------------------------------
 (define (expand-rules rules rulesets param-rulesets)
   (append-map
