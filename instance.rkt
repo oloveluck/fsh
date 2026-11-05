@@ -163,8 +163,15 @@
                    (hasheq 'resourceType (symbol->string resource-type) 'id (fsh-instance-name e))))
   (define assigns (for/list ([r (in-list (fsh-instance-rules e))] #:when (or (rule-assign? r) (rule-path? r))) r))
   (define-values (_orig paths) (instance-paths e aliases))
-  (for/fold ([js base]) ([r (in-list assigns)] [steps (in-list paths)] #:when (rule-assign? r))
-    (assign js resource-type steps (resolve (rule-assign-value r) aliases))))
+  ;; the instances this one contains (`* contained[+] = X`): a Reference(X) to one is local, `#id`
+  (define contained
+    (for*/list ([r (in-list assigns)] #:when (and (rule-assign? r) (regexp-match? #px"^contained(\\[|$)" (rule-assign-path r)))
+                [v (in-value (rule-assign-value r))] #:when (string? v)
+                [ref (in-value ((current-instance-ref) v))] #:when ref)
+      (cons v (last-url-seg ref))))
+  (parameterize ([current-contained contained])
+    (for/fold ([js base]) ([r (in-list assigns)] [steps (in-list paths)] #:when (rule-assign? r))
+      (assign js resource-type steps (resolve (rule-assign-value r) aliases)))))
 ;; resolve-soft-indices : (listof (listof fsh-step)) -> same, with every `[+]`/`[=]` and every
 ;; named slice made a numeric index.
 ;; FSH semantics (https://hl7.org/fhir/uv/shorthand/reference.html#soft-indexing): an index counter
@@ -454,6 +461,9 @@
       [declared-url (update-at js steps (lambda (e) (hash-set e 'url declared-url)))]
       [(string? parent-url)
        (update-at js steps (lambda (e) (hash-set e 'url (or (nested-extension-url parent-url (cdr m)) (cdr m)))))]
+      ;; under an element that is no extension (`multipleOr.extension[$cs-expectation]`): the name is
+      ;; an alias, a url or an Extension
+      [(extension-url-of (cdr m)) => (lambda (u) (update-at js steps (lambda (e) (hash-set e 'url u))))]
       [else js])))
 ;; nested-extension-url : extension-url slice -> url|#f   from the Extension's definition (this
 ;; document's, else the packages'): the element Extension.extension:<slice>.url, fixed

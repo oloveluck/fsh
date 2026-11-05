@@ -21,7 +21,7 @@
          (only-in fhir/sd/snapshot generate-snapshot)
          (only-in fhir/sd/sd-index resolve-sd-raw resolve-canonical-raw sd-index-available?)
          (only-in fhir/sd/logical register-structure-definition!))
-(provide assoc-ref canonical-base capitalize code-text* current-aliases current-instance-ref current-instance-resolver current-local-canonical current-logicals current-profile-sd current-profiles current-rule-diagnostics current-slice-orders emit-snapshot? external-canonical fsh-fhir-version last-url-seg resolve resolve-alias sd-url split-code strip#)
+(provide assoc-ref canonical-base capitalize code-text* current-aliases current-contained current-instance-ref current-instance-resolver current-local-canonical current-logicals current-profile-sd current-profiles current-rule-diagnostics current-slice-orders emit-snapshot? external-canonical fsh-fhir-version last-url-seg resolve resolve-alias sd-url split-code strip#)
 ;; the IG canonical URL base (SUSHI default in the golden corpus is http://example.org)
 (define canonical-base (make-parameter "http://example.org"))
 (define fsh-fhir-version (make-parameter "5.0.0"))
@@ -94,9 +94,12 @@
 (define (resolve-reference t aliases)
   (define inner (match (regexp-match #px"^\\s*Reference\\s*\\(\\s*(.*?)\\s*\\)\\s*$" t)
                   [(list _ x) (resolve-alias x aliases)] [#f t]))
-  (or ((current-instance-ref) inner) inner))
+  (cond [(assoc inner (current-contained)) => (lambda (p) (string-append "#" (cdr p)))]   ; a contained one: local
+        [else (or ((current-instance-ref) inner) inner)]))
 ;; current-instance-ref : (parameter (string -> (or "Type/id" #f)))
 (define current-instance-ref (make-parameter (lambda (_) #f)))
+;; current-contained : (parameter (listof (cons name id)))   the instances the one being built contains
+(define current-contained (make-parameter '()))
 (define (code-text* x) (if (code-tok? x) (code-tok-text x) x))
 (define (strip# s) (if (and (string? s) (regexp-match? #px"^#" s)) (substring s 1) s))
 (define (split-code c)

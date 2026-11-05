@@ -431,6 +431,18 @@
   (check-equal? (hash-ref cm-el 'code) "101Y00000X")
   (check-equal? (hash-ref cm-el 'display) "Counselor (occupation)")
   (check-equal? (hash-ref (car (hash-ref cm-el 'target)) 'equivalence) "wider")
+  ;; an embedded resource typed by its resourceType: Coverage.class repeats, each block with its type
+  (define emb (car (fsh->fhir (string-append
+                               "Instance: PX\nInstanceOf: Parameters\nUsage: #example\n* parameter[0].name = \"cov\"\n* parameter[0].resource\n  * resourceType = \"Coverage\"\n  * status = #active\n"
+                               "  * class[0]\n    * type = http://x#group\n    * value = \"A\"\n  * class[+]\n    * type = http://x#plan\n    * value = \"B\"\n"))))
+  (define cov (hash-ref (car (hash-ref emb 'parameter)) 'resource))
+  (check-equal? (map (lambda (c) (hash-ref c 'value)) (hash-ref cov 'class)) '("A" "B"))
+  (check-equal? (map (lambda (c) (hash-ref (car (hash-ref (hash-ref c 'type) 'coding)) 'code)) (hash-ref cov 'class)) '("group" "plan"))
+  ;; a Reference to a contained instance is local
+  (define task (car (fsh->fhir (string-append
+                                 "Instance: inner\nInstanceOf: Patient\nUsage: #inline\n* gender = #female\n\n"
+                                 "Instance: t1\nInstanceOf: Task\nUsage: #example\n* status = #requested\n* intent = #order\n* contained[0] = inner\n* for = Reference(inner)\n"))))
+  (check-equal? (hash-ref (hash-ref task 'for) 'reference) "#inner")
   ;; a document: an alias resolves, a profile becomes a differential, an instance a resource
   (define out (fsh->fhir (string-append
                           "Alias: $sct = http://snomed.info/sct\n\n"

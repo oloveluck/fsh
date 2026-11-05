@@ -71,7 +71,8 @@
   ;; names the slice typed with that extension
   (define parent-elements (if (or local-parent parent-sd) (profile-elements parent) (hash)))
   (define-values (elems00 order00)
-    (fold-sd-rules base-type (rewrite-extension-slices rules parent-elements base-type) invariants self-url #:parent-types parent-types))
+    (fold-sd-rules base-type (rewrite-extension-slices rules parent-elements base-type) invariants self-url
+                   #:parent-types parent-types #:parent-element (lambda (id) (hash-ref parent-elements id #f))))
   (define-values (elems0 order0) (let-values ([(e o) (add-slice-parents elems00 order00)]) (copy-slice-children e o)))
   (define-values (elems order)
     (if ext? (add-extension-scaffold elems0 order0 self-url meta) (values elems0 order0)))
@@ -220,7 +221,8 @@
     (string-join (take segs n) ".")))
 ;; fold SD rules into an id-keyed differential-element accumulator (shared by profile/ext/logical)
 ;; parent-types : path -> (listof type) — the Parent's snapshot element at that path, for `only`
-(define (fold-sd-rules base-type rules invariants self-url #:parent-types [parent-types (lambda (_) '())])
+(define (fold-sd-rules base-type rules invariants self-url #:parent-types [parent-types (lambda (_) '())]
+                       #:parent-element [parent-element (lambda (_) #f)])
   (define (constraint-of key)
     (define inv (hash-ref invariants key #f))
     (drop-false (hasheq 'key key
@@ -236,7 +238,7 @@
       (let-values ([(id path slice) (if (string? p) (element-loc base-type p) (values #f #f #f))])
         (if id (narrowed-choice elems id path slice) (values id path slice))))
     (define-values (elems* order*)
-      (if (and rid (regexp-match? #px"\\[x\\]:" rid))
+      (if (and rid (regexp-match? #px"\\[x\\]:[^.]+$" rid))
           (let-values ([(e o) (ensure-choice-parents elems order rid)])
             ;; a type slice SUSHI creates restricts the choice to that one type: min 0, the base max
             (if (hash-has-key? e rid)
@@ -246,7 +248,13 @@
           (values elems order)))
     (let ([elems elems*] [order order*])
     (match r
-      [(rule-card p card flags) (upd elems order rid rpath rslice (lambda (h) (apply-card (apply-flags h flags) card)))]
+      [(rule-card p card flags)
+       (let-values ([(e o) (upd elems order rid rpath rslice (lambda (h) (apply-card (apply-flags h flags) card)))])
+         ;; `valueIdentifier 1..`: the choice element value[x] itself becomes required too (SUSHI)
+         (define m (regexp-match #px"^(.*\\[x\\]):[A-Za-z]+$" rid))
+         (if (and m (> (card-lo card) 0) (hash-has-key? e (cadr m)) (not (hash-has-key? (hash-ref e (cadr m)) 'min)))
+             (values (hash-update e (cadr m) (lambda (h) (hash-set h 'min (card-lo card)))) o)
+             (values e o)))]
       [(rule-flag p _ flags)    (upd elems order rid rpath rslice (lambda (h) (apply-flags h flags)))]
       ;; `from VS` without a strength is a required binding (FSH's default)
       [(rule-binding p vs str)  (upd elems order rid rpath rslice (lambda (h) (hash-set h 'binding (drop-false (hasheq 'strength (if str (symbol->string str) "required") 'valueSet (and vs (valueset-url vs)))))))]
@@ -268,10 +276,17 @@
            (upd elems order rid rpath rslice (lambda (h) (hash-set h 'type new-types))))]
       [(rule-assign p v exact?)
        (let-values ([(e o) (upd elems order rid rpath rslice (lambda (h) (apply-pattern h base-type p (resolve v (current-aliases)) exact?)))])
-         (values (require-discriminator e rid) o))]
+         (values (require-discriminator e rid base-type) o))]
       [(rule-caret p cp v)      (if p (upd elems order rid rpath rslice
-                                           (lambda (h) (typed-caret-set h cp v 'ElementDefinition
-                                                                        (hash-ref! element-counters rid make-hash))))
+                                           (lambda (h0)
+                                             ;; `^binding.extension…` on an element the Parent binds: the caret
+                                             ;; edits the inherited binding, so the differential carries it whole
+                                             (define h (let ([pe (and (regexp-match? #px"^\\^?binding([.\\[]|$)" cp) (parent-element rid))])
+                                                         (if (and pe (hash? pe) (hash-ref pe 'binding #f) (not (hash-has-key? h0 'binding)))
+                                                             (hash-set h0 'binding (hash-ref pe 'binding))
+                                                             h0)))
+                                             (typed-caret-set h cp v 'ElementDefinition
+                                                              (hash-ref! element-counters rid make-hash))))
                                     (values elems order))]
       [(rule-obeys p invs)      (let-values ([(oid opath oslice) (if p (values rid rpath rslice) (values base-type base-type #f))])
                                   ;; several `obeys` on one element accumulate (each key once, first wins)
@@ -443,13 +458,16 @@
 ;; discriminator element makes that element required (SUSHI: the slice is told apart by it, so an
 ;; instance of the slice must carry it): `identifier[displayName].use = #usual` under an `identifier`
 ;; sliced by `use` gives `identifier:displayName.use` min 1
-(define (require-discriminator elems id)
+(define (require-discriminator elems id base-type)
   (match (regexp-match #px"^(.*):[^.:/]+[.]([^:]+)$" id)
     [(list _ sliced rel)
      (define disc (let ([sl (hash-ref (hash-ref elems sliced (hash)) 'slicing #f)]) (and (hash? sl) (hash-ref sl 'discriminator '()))))
+     ;; only an element the base leaves optional gets the min written (SUSHI writes what changes)
+     (define base-min (let ([b (base-element base-type (hash-ref (hash-ref elems id (hash)) 'path ""))]) (and b (hash-ref b 'min #f))))
      (if (and (list? disc)
               (for/or ([d (in-list disc)])
                 (and (hash? d) (member (hash-ref d 'type #f) '("value" "pattern")) (equal? (hash-ref d 'path #f) rel)))
+              (equal? base-min 0)
               (not (hash-has-key? (hash-ref elems id (hash)) 'min)))
          (hash-update elems id (lambda (h) (hash-set h 'min 1)))
          elems)]
@@ -634,9 +652,10 @@
   (let ([elems (hash "B.identifier" (hasheq 'slicing (hasheq 'discriminator (list (hasheq 'type "value" 'path "use"))))
                      "B.identifier:displayName.use" (hasheq 'patternCode "usual")
                      "B.identifier:displayName.value" (hasheq 'mustSupport #t))])
-    (check-equal? (hash-ref (hash-ref (require-discriminator elems "B.identifier:displayName.use") "B.identifier:displayName.use") 'min #f) 1)
-    (check-false (hash-ref (hash-ref (require-discriminator elems "B.identifier:displayName.value") "B.identifier:displayName.value") 'min #f))
-    (check-equal? (require-discriminator elems "B.description") elems))
+    (define elems* (for/hash ([(k v) (in-hash elems)]) (values k (hash-set v 'path (regexp-replace* #rx":[^.]+" (regexp-replace #rx"^B" k "BodyStructure") "")))))
+    (check-equal? (hash-ref (hash-ref (require-discriminator elems* "B.identifier:displayName.use" "BodyStructure") "B.identifier:displayName.use") 'min #f) 1)
+    (check-false (hash-ref (hash-ref (require-discriminator elems* "B.identifier:displayName.value" "BodyStructure") "B.identifier:displayName.value") 'min #f))
+    (check-equal? (require-discriminator elems* "B.description" "BodyStructure") elems*))
   ;; `* a and b MS` flags every path; `Reference (A or B)` with a space is a Reference type
   (define multi (compile-profile (fsh-profile "P" '((parent . "Observation"))
                                               (list (rule-flag "status" '("code" "subject") '(MS))
