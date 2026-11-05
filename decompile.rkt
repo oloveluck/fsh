@@ -100,7 +100,7 @@
     (append
      (append-map (lambda (inc) (vs-include->rules inc #t)) (hash-ref* js 'compose 'include))
      (append-map (lambda (exc) (vs-include->rules exc #f)) (hash-ref* js 'compose 'exclude))
-     (caret-rest js '(resourceType id title description compose name url status version))))
+     (caret-rest js (append publisher-only '(resourceType id title description compose name url status version)))))
   (fsh-valueset (entity-name js "ValueSet") (append (id-meta js) (sd-meta js)) rules))
 
 ;; an include/exclude component -> one FSH vs-component per concept, or a `codes from system X
@@ -147,7 +147,7 @@
   (define rules
     (append
      (concepts->rules (hash-ref js 'concept '()) '())
-     (caret-rest js '(resourceType id title description concept name content url status version count))))
+     (caret-rest js (append publisher-only '(resourceType id title description concept name content url status version count)))))
   (fsh-codesystem (entity-name js "CodeSystem") (append (id-meta js) (sd-meta js)) rules))
 
 ;; a concept tree -> flat concept-rules carrying the ancestor code chain (`* #a #b "..."`)
@@ -191,7 +191,7 @@
      (for/list ([elt (in-list elts)] #:unless (equal? (hash-ref elt 'path) (hash-ref js 'id)))
        (define rel (relative-path (hash-ref elt 'path)))
        (cons (rule-add-element rel
-                               (format "~a..~a" (hash-ref elt 'min 0) (hash-ref elt 'max "*"))
+                               (card-str (hash-ref elt 'min 0) (hash-ref elt 'max "*"))
                                '()
                                ;; a logical model's type is its canonical: the name in FSH
                                (for/list ([t (in-list (hash-ref elt 'type '()))])
@@ -203,8 +203,8 @@
   (define ext-carets
     (append* (for/list ([e (in-list other-exts)] [i (in-naturals (length characteristics))])
                (value->carets (format "^extension[~a]" i) e))))
-  (define top-carets (caret-rest js '(resourceType id title description name url version baseDefinition type kind
-                                       derivation differential abstract fhirVersion extension)))
+  (define top-carets (caret-rest js (append publisher-only '(resourceType id title description name url version baseDefinition type kind
+                                                              derivation differential abstract fhirVersion extension))))
   (define all (append rules ext-carets top-carets))
   (if logical? (fsh-logical name meta all) (fsh-resource name meta all)))
 ;; parent-name : canonical -> string   the Parent's name without its version pin (a published IG
@@ -229,7 +229,7 @@
          (rule-contains "extension"
                         (for/list ([sn (in-list slices)])
                           (define se (by-id (string-append "Extension.extension:" sn)))
-                          (contains-item sn #f (format "~a..~a" (hash-ref se 'min 0) (hash-ref se 'max "*")) '())))))
+                          (contains-item sn #f (card-str (hash-ref se 'min 0) (hash-ref se 'max "*")) '())))))
   (define slice-value-rules
     (for/list ([sn (in-list slices)]
                #:when (let ([ve (by-id (format "Extension.extension:~a.value[x]" sn))]) (and ve (pair? (types-of ve)))))
@@ -252,7 +252,8 @@
             (id-meta js)
             (sd-meta js)))
   (define elements (hash-ref* js 'differential 'element))
-  (define (rel-of elt) (id->fsh-rel base-type (hash-ref elt 'id (hash-ref elt 'path))))
+  ;; the root element's rules are written at `.` (a bare caret would be the definition's own)
+  (define (rel-of elt) (let ([r (id->fsh-rel base-type (hash-ref elt 'id (hash-ref elt 'path)))]) (if (equal? r "") "." r)))
   ;; slices: elements with a sliceName define a slice; group them under their base element id
   (define slice-defs (filter (lambda (e) (hash-ref e 'sliceName #f)) elements))
   ;; the base element a slice belongs to: a reslice (id …:Lab/Chem) bases on …:Lab; else drop :slice
@@ -262,12 +263,20 @@
         (regexp-replace #px"/[^./]+$" id "")
         (regexp-replace #px":[^.:]+$" id "")))
   (define sliced-base-ids (remove-duplicates (map base-id-of slice-defs)))
+  ;; an extension slice typed with an Extension (`type: Extension, profile: [url]`) is
+  ;; `contains <url> named <slice>` — the compiler types it from the url, no `only` needed
+  (define (extension-profile-of e)
+    (define ts (hash-ref e 'type '()))
+    (and (pair? ts) (equal? (hash-ref (car ts) 'code #f) "Extension")
+         (let ([p (hash-ref (car ts) 'profile '())]) (and (pair? p) (unpin (car p))))))
   (define (contains-for bid)
     (rule-contains (id->fsh-rel base-type bid)
                    (for/list ([e (in-list slice-defs)] #:when (equal? (base-id-of e) bid))
                      ;; the local slice name is the last "/"-segment of sliceName (Chem in Lab/Chem)
-                     (contains-item (last (string-split (hash-ref e 'sliceName) "/")) #f
-                                    (format "~a..~a" (hash-ref e 'min 0) (hash-ref e 'max "*")) (elt-flags e)))))
+                     (define sn (last (string-split (hash-ref e 'sliceName) "/")))
+                     (define url (extension-profile-of e))
+                     (contains-item (or url sn) (and url sn)
+                                    (card-str (hash-ref e 'min 0) (hash-ref e 'max "*")) (elt-flags e)))))
   ;; per-element rules, slice-aware: a sliced base emits its ^slicing carets then its `contains`; a
   ;; plain slice is folded into its parent `contains`; a RESLICED slice (a slice that is itself a base)
   ;; emits both. Everything else emits ordinary rules.
@@ -280,14 +289,20 @@
          [(and (hash-ref elt 'sliceName #f) base?) (append (element->rules elt (rel-of elt) #t) (list (contains-for id)))]
          ;; a plain slice: its card and flags ride in the `contains`; what else it says (a pattern,
          ;; a binding, a short, its constraints) is written at `path[slice]`
-         [(hash-ref elt 'sliceName #f) (filter (lambda (r) (not (rule-flag? r))) (element->rules elt (rel-of elt) #t))]
+         [(hash-ref elt 'sliceName #f)
+          (filter (lambda (r) (not (or (rule-flag? r) (and (extension-profile-of elt) (rule-only? r)))))
+                  (element->rules elt (rel-of elt) #t))]
          [base? (append (element->rules elt (rel-of elt) #t) (list (contains-for id)))]
          [else (element->rules elt (rel-of elt) #f)]))))
   ;; `status` is NOT excluded: the forward compiler defaults it, so an overriding value must be caret'd
-  (define top-carets (caret-rest js '(resourceType id title description name url version
-                                       baseDefinition type kind derivation differential abstract fhirVersion mapping)))
+  (define top-carets (caret-rest js (append publisher-only '(resourceType id title description name url version
+                                                              baseDefinition type kind derivation differential abstract fhirVersion mapping))))
   (fsh-profile name meta (append elem-rules top-carets)))
 
+;; card-str : min max -> "min..max"   a published package's integers may read back inexact (1.0)
+(define (card-str mn mx)
+  (define (int x) (if (and (number? x) (integer? x)) (inexact->exact x) x))
+  (format "~a..~a" (int mn) (int mx)))
 ;; the FSH entity name is the resource `name` (falls back to id); Id: is emitted separately
 (define (entity-name js default) (str (hash-ref js 'name (hash-ref js 'id default))))
 (define (id-meta js) (let ([i (hash-ref js 'id #f)]) (if i (list (cons 'id i)) '())))
@@ -310,7 +325,7 @@
       [skip-card? (when (pair? flags) (add! (rule-flag rel '() flags)))]
       ;; only what the element states: `1..` when it has no max (a round trip must not invent "*")
       [(or (hash-has-key? elt 'min) (hash-has-key? elt 'max))
-       (add! (rule-card rel (format "~a..~a" (hash-ref elt 'min "") (hash-ref elt 'max "")) flags))]
+       (add! (rule-card rel (card-str (hash-ref elt 'min "") (hash-ref elt 'max "")) flags))]
       [(pair? flags) (add! (rule-flag rel '() flags))]))
   ;; an explicit `mustSupport: false` is not a flag; it is said as a caret
   (when (eq? (hash-ref elt 'mustSupport 'absent) #f) (add! (rule-caret rel "^mustSupport" #f)))
@@ -339,6 +354,9 @@
 
 (define (caret-on rel r) (match r [(rule-caret #f cp v) (rule-caret rel cp v)] [_ r]))
 
+;; what the IG Publisher writes into a published resource and no FSH says: the snapshot, the
+;; narrative, and the dates/publisher/contact/jurisdiction from the IG's configuration
+(define publisher-only '(snapshot text date publisher contact jurisdiction))
 ;; ---- caret catch-all -----------------------------------------------------------------------
 (define (caret-rest js handled)
   (append*
