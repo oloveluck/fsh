@@ -60,6 +60,11 @@
      (match (regexp-match #px"^([^#]+)#(.*)$" c)
        [(list _ sys code) (fsh-code (string-append (resolve-alias sys aliases) "#" code) d)]
        [#f v])]
+    ;; a quantity's coded unit (`1 SCT#428673006 "tablet"`): the system part is an alias too
+    [(struct fsh-quantity (n u d))
+     (match (and (string? u) (regexp-match #px"^([^#]+)#(.*)$" u))
+       [(list _ sys code) (fsh-quantity n (string-append (resolve-alias sys aliases) "#" code) d)]
+       [_ v])]
     ;; Canonical(Name) / Canonical(Name|version): an alias, this document's profiles, value sets and
     ;; code systems, or a definition in the packages, as its canonical url (the version kept)
     [(struct fsh-canonical (t0))

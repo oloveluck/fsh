@@ -148,7 +148,8 @@
        (define r (if ctx (in-context (car rs) (cadr ctx) (caddr ctx)) (car rs)))
        (loop (cdr rs) (cdr is) (cons (list level (context-path r) (rule-codes r)) live) (cons r acc))])))
 
-(define (join-path ctx p)
+(define (join-path ctx0 p)
+  (define ctx (and ctx0 (regexp-replace #rx"[.]$" ctx0 "")))   ; `* product.` is a context too
   (cond [(not ctx) p]
         [(or (not p) (string=? p "") (string=? p ".")) ctx]
         [(string=? ctx "") p]

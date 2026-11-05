@@ -143,8 +143,8 @@
   ;; (`* severity = #error`, `* expression = "…"`) — both forms are FSH
   (define invariants (for/hash ([e (in-list entities)] #:when (fsh-invariant? e))
                        (define m (fsh-invariant-metadata e))
-                       (define (rule-val k)
-                         (for/or ([r (in-list (fsh-invariant-rules e))])
+                       (define (rule-val k)                        ; an Invariant's rules may come from a RuleSet
+                         (for/or ([r (in-list (expand-rules (fsh-invariant-rules e) rulesets param-rulesets))])
                            (match r [(rule-assign (== k) v _) (match v [(struct fsh-code (c _)) c] [_ v])] [_ #f])))
                        (define (field k [rk (symbol->string k)]) (or (assoc-ref m k) (rule-val rk)))
                        (values (fsh-invariant-name e)
@@ -276,7 +276,9 @@
 ;; ---- insert / RuleSet expansion (plain + parameterized) ------------------------------------
 (define (expand-rules rules rulesets param-rulesets)
   (append-map
-   (lambda (r)
+   (lambda (r0)
+     ;; inside a RuleSet the grammar reads `* insert X` as a code-insert with no codes: the same rule
+     (define r (match r0 [(rule-code-insert '() ref) (rule-insert #f ref)] [_ r0]))
      (cond
        ;; plain `insert RuleSet` — ref is the ruleset name string
        [(and (rule-insert? r) (string? (rule-insert-ref r)))
@@ -398,7 +400,6 @@
   (check-equal? (hash-ref code-el 'comment #f) "mandatory")
   (check-equal? (hash-ref code-el 'short #f) "m")
   ;; a plain RuleSet whose rules insert a parameterized one: the nested insert expands too
-  (printf "nested-insert parse: ~s\n" (parse-fsh-doc "RuleSet: NotUsed(path)\n* {path} ^short = \"Not used\"\n\nRuleSet: Common\n* subject 1..1\n* insert NotUsed(device)\n"))
   (define nested (car (fsh->fhir (string-append
                                   "RuleSet: NotUsed(path)\n* {path} ^short = \"Not used\"\n\n"
                                   "RuleSet: Common\n* subject 1..1\n* insert NotUsed(device)\n\n"

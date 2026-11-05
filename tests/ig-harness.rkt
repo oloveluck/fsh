@@ -88,7 +88,8 @@
       j))
 ;; narratives are publisher output: a resource's `text` (Bundle entries too) is dropped, and the
 ;; XHTML of a hand-written one (Composition sections) is compared with its whitespace collapsed
-(define (collapse-xhtml s)
+(define (collapse-xhtml s0)
+  (define s (regexp-replace* #px"(\\w+)='([^']*)'" s0 "\\1=\"\\2\""))   ; attributes in double quotes
   (regexp-replace* #px"<(\\w+)></\\1>"                       ; the publisher writes an empty element <span/>
                    (string-trim (regexp-replace* #px">\\s+<" (regexp-replace* #px"\\s+" s " ") "><"))
                    "<\\1/>"))

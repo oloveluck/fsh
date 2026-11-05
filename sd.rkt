@@ -160,7 +160,7 @@
       (let-values ([(id path slice) (if (string? p) (element-loc base-type p) (values #f #f #f))])
         (if id (narrowed-choice elems id path slice) (values id path slice))))
     (define-values (elems* order*)
-      (if (and rid (regexp-match? #px"\\[x\\]:" rid) (not (rule-only? r)))
+      (if (and rid (regexp-match? #px"\\[x\\]:" rid))
           (let-values ([(e o) (ensure-choice-parents elems order rid)])
             ;; a type slice SUSHI creates restricts the choice to that one type: min 0, the base max
             (if (hash-has-key? e rid)

@@ -5,7 +5,7 @@
 (require racket/match
          racket/string
          racket/contract
-         (only-in racket/list append-map make-list last filter-map remove-duplicates index-of drop-right)
+         (only-in racket/list append-map make-list last filter-map remove-duplicates index-of drop-right take)
          "parser/ast.rkt"
          "parser/path.rkt"
          "caret.rkt"
@@ -43,7 +43,8 @@
   (define js (let* ([j (build-instance-json e t aliases)]
                     [j (if (type-registered? (string->symbol type-str))
                            j
-                           (assign-required j (profile-elements type-str) (slice-positions e aliases)))])
+                           (assign-required j (profile-elements type-str) (slice-positions e aliases)))]
+                    [j (fill-nested-extension-urls j (nested-slice-mentions e aliases))])
                (definitional-url j (assoc-ref meta 'usage))))
   ;; stamp meta.profile when InstanceOf named a profile (not a base type), using the profile's id-URL
   (define prof (and (not (type-registered? (string->symbol type-str))) (hash-ref profiles type-str #f)))
@@ -85,15 +86,42 @@
 ;; slice-positions : instance aliases -> (hash (cons field index) -> slice-name)   where each
 ;; top-level named slice the instance mentions (`component[systolic]`) was placed
 (define (slice-positions e aliases)
-  (define assigns (for/list ([r (in-list (fsh-instance-rules e))] #:when (or (rule-assign? r) (rule-path? r))) r))
-  (define of (let ([o (assoc-ref (fsh-instance-metadata e) 'instanceOf)]) (and o (resolve-alias o aliases))))
-  (define orig (for/list ([r (in-list assigns)]) (fsh-path-steps (parse-fsh-path (if (rule-path? r) (rule-path-path r) (rule-assign-path r))))))
-  (define resolved (resolve-soft-indices orig #:slice-order (if of ((current-slice-orders) of) (hash))))
+  (define-values (orig resolved) (instance-paths e aliases))
   (for*/hash ([(o r) (in-parallel orig resolved)]
               #:when (and (pair? o) (pair? r))
               [b (in-list (fsh-step-brackets (car o)))] #:when (eq? (fsh-bracket-kind b) 'slice)
               [rb (in-list (fsh-step-brackets (car r)))] #:when (eq? (fsh-bracket-kind rb) 'index))
     (values (cons (fsh-step-name (car o)) (fsh-bracket-value rb)) (fsh-bracket-value b))))
+;; nested-slice-mentions : instance aliases -> (listof (cons steps slice-name))   every named slice
+;; of an extension below the top level (`extension[USCoreRace].extension[ombCategory]`), as the
+;; resolved steps (name . index|#f) down to it; shortest first, so parents come before children
+(define (nested-slice-mentions e aliases)
+  (define-values (orig resolved) (instance-paths e aliases))
+  (define found
+    (for*/list ([(o r) (in-parallel orig resolved)]
+                [i (in-range 1 (min (length o) (length r)))]
+                #:when (member (fsh-step-name (list-ref o i)) '("extension" "modifierExtension"))
+                [b (in-list (fsh-step-brackets (list-ref o i)))] #:when (eq? (fsh-bracket-kind b) 'slice))
+      (cons (for/list ([st (in-list (take r (add1 i)))])
+              (cons (fsh-step-name st)
+                    (for/or ([rb (in-list (fsh-step-brackets st))]) (and (eq? (fsh-bracket-kind rb) 'index) (fsh-bracket-value rb)))))
+            (fsh-bracket-value b))))
+  (sort (remove-duplicates found) < #:key (lambda (x) (length (car x)))))
+;; instance-paths : instance aliases -> (values original-steps resolved-steps)   the assignment
+;; paths (path-only rules too: they advance soft indices) and the same with every index a number
+(define (instance-paths e aliases)
+  (define assigns (for/list ([r (in-list (fsh-instance-rules e))] #:when (or (rule-assign? r) (rule-path? r))) r))
+  (define of (let ([o (assoc-ref (fsh-instance-metadata e) 'instanceOf)]) (and o (resolve-alias o aliases))))
+  (define orig (for/list ([r (in-list assigns)]) (fsh-path-steps (parse-fsh-path (if (rule-path? r) (rule-path-path r) (rule-assign-path r))))))
+  ;; the profile's slices in declaration order, and which of them are required (min 1): the required
+  ;; ones take the first positions, in that order (SUSHI assigns them before any rule); the others
+  ;; take positions as the rules mention them
+  (define elements (if of (profile-elements of) (hash)))
+  (define type (and of (instance-base of (current-profiles))))
+  (define (required-slice? field slice)
+    (define el (hash-ref elements (format "~a.~a:~a" type field slice) #f))
+    (and el (let ([m (hash-ref el 'min 0)]) (and (number? m) (>= m 1)))))
+  (values orig (resolve-soft-indices orig #:slice-order (if of ((current-slice-orders) of) (hash)) #:required? required-slice?)))
 (define (build-instance-json e resource-type aliases)
   ;; an instance of a logical model (registered with Element as its parent: no resourceType on the
   ;; wire, no id element unless the model declares one) is not stamped with an id
@@ -101,12 +129,8 @@
   (define base (if logical?
                    (hasheq 'resourceType (symbol->string resource-type))
                    (hasheq 'resourceType (symbol->string resource-type) 'id (fsh-instance-name e))))
-  ;; path-only rules (`* extension[x][+]`, the context of indented rules) assign nothing but still
-  ;; advance soft indices, so they take part in index resolution
   (define assigns (for/list ([r (in-list (fsh-instance-rules e))] #:when (or (rule-assign? r) (rule-path? r))) r))
-  (define of (let ([o (assoc-ref (fsh-instance-metadata e) 'instanceOf)]) (and o (resolve-alias o aliases))))
-  (define paths (resolve-soft-indices (for/list ([r (in-list assigns)]) (fsh-path-steps (parse-fsh-path (if (rule-path? r) (rule-path-path r) (rule-assign-path r)))))
-                                      #:slice-order (if of ((current-slice-orders) of) (hash))))
+  (define-values (_orig paths) (instance-paths e aliases))
   (for/fold ([js base]) ([r (in-list assigns)] [steps (in-list paths)] #:when (rule-assign? r))
     (assign js resource-type steps (resolve (rule-assign-value r) aliases))))
 ;; resolve-soft-indices : (listof (listof fsh-step)) -> same, with every `[+]`/`[=]` and every
@@ -116,9 +140,10 @@
 ;; `[=]` reuses it, an explicit `[n]` sets it. In an Instance a SLICE NAME (`section[problems]`)
 ;; denotes one element of the array: its first mention takes the next index, later mentions reuse it.
 ;; Rules are processed in order.
-(define (resolve-soft-indices paths #:slice-order [slice-order (hash)])
+(define (resolve-soft-indices paths #:slice-order [slice-order (hash)] #:required? [required? (lambda (field slice) #t)])
   (define counters (make-hash))
-  (define slices (make-hash))                       ; (key . slice-name) -> index
+  (define slices (make-hash))                       ; (key . slice-name) -> the slice's first index
+  (define within (make-hash))                       ; (key . slice-name) -> the highest k of [slice][k]
   (define high (make-hash))                         ; key -> the highest index used so far
   ;; a top-level array's named slices take positions in the PROFILE's declaration order (SUSHI), so
   ;; allocate them up front: the slices this instance uses, profile order first, then any others
@@ -130,7 +155,8 @@
       (unless (member (fsh-bracket-value b) (hash-ref used key '()))
         (hash-update! used key (lambda (l) (append l (list (fsh-bracket-value b)))) '()))))
   (for ([(key names) (in-hash used)])
-    (define declared (hash-ref slice-order (substring key 1) '()))
+    (define field (substring key 1))
+    (define declared (filter (lambda (n) (required? field n)) (hash-ref slice-order field '())))
     (define ordered (append (filter (lambda (n) (member n names)) declared)
                             (filter (lambda (n) (not (member n declared))) names)))
     (when (pair? declared)
@@ -144,20 +170,36 @@
          (define st (car steps))
          (define key (string-append prefix "." (fsh-step-name st)))
          (define brackets
-           (for/list ([b (in-list (fsh-step-brackets st))])
-             (case (fsh-bracket-kind b)
-               [(soft+) (let ([n (if (hash-has-key? counters key) (add1 (hash-ref counters key)) 0)])
-                          (hash-set! counters key n) (fsh-bracket 'index n))]
-               [(soft=) (fsh-bracket 'index (hash-ref counters key 0))]
-               [(index) (hash-set! counters key (fsh-bracket-value b)) b]
-               [(slice)
-                (define sk (cons key (fsh-bracket-value b)))
-                ;; a slice mentioned again reuses its index; a new one takes the next UNUSED
-                ;; position (after re-mentioning an earlier slice the counter points back at it)
-                (cond [(hash-ref slices sk #f) => (lambda (n) (hash-set! counters key n) (fsh-bracket 'index n))]
-                      [else (define n (add1 (max (hash-ref counters key -1) (hash-ref high key -1))))
-                            (hash-set! counters key n) (hash-set! slices sk n) (fsh-bracket 'index n)])]
-               [else b])))
+           (let loop ([bs (fsh-step-brackets st)] [acc '()])
+             (cond
+               [(null? bs) (reverse acc)]
+               [else
+                (define b (car bs))
+                (case (fsh-bracket-kind b)
+                  [(soft+) (define n (if (hash-has-key? counters key) (add1 (hash-ref counters key)) 0))
+                           (hash-set! counters key n) (loop (cdr bs) (cons (fsh-bracket 'index n) acc))]
+                  [(soft=) (loop (cdr bs) (cons (fsh-bracket 'index (hash-ref counters key 0)) acc))]
+                  [(index) (hash-set! counters key (fsh-bracket-value b)) (loop (cdr bs) (cons b acc))]
+                  [(slice)
+                   (define sk (cons key (fsh-bracket-value b)))
+                   ;; a slice mentioned again reuses its first position; a new one takes the next
+                   ;; UNUSED position (after re-mentioning an earlier slice the counter points back)
+                   (define base (or (hash-ref slices sk #f)
+                                    (let ([n (add1 (max (hash-ref counters key -1) (hash-ref high key -1)))])
+                                      (hash-set! slices sk n) n)))
+                   ;; `[slice][k]` (or [+]/[=] after the slice): the k-th element of the slice, a
+                   ;; contiguous block from its first position
+                   (define-values (k rest)
+                     (match (cdr bs)
+                       [(cons (fsh-bracket 'index k) more) (values k more)]
+                       [(cons (fsh-bracket 'soft+ _) more) (values (add1 (hash-ref within sk -1)) more)]
+                       [(cons (fsh-bracket 'soft= _) more) (values (max 0 (hash-ref within sk 0)) more)]
+                       [more (values 0 more)]))
+                   (hash-set! within sk (max k (hash-ref within sk -1)))
+                   (define n (+ base k))
+                   (hash-set! counters key n)
+                   (loop rest (cons (fsh-bracket 'index n) acc))]
+                  [else (loop (cdr bs) (cons b acc))])])))
          (for ([b (in-list brackets)] #:when (eq? (fsh-bracket-kind b) 'index))
            (hash-update! high key (lambda (h) (max h (fsh-bracket-value b))) -1))
          (define resolved (fsh-step (fsh-step-name st) brackets))
@@ -232,13 +274,22 @@
     ;; a number assigned to a primitive whose JSON form is a string (date `2020`, string `42`)
     [('prim (? number? n)) #:when (not (member (ftype-prim-code ftype) json-number-primitives)) (number->string n)]
     [(_ (struct fsh-code (c d)))
-     (define-values (sys code) (split-code c))
+     (define-values (sys0 code) (split-code c))
+     ;; `http://…/v2-0360|2.7#MD`: the system part carries a version
+     (define-values (sys version) (let ([m (and sys0 (regexp-match #px"^([^|]+)[|](.+)$" sys0))])
+                                    (if m (values (cadr m) (caddr m)) (values sys0 #f))))
      (case (and (eq? tag 'type) (ftype-type-name ftype))
-       [(Coding)          (drop-false (hasheq 'system sys 'code code 'display d))]
-       [(CodeableConcept) (hasheq 'coding (list (drop-false (hasheq 'system sys 'code code 'display d))))]
+       [(Coding)          (drop-false (hasheq 'system sys 'version version 'code code 'display d))]
+       [(CodeableConcept) (hasheq 'coding (list (drop-false (hasheq 'system sys 'version version 'code code 'display d))))]
+       ;; a code assigned to a Quantity: its system and code, the display as the unit
+       [(Quantity Age Duration Count Distance SimpleQuantity) (drop-false (hasheq 'system sys 'code code 'unit d))]
        [else (or code (strip# c))])]
     [(_ (struct fsh-quantity (val u d)))
-     (drop-false (hasheq 'value val 'unit (or d u) 'code u 'system "http://unitsofmeasure.org"))]
+     ;; `1 http://snomed.info/sct#428673006 "tablet"`: a coded unit; `40 'mg'`: a UCUM unit
+     (define-values (usys ucode) (split-code u))
+     (if usys
+         (drop-false (hasheq 'value val 'unit d 'code ucode 'system usys))
+         (drop-false (hasheq 'value val 'unit (or d u) 'code u 'system "http://unitsofmeasure.org")))]
     [(_ (struct fsh-reference (t d))) (drop-false (hasheq 'reference t 'display d))]
     [(_ (struct fsh-canonical (t))) t]
     ;; a bare instance name assigned to a Resource-typed element (`* entry[0].resource = MyPatient`,
@@ -289,18 +340,78 @@
       [(not (and (list? lst) (< (cdr pos) (length lst)) (hash? (list-ref lst (cdr pos))))) js]
       [else
        (define slice-id (string-append type "." (car pos) ":" slice))
-       (define slice-el (hash-ref elements slice-id #f))
+       (define extension-field? (and (member (car pos) '("extension" "modifierExtension")) #t))
+       ;; `extension[USCoreRace]` may name the Extension itself (an alias, a profile, a url) rather
+       ;; than the slice: then the slice is the one typed with that extension
+       (define named-url (and extension-field? (not (hash-ref elements slice-id #f)) (extension-url-of slice)))
+       (define slice-el (or (hash-ref elements slice-id #f)
+                            (and named-url
+                                 (for/or ([(id el) (in-hash elements)])
+                                   (and (regexp-match? (pregexp (string-append "^" (regexp-quote (string-append type "." (car pos) ":")) "[^.]+$")) id)
+                                        (member named-url (extension-profile el)) el)))))
        ;; an extension slice's url is the canonical of the Extension it is typed with
-       (define ext-url (and slice-el (member (car pos) '("extension" "modifierExtension"))
-                            (let* ([ts (hash-ref slice-el 'type '())]
-                                   [pr (and (pair? ts) (hash-ref (car ts) 'profile '()))])
-                              (and (pair? pr) (car pr)))))
+       (define ext-url (and extension-field?
+                            (or (and slice-el (let ([pr (extension-profile slice-el)]) (and (pair? pr) (car pr))))
+                                named-url)))
        (define en (list-ref lst (cdr pos)))
        (define pinned (let ([v (and slice-el (pinned-value slice-el))]) (and (hash? v) v)))
        (define entry (merge-missing (merge-missing (if (and ext-url (not (hash-has-key? en 'url))) (hash-set en 'url ext-url) en)
                                                    (or pinned (hasheq)))
-                                    (required-children elements slice-id)))
+                                    (if slice-el (required-children elements (hash-ref slice-el 'id slice-id)) (hasheq))))
        (hash-set js field (for/list ([x (in-list lst)] [i (in-naturals)]) (if (= i (cdr pos)) entry x)))])))
+;; extension-profile : element -> (listof url)   the profiles its first type names
+(define (extension-profile el)
+  (define ts (hash-ref el 'type '()))
+  (if (pair? ts) (let ([p (hash-ref (car ts) 'profile '())]) (if (list? p) p '())) '()))
+;; extension-url-of : name -> url|#f   what `extension[Name]` may name besides a slice: an alias, a
+;; profile of this document, a url, an Extension in the packages
+(define (extension-url-of name)
+  (define r (resolve-alias name (current-aliases)))
+  (cond [(hash-ref (current-profiles) r #f) => (lambda (p) (string-append (canonical-base) "/StructureDefinition/" (cdr p)))]
+        [(regexp-match? #rx"^https?:" r) r]
+        [else (external-canonical "StructureDefinition" r)]))
+;; fill-nested-extension-urls : jsexpr mentions -> jsexpr   a named slice of an extension inside an
+;; extension (`extension[USCoreRace].extension[ombCategory]`) gets its url from the enclosing
+;; extension's definition: the slice's `url` (fixed), else the slice name
+(define (fill-nested-extension-urls js mentions)
+  (for/fold ([js js]) ([m (in-list mentions)])
+    (define steps (car m))
+    (define parent (walk js (drop-right steps 1)))
+    (define parent-url (and (hash? parent) (hash-ref parent 'url #f)))
+    (define entry (walk js steps))
+    (cond
+      [(not (and (string? parent-url) (hash? entry) (not (hash-has-key? entry 'url)))) js]
+      [else
+       (define url (or (nested-extension-url parent-url (cdr m)) (cdr m)))
+       (update-at js steps (lambda (e) (hash-set e 'url url)))])))
+;; nested-extension-url : extension-url slice -> url|#f   from the Extension's definition (this
+;; document's, else the packages'): the element Extension.extension:<slice>.url, fixed
+(define (nested-extension-url ext-url slice)
+  (define sd (or ((current-profile-sd) ext-url)
+                 (and (sd-index-available?) (resolve-canonical-raw "StructureDefinition" ext-url))))
+  (define els (and (hash? sd) (append (hash-ref (hash-ref sd 'differential (hasheq)) 'element '())
+                                      (hash-ref (hash-ref sd 'snapshot (hasheq)) 'element '()))))
+  (define url-id (string-append "Extension.extension:" slice ".url"))
+  (and (list? els)
+       (for/or ([e (in-list els)])
+         (and (equal? (hash-ref e 'id #f) url-id) (hash-ref e 'fixedUri #f)))))
+;; walk : jsexpr steps -> jsexpr|#f   down (name . index|#f) steps
+(define (walk js steps)
+  (for/fold ([j js]) ([st (in-list steps)])
+    (define v (and (hash? j) (hash-ref j (string->symbol (car st)) #f)))
+    (cond [(and (list? v) (cdr st) (< (cdr st) (length v))) (list-ref v (cdr st))]
+          [(list? v) (and (pair? v) (not (cdr st)) (car v))]
+          [else v])))
+;; update-at : jsexpr steps f -> jsexpr   f applied to the value at the steps
+(define (update-at js steps f)
+  (match steps
+    ['() (f js)]
+    [(cons (cons name idx) more)
+     (define key (string->symbol name))
+     (define v (hash-ref js key #f))
+     (cond [(list? v) (hash-set js key (for/list ([x (in-list v)] [i (in-naturals)]) (if (= i (or idx 0)) (update-at x more f) x)))]
+           [(hash? v) (hash-set js key (update-at v more f))]
+           [else js])]))
 ;; pinned-value : element -> jsexpr|#f   its fixed[x]/pattern[x]
 (define (pinned-value e)
   (for/or ([(k v) (in-hash e)]) (and (regexp-match? #rx"^(fixed|pattern)" (symbol->string k)) v)))
@@ -394,6 +505,25 @@
   (check-equal? (coerce (fsh-quantity 120 "mm[Hg]" #f) (vector 'type 'Quantity))
                 (hasheq 'value 120 'unit "mm[Hg]" 'code "mm[Hg]" 'system "http://unitsofmeasure.org"))
   (check-equal? (coerce (fsh-reference "Patient/1" "Ann") (vector 'type 'Reference)) (hasheq 'reference "Patient/1" 'display "Ann"))
+  ;; a code into a Quantity is its system and code, the display the unit; a coded quantity unit likewise
+  (check-equal? (coerce (fsh-code "http://snomed.info/sct#428673006" "tablet") (vector 'type 'Quantity))
+                (hasheq 'system "http://snomed.info/sct" 'code "428673006" 'unit "tablet"))
+  (check-equal? (coerce (fsh-quantity 1 "http://snomed.info/sct#428673006" "tablet") (vector 'type 'Quantity))
+                (hasheq 'value 1 'system "http://snomed.info/sct" 'code "428673006" 'unit "tablet"))
+  (check-equal? (coerce (fsh-quantity 40 "mg" #f) (vector 'type 'Quantity))
+                (hasheq 'value 40 'unit "mg" 'code "mg" 'system "http://unitsofmeasure.org"))
+  ;; `system|version#code`: the version is the coding's
+  (check-equal? (coerce (fsh-code "http://terminology.hl7.org/CodeSystem/v2-0360|2.7#MD" "Doctor of Medicine") (vector 'type 'Coding))
+                (hasheq 'system "http://terminology.hl7.org/CodeSystem/v2-0360" 'version "2.7" 'code "MD" 'display "Doctor of Medicine"))
+  ;; walking and updating a resource by (name . index) steps
+  (define js (hasheq 'extension (list (hasheq 'url "http://x/race" 'extension (list (hasheq 'valueCoding (hasheq 'code "a")) (hasheq 'valueString "s"))))))
+  (check-equal? (walk js '(("extension" . 0) ("extension" . 1))) (hasheq 'valueString "s"))
+  (check-equal? (walk js '(("extension" . 0))) (car (hash-ref js 'extension)))
+  (check-false (walk js '(("extension" . 3))))
+  (check-equal? (hash-ref (walk (update-at js '(("extension" . 0) ("extension" . 1)) (lambda (e) (hash-set e 'url "text"))) '(("extension" . 0) ("extension" . 1))) 'url) "text")
+  ;; a nested slice whose parent extension has a url gets the slice's name when no definition says otherwise
+  (define filled (fill-nested-extension-urls js (list (cons '(("extension" . 0) ("extension" . 1)) "text"))))
+  (check-equal? (hash-ref (walk filled '(("extension" . 0) ("extension" . 1))) 'url) "text")
   (check-equal? (coerce #t (vector 'prim "boolean")) #t)
   ;; instance-base: a base type stays, a local profile goes to its parent, chains end at the base
   (check-equal? (instance-base "Patient" (hash)) "Patient")
