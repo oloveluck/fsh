@@ -10,7 +10,8 @@ SUSHI; @tt{raco fsh check} compiles them and validates every example against the
 at the FSH line behind each problem. It also goes the other way (FHIR JSON to FSH), and a @tt{.fsh}
 file is a Racket module whose resources a program can use.
 
-Held to real guides: IPS 2.0.1 and mCODE 4.0.0 compile from their own sources with no errors, and
+Held to real guides: IPS 2.0.1 and mCODE 4.0.0 compile from their own sources with no errors, their
+published packages are reproduced resource for resource but for a handful of named differences, and
 mCODE's 283 examples validate against the profiles compiled here, as they do against the published
 package. Part of the @hyperlink["https://github.com/oloveluck/fhir"]{fhir} family.
 
@@ -156,14 +157,15 @@ type, so an @tt{Instance:} of it builds like any resource. The worked project is
 
 @section{Limits}
 
-Measured against the IGs' published packages: IPS 2.0.1 pairs 114 resources, 82 identical, 97 with
-all published content, 395 of 440 differential elements; mCODE 4.0.0 pairs 349, 206 identical, 282
-complete, 279 of 501 differential elements. The differences:
+Measured against the IGs' published packages: IPS 2.0.1 pairs 114 resources, 83 identical, 104 with
+all published content, 417 of 438 differential elements; mCODE 4.0.0 pairs 349, 225 identical, 324
+complete, 471 of 473 differential elements. The test prints every remaining difference, classified,
+largest first. The differences:
 
 @itemlist[
-@item{Some profiles' differentials lack elements SUSHI writes (28 in mCODE, mostly genomics and
-performance status; in IPS a few @tt{min}s, one slice-child order and a logical model's root
-@tt{short}). The test prints the remaining difference classes, largest first.}
+@item{A few caret extensions on one IPS profile land in a different order (a url-keyed extension
+among @tt{[+]}-indexed ones); a few mCODE examples whose published JSON differs from the tagged FSH
+sources; one element's @tt{min}; a UCUM unit with an annotation.}
 @item{No ImplementationGuide resource, no narratives, no ActorDefinition conversion: these are
 publisher output.}
 @item{@tt{Characteristics:} and @tt{Context:} metadata are parsed but not read (an extension's

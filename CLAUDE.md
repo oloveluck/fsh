@@ -37,8 +37,8 @@ The International Patient Summary IG's own FSH sources (`tests/vendor/ips-2.0.1`
 2.0.1, 123 files / 274 entities) are compiled for R4 and compared with the PUBLISHED package
 (fhir-spec's `hl7.fhir.uv.ips.tgz` — SUSHI + IG Publisher output for the same sources), paired by
 (resourceType, id) after normalising publisher-only content (narrative, snapshots, dates, config
-metadata, version pins). Current: **0 compile errors; 114 resources paired; 82 exact; 97 with all
-published content; 395/440 differential elements** — ratcheted. This is the honest conformance
+metadata, version pins). Current: **0 compile errors; 114 resources paired; 83 exact; 104 with all
+published content; 417/438 differential elements** — ratcheted. This is the honest conformance
 number; the 22 golden pairs below are hand-authored and far easier.
 It drove these fixes: STAR lexing after trailing whitespace / blank lines; `40` lexed as TIME;
 keyword names in paths (`system`); triple-quoted strings (trim + dedent); unknown string escapes
@@ -78,7 +78,7 @@ published `hl7.fhir.us.mcode-4.0.0.tgz`. mCODE builds on US Core 6.1.0 and Genom
 each dependency in fhir-spec (`<id>-<version>.tgz`); the packages go ahead of core in
 `current-sd-packages`. `raco fsh <dir>` does the same when it finds a sushi-config.yaml (next to the
 sources or up to two levels up); flags override it, missing dependencies are reported.
-Current: **0 compile errors; 349 paired; 206 exact; 282 with all published content; 279/501 differential
+Current: **0 compile errors; 349 paired; 225 exact; 324 with all published content; 471/473 differential
 elements** — ratcheted. It drove: profiles of DEPENDENCY packages for Parent and InstanceOf (`external-sd`:
 base type, canonical, `meta.profile`), aliases on InstanceOf and along Parent chains; SUSHI's required
 values (`assign-required`: an element the InstanceOf profile requires with fixed[x]/pattern[x] is
@@ -156,3 +156,28 @@ carets) — so all 22 pairs round-trip. **Reslicing** (a slice of a slice — id
 decompiler's `base-id-of`) and **multi-discriminator** slicing both compile and round-trip
 (`fsh/tests/features-test.rkt`). The golden pairs are HAND-AUTHORED to match SUSHI's documented
 output; the IPS corpus above is the real measure, and it shows the gaps that remain.
+
+## Fidelity to SUSHI (2026-11-05)
+`tests/ig-harness.rkt` classifies every remaining difference (`all-diffs` → `diff-class`, printed
+largest first with how many resources each class touches) — the work list. What that pass fixed, each
+a SUSHI behaviour now matched: parameterized RuleSet arguments substituted verbatim with `\)` `\,`
+unescaped; `* a and b MS` flags every path; `Reference (A or B)`; `Canonical(X)` lexemes resolved to
+urls (profiles, value sets, code systems, logical models); `only` keeps the Parent's type extension;
+`* path insert RS` and indented inserts apply under the path; inserts inside Invariants and RuleSets
+(the grammar reads `* insert X` in a RuleSet as a code-insert with no codes); several `obeys`
+accumulate; a logical model is named by its url (type code, Parent), `Characteristics:` → type-
+characteristics extensions, Mapping by id-rooted ids; a slice with constrained children is in the
+differential (bare, with sliceName) and carries copies of the sliced element's slice children;
+`extension[<url|alias>]` means the Parent's slice typed with it; complex Extensions: typed
+sub-extension slices get no url/extension scaffold, value[x] 0..0; `from VS` defaults to required.
+Instances: `extension[USCoreRace]` by the extension's url, nested sub-extension urls from the
+extension's definition (fixed url, else the typed extension's canonical), slices under any element
+from the InstanceOf profile; `[slice][k]` contiguous blocks; only REQUIRED slices take profile order
+up front; an index-less repeat is element 0 (a later assignment replaces); a code into a Quantity /
+a coded quantity unit → system+code+unit; `system|version#code`; Instance `Title:`/`Description:`
+fill title/description. The harness drops what the IG Publisher adds and SUSHI does not: a bare
+`{id, path}` differential element (a root on some profiles — by processing order, see
+PublisherBase.generateSnapshot), nested resources' narratives, narrative whitespace/quotes/`<x/>`.
+Remaining (named in the CI output): IPS's ImagingStudy caret-extension order (display-hint among
+obligation `[+]` entries), mCODE examples whose published JSON differs from the tagged FSH (eve-
+anyperson), one `.use` min, a `{Base}` UCUM unit.

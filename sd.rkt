@@ -72,7 +72,7 @@
   (define parent-elements (if (or local-parent parent-sd) (profile-elements parent) (hash)))
   (define-values (elems00 order00)
     (fold-sd-rules base-type (rewrite-extension-slices rules parent-elements base-type) invariants self-url #:parent-types parent-types))
-  (define-values (elems0 order0) (add-slice-parents elems00 order00))
+  (define-values (elems0 order0) (let-values ([(e o) (add-slice-parents elems00 order00)]) (copy-slice-children e o)))
   (define-values (elems order)
     (if ext? (add-extension-scaffold elems0 order0 self-url meta) (values elems0 order0)))
   (define diff (snapshot-order base-type (for/list ([k (in-list (reverse order))]) (hash-ref elems k))))
@@ -120,8 +120,8 @@
       (hasheq 'url "http://hl7.org/fhir/StructureDefinition/structuredefinition-type-characteristics"
               'valueCode (strip# (regexp-replace #px"[\\s,]+$" c "")))))
   ;; the element paths of a logical/custom resource root at the entity id, not a FHIR type
-  (define root (drop-false (hasheq 'id id 'path id
-                                   'short (assoc-ref meta 'title) 'definition (assoc-ref meta 'description))))
+  (define root (let ([short (or (assoc-ref meta 'title) name)])
+                 (drop-false (hasheq 'id id 'path id 'short short 'definition (or (assoc-ref meta 'description) short)))))
   (define-values (elems order) (fold-sd-rules id rules (hash) self-url))
   (define diff (cons root (for/list ([k (in-list (reverse order))]) (hash-ref elems k))))
   (maybe-snapshot
@@ -193,6 +193,26 @@
     (define path (string-join (map (lambda (sg) (regexp-replace #rx":.*$" sg "")) segs) "."))
     (define slice (cadr (regexp-match #rx":(.*)$" (last segs))))
     (values (hash-set es anc (hasheq 'id anc 'path path 'sliceName slice)) (cons anc os))))
+;; copy-slice-children : elems order -> (values elems order)   a named slice of X that the rules
+;; constrain below (`section[sectionProblems].title`) carries copies of X's own sliced children
+;; (`section.extension:section-note`, with their content): SUSHI unfolds the slice's children from
+;; the element as constrained so far, and the copies have no original to equal
+(define (copy-slice-children elems order)
+  (define ids (hash-keys elems))
+  (define (child-slice-of? x id)                        ; `X.name:slice`, directly under X
+    (define m (regexp-match (pregexp (string-append "^" (regexp-quote x) "\\.([^.:]+):([^.]+)$")) id))
+    (and m (cdr m)))
+  (for*/fold ([es elems] [os order])
+             ([sid (in-list ids)]
+              #:when (and (regexp-match? #rx":[^.]+$" sid)                       ; a slice element …
+                          (ormap (lambda (id) (string-prefix? id (string-append sid "."))) ids))   ; … with children
+              [x (in-value (regexp-replace #rx":[^.]+$" sid ""))]
+              [cid (in-list ids)] [m (in-value (child-slice-of? x cid))] #:when m
+              [copy-id (in-value (string-append sid "." (car m) ":" (cadr m)))]
+              #:unless (hash-has-key? es copy-id))
+    (define src (hash-ref elems cid))
+    (values (hash-set es copy-id (hash-set* src 'id copy-id 'path (hash-ref src 'path)))
+            (cons copy-id os))))
 ;; slice-ancestors : element-id -> ids   its proper prefixes (at `.`) that end in a slice
 (define (slice-ancestors id)
   (define segs (string-split id "."))
@@ -585,6 +605,15 @@
   (check-equal? (slice-ancestors "Observation.code") '())
   (let-values ([(es os) (add-slice-parents (hash "DiagnosticReport.category:Genetics.coding" (hasheq 'min 1)) '("DiagnosticReport.category:Genetics.coding"))])
     (check-equal? (hash-ref es "DiagnosticReport.category:Genetics") (hasheq 'id "DiagnosticReport.category:Genetics" 'path "DiagnosticReport.category" 'sliceName "Genetics")))
+  ;; a constrained slice carries copies of the sliced element's own slice children
+  (let-values ([(es os) (copy-slice-children
+                         (hash "Composition.section.extension:note" (hasheq 'id "Composition.section.extension:note" 'path "Composition.section.extension" 'sliceName "note" 'short "notes")
+                               "Composition.section:problems" (hasheq 'id "Composition.section:problems" 'path "Composition.section" 'sliceName "problems")
+                               "Composition.section:problems.title" (hasheq 'id "Composition.section:problems.title" 'path "Composition.section.title" 'min 1))
+                         '())])
+    (check-equal? (hash-ref es "Composition.section:problems.extension:note")
+                  (hasheq 'id "Composition.section:problems.extension:note" 'path "Composition.section.extension" 'sliceName "note" 'short "notes"))
+    (check-equal? (hash-count es) 4))
   ;; an extension slice named by the extension's url is the Parent's slice typed with it
   (define pe (hash "Patient.extension:birthsex" (hasheq 'type (list (hasheq 'code "Extension" 'profile '("http://hl7.org/fhir/us/core/StructureDefinition/us-core-birthsex"))))))
   (check-equal? (rule-path-of (car (rewrite-extension-slices (list (rule-flag "extension[http://hl7.org/fhir/us/core/StructureDefinition/us-core-birthsex]" '() '(MS))) pe "Patient")))

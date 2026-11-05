@@ -50,7 +50,7 @@
                            (assign-required j (profile-elements type-str) (slice-positions e aliases)))]
                     [j (fill-nested-extension-urls j (nested-slice-mentions e aliases)
                                                    (if (type-registered? (string->symbol type-str)) (hash) (profile-elements type-str)) base)])
-               (definitional-url j (assoc-ref meta 'usage))))
+               (definitional-url (titled j meta) (assoc-ref meta 'usage))))
   ;; stamp meta.profile when InstanceOf named a profile (not a base type), using the profile's id-URL
   (define prof (and (not (type-registered? (string->symbol type-str))) (hash-ref profiles type-str #f)))
   (cond
@@ -58,6 +58,13 @@
     ;; InstanceOf a dependency's profile: SUSHI stamps that profile's canonical
     [(external-sd type-str) => (lambda (sd) (inject-meta-profile js (hash-ref sd 'url)))]
     [else js]))
+;; titled : jsexpr metadata -> jsexpr   an Instance's `Title:` / `Description:` land on the resource's
+;; title / description elements when it has them and the rules set none (SUSHI)
+(define (titled js meta)
+  (define type (hash-ref js 'resourceType))
+  (for/fold ([js js]) ([k '(title description)])
+    (define v (assoc-ref meta k))
+    (if (and v (not (hash-has-key? js k)) (has-element? type (symbol->string k))) (hash-set js k v) js)))
 ;; definitional-url : jsexpr usage -> jsexpr   a `Usage: #definition` instance of a canonical resource
 ;; (CapabilityStatement, OperationDefinition, …) gets SUSHI's url <canonical>/<Type>/<id>
 (define (definitional-url js usage)

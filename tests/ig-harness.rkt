@@ -109,7 +109,8 @@
     [(list? j) (map (lambda (x) (norm x #:top? #f)) j)]
     [(real? j) (exact->inexact j)]
     [(and (string? j) (regexp-match? #rx"^http://hl7[.]org/fhir/.*[|][0-9][^|/]*$" j)) (car (string-split j "|"))]
-    [(and (string? j) (regexp-match? #rx"^<div " j)) (collapse-xhtml (regexp-replace* #rx" (xml:lang|lang)=\"[^\"]*\"" j ""))]
+    [(and (string? j) (regexp-match? #rx"^<div " j))
+     (collapse-xhtml (regexp-replace* #rx" (xml:lang|lang)=\"[^\"]*\"" (regexp-replace* #px"(\\w+)='([^']*)'" j "\\1=\"\\2\"") ""))]
     [else j]))
 
 ;; the publisher pins versions on compose components; an unpinned component of ours still matches

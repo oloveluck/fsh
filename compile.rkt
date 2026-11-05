@@ -195,9 +195,9 @@
   ;; this document's Profiles compiled on demand (name/id/url -> StructureDefinition jsexpr), for the
   ;; required values an Instance inherits from its InstanceOf profile
   (define profile-entities
-    (for*/hash ([e (in-list entities)] #:when (fsh-profile? e)
-                [id (in-value (or (assoc-ref (fsh-profile-metadata e) 'id) (fsh-profile-name e)))]
-                [k (in-list (remove-duplicates (list (fsh-profile-name e) id (string-append (canonical-base) "/StructureDefinition/" id))))])
+    (for*/hash ([e (in-list entities)] #:when (or (fsh-profile? e) (fsh-extension? e))
+                [id (in-value (or (assoc-ref (entity-meta e) 'id) (entity-name e)))]
+                [k (in-list (remove-duplicates (list (entity-name e) id (string-append (canonical-base) "/StructureDefinition/" id))))])
       (values k e)))
   (define profile-memo (make-hash))
   (define (resolve-profile-sd key)
