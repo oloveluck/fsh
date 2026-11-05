@@ -37,7 +37,7 @@
 (provide
  (struct-out ig-fsh-report)
  (contract-out
-  [check-fsh-ig (->* (path-string? path-string? string?) (#:fhir-version string?) ig-fsh-report?)]))
+  [check-fsh-ig (->* (path-string? path-string? string?) (#:fhir-version string? #:dump (listof string?)) ig-fsh-report?)]))
 
 (struct ig-fsh-report (pairs exact contained elements-ok elements-total errors ours-unmatched
                              published-unmatched diffs classes)
