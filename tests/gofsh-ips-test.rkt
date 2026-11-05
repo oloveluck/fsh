@@ -60,6 +60,6 @@
    ;; floors (ratcheted): decompile everything, compile everything, and the counts only rise
    (check-equal? (ig-fsh-report-errors r) '())
    (check-true (>= (ig-fsh-report-pairs r) 117))
-   (check-true (>= (ig-fsh-report-exact r) 116) "fewer exact resources than the floor")
-   (check-true (>= (ig-fsh-report-contained r) 116) "fewer fully-matching resources than the floor")
+   (check-true (>= (ig-fsh-report-exact r) 117) "fewer exact resources than the floor")
+   (check-true (>= (ig-fsh-report-contained r) 117) "fewer fully-matching resources than the floor")
    (check-true (>= (ig-fsh-report-elements-ok r) 438) "fewer matching differential elements than the floor")])

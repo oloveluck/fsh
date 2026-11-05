@@ -254,8 +254,8 @@ The GoFSH direction measured on a real package: every resource of the PUBLISHED 
 (32 StructureDefinitions, 36 ValueSets, the CapabilityStatement, the examples) is decompiled with
 `fhir->fsh`, written as FSH (one file per resource type), compiled back, and held to the package by
 the same harness (`check-fsh-ig`: pairs, exact, complete, differential elements, difference classes).
-Current: **117/117 paired; 116 exact; 438/438 differential elements** — ratcheted (the first run:
-48 exact, 3 elements). What it drove in `decompile.rkt`: Parents without their version pin (the
+Current: **117/117 paired; 117 exact; 438/438 differential elements** — the whole package round
+trips — ratcheted (the first run: 48 exact, 3 elements). What it drove in `decompile.rkt`: Parents without their version pin (the
 compiler reads a pinned core type too, `strip-core-version`); `resourceType` first inside an
 embedded resource, a lone `_x` written at `x`; value sets' `codes from system X [and valueset …]
 where p op v and …` (`filter->node`; the printer prints filter lists); logical models' element
@@ -269,7 +269,7 @@ equal in content) left to the compiler; the snapshot, narrative, date, publisher
 jurisdiction (the IG Publisher's) not written. A conformance resource decompiles as a `#definition`
 instance (`definition-types`), an Invariant carries its `XPath:`, and a logical model's other
 extensions are indexed after its characteristics as PUBLISHED (the compiler writes a local Parent's
-again). Remaining: the one resource the CI output names.
+again).
 
 ## Editor and agent support (`fsh/support.rkt`)
 What FSH offers the family's hubs through `fhir/lang/support` (the contract in the foundation): the
