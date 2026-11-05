@@ -37,8 +37,8 @@ The International Patient Summary IG's own FSH sources (`tests/vendor/ips-2.0.1`
 2.0.1, 123 files / 274 entities) are compiled for R4 and compared with the PUBLISHED package
 (fhir-spec's `hl7.fhir.uv.ips.tgz` — SUSHI + IG Publisher output for the same sources), paired by
 (resourceType, id) after normalising publisher-only content (narrative, snapshots, dates, config
-metadata, version pins). Current: **0 compile errors; 114 resources paired; 83 exact; 104 with all
-published content; 417/438 differential elements** — ratcheted. This is the honest conformance
+metadata, version pins). Current: **0 compile errors; 114 resources paired; 84 exact; 106 with all
+published content; 435/438 differential elements** — ratcheted. This is the honest conformance
 number; the 22 golden pairs below are hand-authored and far easier.
 It drove these fixes: STAR lexing after trailing whitespace / blank lines; `40` lexed as TIME;
 keyword names in paths (`system`); triple-quoted strings (trim + dedent); unknown string escapes
@@ -78,7 +78,7 @@ published `hl7.fhir.us.mcode-4.0.0.tgz`. mCODE builds on US Core 6.1.0 and Genom
 each dependency in fhir-spec (`<id>-<version>.tgz`); the packages go ahead of core in
 `current-sd-packages`. `raco fsh <dir>` does the same when it finds a sushi-config.yaml (next to the
 sources or up to two levels up); flags override it, missing dependencies are reported.
-Current: **0 compile errors; 349 paired; 225 exact; 324 with all published content; 471/473 differential
+Current: **0 compile errors; 349 paired; 225 exact; 328 with all published content; 471/473 differential
 elements** — ratcheted. It drove: profiles of DEPENDENCY packages for Parent and InstanceOf (`external-sd`:
 base type, canonical, `meta.profile`), aliases on InstanceOf and along Parent chains; SUSHI's required
 values (`assign-required`: an element the InstanceOf profile requires with fixed[x]/pattern[x] is

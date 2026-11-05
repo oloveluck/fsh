@@ -157,8 +157,8 @@ type, so an @tt{Instance:} of it builds like any resource. The worked project is
 
 @section{Limits}
 
-Measured against the IGs' published packages: IPS 2.0.1 pairs 114 resources, 83 identical, 104 with
-all published content, 417 of 438 differential elements; mCODE 4.0.0 pairs 349, 225 identical, 324
+Measured against the IGs' published packages: IPS 2.0.1 pairs 114 resources, 84 identical, 106 with
+all published content, 435 of 438 differential elements; mCODE 4.0.0 pairs 349, 225 identical, 328
 complete, 471 of 473 differential elements. The test prints every remaining difference, classified,
 largest first. The differences:
 
