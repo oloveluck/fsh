@@ -156,6 +156,8 @@
   (define counters (make-hash))
   (define slices (make-hash))                       ; (key . slice-name) -> the slice's first index
   (define within (make-hash))                       ; (key . slice-name) -> the highest k of [slice][k]
+  (define slots (make-hash))                        ; (key slice-name k) -> the position of [slice][k]
+  (define owner (make-hash))                        ; (key . position) -> the slice holding it
   (define high (make-hash))                         ; key -> the highest index used so far
   ;; a top-level array's named slices take positions in the PROFILE's declaration order (SUSHI), so
   ;; allocate them up front: the slices this instance uses, profile order first, then any others
@@ -172,7 +174,8 @@
     (define ordered (append (filter (lambda (n) (member n names)) declared)
                             (filter (lambda (n) (not (member n declared))) names)))
     (when (pair? declared)
-      (for ([n (in-list ordered)] [i (in-naturals)]) (hash-set! slices (cons key n) i) (hash-set! high key i))
+      (for ([n (in-list ordered)] [i (in-naturals)])
+        (hash-set! slices (cons key n) i) (hash-set! owner (cons key i) n) (hash-set! slots (list key n 0) i) (hash-set! high key i))
       (hash-set! counters key (sub1 (length ordered)))))
   (for/list ([steps (in-list paths)])
     (let loop ([steps steps] [prefix ""] [acc '()])
@@ -198,7 +201,7 @@
                    ;; UNUSED position (after re-mentioning an earlier slice the counter points back)
                    (define base (or (hash-ref slices sk #f)
                                     (let ([n (add1 (max (hash-ref counters key -1) (hash-ref high key -1)))])
-                                      (hash-set! slices sk n) n)))
+                                      (hash-set! slices sk n) (hash-set! owner (cons key n) (fsh-bracket-value b)) n)))
                    ;; `[slice][k]` (or [+]/[=] after the slice): the k-th element of the slice, a
                    ;; contiguous block from its first position
                    (define-values (k rest)
@@ -208,7 +211,16 @@
                        [(cons (fsh-bracket 'soft= _) more) (values (max 0 (hash-ref within sk 0)) more)]
                        [more (values 0 more)]))
                    (hash-set! within sk (max k (hash-ref within sk -1)))
-                   (define n (+ base k))
+                   ;; the k-th element's position: the one it had, else base+k while no other slice
+                   ;; holds it (daysOfWeek[5] after allDay took that position), else the next unused
+                   (define n
+                     (or (hash-ref slots (list key (fsh-bracket-value b) k) #f)
+                         (let* ([want (+ base k)]
+                                [free? (equal? (hash-ref owner (cons key want) (fsh-bracket-value b)) (fsh-bracket-value b))]
+                                [n (if free? want (add1 (max (hash-ref counters key -1) (hash-ref high key -1))))])
+                           (hash-set! slots (list key (fsh-bracket-value b) k) n)
+                           (hash-set! owner (cons key n) (fsh-bracket-value b))
+                           n)))
                    (hash-set! counters key n)
                    (loop rest (cons (fsh-bracket 'index n) acc))]
                   [else (loop (cdr bs) (cons b acc))])])))

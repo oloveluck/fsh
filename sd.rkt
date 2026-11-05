@@ -97,8 +97,7 @@
                         'baseDefinition parent-url
                         'derivation "constraint"
                         ;; SUSHI carries the base definition's mapping declarations into the profile
-                        'mapping (or (and parent-sd (let ([m (hash-ref parent-sd 'mapping #f)]) (and (pair? m) m)))
-                                     (inherited-mappings base-type))
+                        'mapping (inherited-mappings base-type)
                         'differential (and (pair? diff) (hasheq 'element diff)))))
   (define own-context? (for/or ([r (in-list rules)])
                          (and (rule-caret? r) (member (rule-caret-path r) '(#f "" "."))
@@ -415,7 +414,7 @@
                (define codes (and el (hash-ref el 'type '())))
                (and (list? codes) (= 1 (length codes))
                     (let ([c (hash-ref (car codes) 'code #f)])
-                      (and (string? c) (not (equal? c base-type))
+                      (and (string? c)
                            (base-element c (string-join (cons c (drop segs n)) ".") (sub1 fuel))))))))))
 (define (base-max base-type path) (let ([e (base-element base-type path)]) (and e (hash-ref e 'max #f))))
 ;; base-type-codes : base-type element-path -> (listof type code) | #f   from the base snapshot

@@ -321,7 +321,11 @@
 (define (param-arg x)
   (match x
     [(list (or 'parameter 'lastParameter) v)
-     (unescape-param (string-trim (regexp-replace #px"[),\\]]+$" (regexp-replace #px"^\\[+" (string-trim v) "") "")))]
+     ;; the lexeme ends with its one terminator (`,` or `)`); an escaped `\)` before it stays
+     (define body (regexp-replace #px"\\s*[),]$" (string-trim v) ""))
+     (match (regexp-match #px"^\\[\\[(.*)\\]\\]$" body)
+       [(list _ inner) inner]                                 ; [[…]] is verbatim
+       [#f (unescape-param (string-trim body))])]
     [_ #f]))
 ;; unescape-param : string -> string   a `)` or `,` inside an argument is written `\)` / `\,` (and a
 ;; backslash `\\`): the backslash goes, the character stays
@@ -380,6 +384,9 @@
   (require rackunit (only-in fhir/r5/schemas))
   ;; parameter values: `\)` and `\,` are the characters; an argument is inserted verbatim
   (check-equal? (unescape-param "Aortic structure (body structure\\)") "Aortic structure (body structure)")
+  (check-equal? (param-arg '(parameter "Canonical(TG263CS\\),")) "Canonical(TG263CS)")   ; the escaped paren survives
+  (check-equal? (param-arg '(lastParameter " SCT)")) "SCT")
+  (check-equal? (param-arg '(lastParameter "[[a, b)]] )")) "a, b)")
   (check-equal? (unescape-param "a\\, b") "a, b")
   (check-equal? (substitute "x = {d}" (list (cons "d" "\"a (b\\) & c\""))) "x = \"a (b\\) & c\"")
   ;; a parameterized RuleSet in an instance: the display argument with an escaped paren arrives whole

@@ -9,7 +9,7 @@
 ;;;
 ;;; RATCHETED — floors only rise. Known and out of scope: the ImplementationGuide resource (sushi-config).
 
-(require rackunit racket/runtime-path
+(require rackunit racket/runtime-path (only-in racket/list remove-duplicates)
          (only-in fhir/r4/schemas)                          ; Plan-Net is FHIR 4.0.1
          (only-in fhir/spec-package spec-package-path current-package-directories)
          (only-in fhir/sd/sd-index current-sd-packages resolve-sd-raw)
@@ -18,7 +18,8 @@
 
 (define-runtime-path plannet "vendor/plannet-1.2.0")
 (define published (fetched-package "hl7.fhir.us.davinci-pdex-plan-net" "1.2.0" "509493840b88c2f88758d603e1bb148643f6f9f2"))
-(define uscore311 (fetched-package "hl7.fhir.us.core.v311" "3.1.1" "5abae31a6254ddaa124049012849a0b51b348f02"))  ; a stub for hl7.fhir.us.core 3.1.1
+;; sushi-config declares hl7.fhir.us.core.v311 3.1.1 — a version-alias stub (sha1 5abae31a…) for this package
+(define uscore311 (fetched-package "hl7.fhir.us.core" "3.1.1" "a998fa41cb5a0618d22ed8671c71ca9954b1ac8c"))
 (define r4-core (spec-package-path "hl7.fhir.r4.core.tgz" #:optional? #t))
 (define cfg (read-ig-config (build-path plannet "sushi-config.yaml")))
 
@@ -45,7 +46,11 @@
    (printf "  difference classes (published vs ours), largest first:\n")
    (print-classes r)
    (check-equal? (ig-fsh-report-errors r) '())
-   (check-true (>= (ig-fsh-report-pairs r) 100))
-   (check-true (>= (ig-fsh-report-exact r) 0))
-   (check-true (>= (ig-fsh-report-contained r) 0))
-   (check-true (>= (ig-fsh-report-elements-ok r) 0))])
+   (check-equal? (ig-fsh-report-ours-unmatched r) '())
+   ;; not FSH-authored: the CapabilityStatement and SearchParameters are input/resources, the IG is sushi-config
+   (check-equal? (remove-duplicates (map car (ig-fsh-report-published-unmatched r)))
+                 '("CapabilityStatement" "ImplementationGuide" "SearchParameter"))
+   (check-true (>= (ig-fsh-report-pairs r) 109))
+   (check-true (>= (ig-fsh-report-exact r) 77) "fewer exact resources than the floor")
+   (check-true (>= (ig-fsh-report-contained r) 91) "fewer fully-matching resources than the floor")
+   (check-true (>= (ig-fsh-report-elements-ok r) 319) "fewer matching differential elements than the floor")])
