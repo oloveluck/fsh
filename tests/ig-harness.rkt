@@ -72,9 +72,11 @@
 (define conformance-types '("StructureDefinition" "ValueSet" "CodeSystem" "CapabilityStatement" "OperationDefinition"
                             "SearchParameter" "ConceptMap" "NamingSystem" "ImplementationGuide"))
 (define (drop-publisher-oids j)
-  (cond [(and (hash? j) (member (hash-ref j 'resourceType #f) conformance-types) (list? (hash-ref j 'identifier #f)))
-         (define kept (filter (lambda (i) (not (publisher-oid? i))) (hash-ref j 'identifier)))
+  (define ids (and (hash? j) (member (hash-ref j 'resourceType #f) conformance-types) (hash-ref j 'identifier #f)))
+  (cond [(list? ids)
+         (define kept (filter (lambda (i) (not (publisher-oid? i))) ids))
          (if (null? kept) (hash-remove j 'identifier) (hash-set j 'identifier kept))]
+        [(and (hash? ids) (publisher-oid? ids)) (hash-remove j 'identifier)]   ; R4's ConceptMap.identifier is 0..1
         [else j]))
 
 ;; the IG Publisher inserts a bare `{id, path}` root (and intermediate) element into a differential

@@ -468,7 +468,9 @@
                                 named-url)))
        (define en (list-ref lst (cdr pos)))
        (define pinned (let ([v (and slice-el (pinned-value slice-el))]) (and (hash? v) v)))
-       (define entry (merge-missing (merge-pattern (if (and ext-url (not (hash-has-key? en 'url))) (hash-set en 'url ext-url) en)
+       ;; the slice's own pattern, then its required children's (a pattern merges: what the instance
+       ;; wrote stays, the pattern's codings ahead of it)
+       (define entry (merge-pattern (merge-pattern (if (and ext-url (not (hash-has-key? en 'url))) (hash-set en 'url ext-url) en)
                                                    (or pinned (hasheq)))
                                     (if slice-el (required-children elements (hash-ref slice-el 'id slice-id)) (hasheq))))
        (hash-set js field (for/list ([x (in-list lst)] [i (in-naturals)]) (if (= i (cdr pos)) entry x)))])))

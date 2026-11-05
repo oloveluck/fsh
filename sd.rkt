@@ -67,9 +67,10 @@
     (define els (and parent-sd (let ([sn (hash-ref parent-sd 'snapshot #f)]) (and (hash? sn) (hash-ref sn 'element '())))))
     (define el (and (list? els) (findf (lambda (e) (equal? (hash-ref e 'path #f) path)) els)))
     (if el (hash-ref el 'type '()) '()))
-  ;; the Parent's elements (a local chain over the packages' snapshots): `extension[us-core-birthsex]`
-  ;; names the slice typed with that extension
-  (define parent-elements (if (or local-parent parent-sd) (profile-elements parent) (hash)))
+  ;; the Parent's elements (a local chain over the packages' snapshots, a base type's own snapshot):
+  ;; `extension[us-core-birthsex]` names the slice typed with that extension; a caret into an
+  ;; element's `binding`/`extension` edits what the Parent's element already carries
+  (define parent-elements (profile-elements parent))
   (define-values (elems00 order00)
     (fold-sd-rules base-type (rewrite-extension-slices rules parent-elements base-type) invariants self-url
                    #:parent-types parent-types #:parent-element (lambda (id) (hash-ref parent-elements id #f))))
@@ -115,11 +116,20 @@
   (define parent (or (assoc-ref meta 'parent) (if logical? "Base" "DomainResource")))
   (define id (or (assoc-ref meta 'id) name))
   (define self-url (string-append (canonical-base) "/StructureDefinition/" id))
-  ;; `Characteristics: #can-be-target, #has-size`: one type-characteristics extension per code
+  ;; `Characteristics: #can-be-target, #has-size`: one type-characteristics extension per code —
+  ;; after the ones a Parent of this document carries (SUSHI starts from the parent's definition, so
+  ;; IPS's IPSSectionsLM has its Document parent's can-be-target and then its own)
+  (define parent-sd (let ([u (hash-ref (current-logicals) (resolve-alias parent (current-aliases)) #f)]) (and u ((current-profile-sd) u))))
+  (define inherited-characteristics
+    (if (hash? parent-sd)
+        (filter (lambda (e) (equal? (hash-ref e 'url #f) "http://hl7.org/fhir/StructureDefinition/structuredefinition-type-characteristics"))
+                (let ([x (hash-ref parent-sd 'extension '())]) (if (list? x) x '())))
+        '()))
   (define characteristics
-    (for/list ([c (in-list (or (assoc-ref meta 'characteristics) '()))])
-      (hasheq 'url "http://hl7.org/fhir/StructureDefinition/structuredefinition-type-characteristics"
-              'valueCode (strip# (regexp-replace #px"[\\s,]+$" c "")))))
+    (append inherited-characteristics
+            (for/list ([c (in-list (or (assoc-ref meta 'characteristics) '()))])
+              (hasheq 'url "http://hl7.org/fhir/StructureDefinition/structuredefinition-type-characteristics"
+                      'valueCode (strip# (regexp-replace #px"[\\s,]+$" c ""))))))
   ;; the element paths of a logical/custom resource root at the entity id, not a FHIR type
   (define root (let ([short (or (assoc-ref meta 'title) name)])
                  (drop-false (hasheq 'id id 'path id 'short short 'definition (or (assoc-ref meta 'description) short)))))
@@ -221,6 +231,24 @@
     (string-join (take segs n) ".")))
 ;; fold SD rules into an id-keyed differential-element accumulator (shared by profile/ext/logical)
 ;; parent-types : path -> (listof type) — the Parent's snapshot element at that path, for `only`
+;; seed-caret-target : element caret-path parent-element|#f -> element
+;; `^binding.extension…` / `^extension[url][+]…` on an element whose Parent's element already has a
+;; binding / extensions: the caret EDITS the inherited value (SUSHI starts from the parent's element),
+;; so the differential carries it whole — IPS's ImagingStudy keeps the base's display-hint ahead of
+;; its obligations, and its procedureCode binding keeps the base's strength and value set (without
+;; the core package's bindingName extension, which SUSHI does not carry)
+(define (seed-caret-target h cp pe)
+  (define key (cond [(regexp-match? #px"^\\^?binding([.\\[]|$)" cp) 'binding]
+                    [(regexp-match? #px"^\\^?extension([.\\[]|$)" cp) 'extension]
+                    [else #f]))
+  (define inherited (and key pe (hash? pe) (hash-ref pe key #f)))
+  (cond
+    [(or (not inherited) (hash-has-key? h key)) h]
+    [(eq? key 'binding)
+     (define exts (filter (lambda (e) (not (equal? (hash-ref e 'url #f) "http://hl7.org/fhir/StructureDefinition/elementdefinition-bindingName")))
+                          (let ([x (hash-ref inherited 'extension '())]) (if (list? x) x '()))))
+     (hash-set h 'binding (if (null? exts) (hash-remove inherited 'extension) (hash-set inherited 'extension exts)))]
+    [else (hash-set h key inherited)]))
 (define (fold-sd-rules base-type rules invariants self-url #:parent-types [parent-types (lambda (_) '())]
                        #:parent-element [parent-element (lambda (_) #f)])
   (define (constraint-of key)
@@ -279,13 +307,7 @@
          (values (require-discriminator e rid base-type) o))]
       [(rule-caret p cp v)      (if p (upd elems order rid rpath rslice
                                            (lambda (h0)
-                                             ;; `^binding.extension…` on an element the Parent binds: the caret
-                                             ;; edits the inherited binding, so the differential carries it whole
-                                             (define h (let ([pe (and (regexp-match? #px"^\\^?binding([.\\[]|$)" cp) (parent-element rid))])
-                                                         (if (and pe (hash? pe) (hash-ref pe 'binding #f) (not (hash-has-key? h0 'binding)))
-                                                             (hash-set h0 'binding (hash-ref pe 'binding))
-                                                             h0)))
-                                             (typed-caret-set h cp v 'ElementDefinition
+                                             (typed-caret-set (seed-caret-target h0 cp (parent-element rid)) cp v 'ElementDefinition
                                                               (hash-ref! element-counters rid make-hash))))
                                     (values elems order))]
       [(rule-obeys p invs)      (let-values ([(oid opath oslice) (if p (values rid rpath rslice) (values base-type base-type #f))])

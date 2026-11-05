@@ -192,10 +192,11 @@
                  (parameterize ([current-aliases aliases] [current-logicals logicals])
                    (compile-entity (expand-entity-inserts e rulesets param-rulesets) aliases profiles invariants))))
     (when (hash? sd) (register-structure-definition! sd)))
-  ;; this document's Profiles compiled on demand (name/id/url -> StructureDefinition jsexpr), for the
-  ;; required values an Instance inherits from its InstanceOf profile
+  ;; this document's Profiles (and logical models) compiled on demand (name/id/url ->
+  ;; StructureDefinition jsexpr), for the required values an Instance inherits from its InstanceOf
+  ;; profile and the characteristics a logical model inherits from its Parent
   (define profile-entities
-    (for*/hash ([e (in-list entities)] #:when (or (fsh-profile? e) (fsh-extension? e))
+    (for*/hash ([e (in-list entities)] #:when (or (fsh-profile? e) (fsh-extension? e) (fsh-logical? e) (fsh-resource? e))
                 [id (in-value (or (assoc-ref (entity-meta e) 'id) (entity-name e)))]
                 [k (in-list (remove-duplicates (list (entity-name e) id (string-append (canonical-base) "/StructureDefinition/" id))))])
       (values k e)))
@@ -274,9 +275,11 @@
   (format "~a: ~a" (regexp-replace #rx"^struct:fsh-" (symbol->string (vector-ref v 0)) "")
           (if (> (vector-length v) 1) (vector-ref v 1) "?")))
 (define (entity-name e)
-  (cond [(fsh-profile? e) (fsh-profile-name e)] [(fsh-extension? e) (fsh-extension-name e)] [else #f]))
+  (cond [(fsh-profile? e) (fsh-profile-name e)] [(fsh-extension? e) (fsh-extension-name e)]
+        [(fsh-logical? e) (fsh-logical-name e)] [(fsh-resource? e) (fsh-resource-name e)] [else #f]))
 (define (entity-meta e)
-  (cond [(fsh-profile? e) (fsh-profile-metadata e)] [(fsh-extension? e) (fsh-extension-metadata e)] [else '()]))
+  (cond [(fsh-profile? e) (fsh-profile-metadata e)] [(fsh-extension? e) (fsh-extension-metadata e)]
+        [(fsh-logical? e) (fsh-logical-metadata e)] [(fsh-resource? e) (fsh-resource-metadata e)] [else '()]))
 (define (entity-rules e)
   (cond [(fsh-profile? e) (fsh-profile-rules e)] [(fsh-extension? e) (fsh-extension-rules e)] [else '()]))
 ;; ---- insert / RuleSet expansion (plain + parameterized) ------------------------------------
