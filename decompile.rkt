@@ -44,7 +44,8 @@
     (fsh-invariant (hash-ref c 'key)
                    (append (opt-meta c 'human 'description values)
                            (opt-meta c 'severity 'severity (lambda (s) (string-append "#" s)))
-                           (opt-meta c 'expression 'expression values))
+                           (opt-meta c 'expression 'expression values)
+                           (opt-meta c 'xpath 'xpath values))
                    '())))
 
 (define (opt-meta h k mk f) (let ([v (hash-ref h k #f)]) (if v (list (cons mk (f v))) '())))

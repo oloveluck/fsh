@@ -198,8 +198,10 @@
                   (list k (unpin-versions (norm (hash-ref pub k)) no) no)))
   ;; #:dump: the differential elements (id min max) of the named resources, published then ours
   (for ([p (in-list pairs)] #:when (member (cdr (car p)) dump))
-    (define (els sd) (for/list ([e (in-list (hash-ref (hash-ref sd 'differential (hash)) 'element '()))])
-                       (list (hash-ref e 'id #f) (hash-ref e 'min '-) (hash-ref e 'max '-))))
+    ;; (an SD's own extensions first: a logical model's characteristics)
+    (define (els sd) (cons (hash-ref sd 'extension '-)
+                           (for/list ([e (in-list (hash-ref (hash-ref sd 'differential (hash)) 'element '()))])
+                             (list (hash-ref e 'id #f) (hash-ref e 'min '-) (hash-ref e 'max '-)))))
     (if (hash-ref (cadr p) 'differential #f)
         (printf "  dump ~a published: ~s\n  dump ~a ours: ~s\n" (cdr (car p)) (els (cadr p)) (cdr (car p)) (els (caddr p)))
         (printf "  dump ~a published: ~a\n  dump ~a ours: ~a\n" (cdr (car p)) (jsexpr->string (cadr p)) (cdr (car p)) (jsexpr->string (caddr p)))))

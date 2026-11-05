@@ -254,8 +254,21 @@ The GoFSH direction measured on a real package: every resource of the PUBLISHED 
 (32 StructureDefinitions, 36 ValueSets, the CapabilityStatement, the examples) is decompiled with
 `fhir->fsh`, written as FSH (one file per resource type), compiled back, and held to the package by
 the same harness (`check-fsh-ig`: pairs, exact, complete, differential elements, difference classes).
-A conformance resource decompiles as a `#definition` instance (`definition-types`). Floors ratchet
-from the first CI run's numbers.
+Current: **117/117 paired; 113 exact; 433/438 differential elements** — ratcheted (the first run:
+48 exact, 3 elements). What it drove in `decompile.rkt`: Parents without their version pin (the
+compiler reads a pinned core type too, `strip-core-version`); `resourceType` first inside an
+embedded resource, a lone `_x` written at `x`; value sets' `codes from system X [and valueset …]
+where p op v and …` (`filter->node`; the printer prints filter lists); logical models' element
+carets, `Characteristics:` from the type-characteristics extensions, a logical type by name;
+`^short`/`^definition` and every other element property as carets, `only <profile canonical>`,
+`^binding.description` and the binding's extensions, `^mustSupport = false`; a plain slice's own
+properties at `path[slice]`, an extension slice as `contains <url> named <slice>`; exact cards (a
+published package's integers read back inexact); root-element rules at `.`; a type slice as its
+choice path (`performedDateTime 0..1`); SUSHI's derived copies (a slice child under every slice,
+equal in content) left to the compiler; the snapshot, narrative, date, publisher, contact and
+jurisdiction (the IG Publisher's) not written. A conformance resource decompiles as a `#definition`
+instance (`definition-types`). Remaining: the Invariants' `xpath` (now synthesised) and
+IPSSectionsLM's inherited characteristic.
 
 ## Editor and agent support (`fsh/support.rkt`)
 What FSH offers the family's hubs through `fhir/lang/support` (the contract in the foundation): the
