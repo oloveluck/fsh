@@ -503,10 +503,19 @@
                    (resolve-canonical-raw "StructureDefinition" n))
               => (lambda (sd) (hasheq 'code (hash-ref sd 'type) 'profile (list (hash-ref sd 'url))))]
              [else (hasheq 'code n)])]))
+;; target-urls : "A or B|1.0" -> urls   each target a local profile, a profile of the packages by name
+;; (USCorePatientProfile), an alias or a url; a `|version` pin stays on the canonical (SUSHI)
 (define (target-urls inner)
   (for/list ([s (in-list (regexp-split #px"\\s+or\\s+" (string-trim inner)))])
-    (define n (resolve-alias (string-trim s) (current-aliases)))
-    (cond [(hash-ref (current-profiles) n #f) => local-profile-url] [else (sd-url n)])))
+    (match-define (list _ n0 ver) (regexp-match #px"^([^|]*)(\\|.*)?$" (string-trim s)))
+    (define n (resolve-alias (string-trim n0) (current-aliases)))
+    (string-append
+     (cond [(hash-ref (current-profiles) n #f) => local-profile-url]
+           [(and (sd-index-available?) (not (regexp-match? #px"^https?:" n)) (not (type-registered? (string->symbol n)))
+                 (resolve-canonical-raw "StructureDefinition" n))
+            => (lambda (sd) (hash-ref sd 'url))]
+           [else (sd-url n)])
+     (or ver ""))))
 (define (local-profile-url p) (string-append (canonical-base) "/StructureDefinition/" (cdr p)))
 ;; a ValueSet reference in a binding: alias, then this document's ValueSets, else as written
 (define (valueset-url n)

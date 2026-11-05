@@ -252,7 +252,11 @@
     (for*/list ([e (in-list entities)]
                 #:unless (or (fsh-alias? e) (fsh-ruleset? e) (fsh-param-ruleset? e)
                              (fsh-invariant? e) (fsh-mapping? e) (fsh-invariant? e))
-                [x (in-value (expand-entity-inserts e rulesets param-rulesets))]
+                ;; a RuleSet that fails to expand (its instantiated body does not parse) fails this
+                ;; entity alone, like any other compile error
+                [x (in-value (with-handlers ([exn:fail? (lambda (x) (set! errors (cons (cons (entity-label e) x) errors)) #f)])
+                               (expand-entity-inserts e rulesets param-rulesets)))]
+                #:when x
                 [_ (in-value (check-element-paths! x))]          ; rule-level diagnostics (accumulated)
                 #:unless (inline? e)
                 [out (in-value
@@ -351,6 +355,8 @@
     [(STRING) (string-append "\"" (regexp-replace* #rx"[\\\"]" v "\\\\&") "\"")]
     [(MULTILINE_STRING) (string-append "\"\"\"" v "\"\"\"")]
     [(UNIT) (string-append "'" v "'")]
+    ;; a nested parameterized insert: the reference was cleaned of its `(`, which opens the arguments
+    [(PARAM_RULESET_REFERENCE) (string-append v "(")]
     ;; a STAR's lexeme can carry the comment lines before it (`// note\n* `): keep only its own line
     [(STAR) (string-append "\n" (last (string-split (string-append v " ") "\n")))]
     [else v]))
@@ -415,6 +421,16 @@
                                   "Profile: P\nParent: Observation\n* insert Common\n"))))
   (check-equal? (for/list ([e (in-list (hash-ref (hash-ref nested 'differential) 'element))]) (hash-ref e 'id))
                 '("Observation.subject" "Observation.device"))
+  ;; a parameterized RuleSet inserting another with its arguments (HRex's concept maps): the nested
+  ;; reference re-texts with its paren, codes and [[…]] arguments intact
+  (define nested2 (car (fsh->fhir (string-append
+                                   "RuleSet: map(src, sdisp, tgt)\n* group[+].element[+].code = {src}\n* group[=].element[=].display = \"{sdisp}\"\n* group[=].element[=].target.code = {tgt}\n\n"
+                                   "RuleSet: mapwide(src, sdisp, tgt)\n* insert map({src}, [[{sdisp}]], {tgt})\n* group[=].element[=].target.equivalence = #wider\n\n"
+                                   "Instance: CM\nInstanceOf: ConceptMap\nUsage: #definition\n* status = #active\n* insert mapwide(#101Y00000X, [[Counselor (occupation)]], #224595007)\n"))))
+  (define cm-el (car (hash-ref (car (hash-ref nested2 'group)) 'element)))
+  (check-equal? (hash-ref cm-el 'code) "101Y00000X")
+  (check-equal? (hash-ref cm-el 'display) "Counselor (occupation)")
+  (check-equal? (hash-ref (car (hash-ref cm-el 'target)) 'equivalence) "wider")
   ;; a document: an alias resolves, a profile becomes a differential, an instance a resource
   (define out (fsh->fhir (string-append
                           "Alias: $sct = http://snomed.info/sct\n\n"

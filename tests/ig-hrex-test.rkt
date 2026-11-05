@@ -19,8 +19,8 @@
          "ig-fetch.rkt" "ig-harness.rkt")
 
 (define-runtime-path hrex "vendor/hrex-1.1.0")
-(define published (fetched-package "hl7.fhir.us.davinci-hrex" "1.1.0"))
-(define uscore7 (fetched-package "hl7.fhir.us.core" "7.0.0"))
+(define published (fetched-package "hl7.fhir.us.davinci-hrex" "1.1.0" "a003b6a9cbc3d2eddc11f38b1a7cf29bbf2560e3"))
+(define uscore7 (fetched-package "hl7.fhir.us.core" "7.0.0" "b390400e9ac12668aecb13f2d6ae29199ea83968"))
 (define uscore6 (spec-package-path "hl7.fhir.us.core-6.1.0.tgz" #:optional? #t))
 (define uscore3 (fetched-package "hl7.fhir.us.core" "3.1.1" "a998fa41cb5a0618d22ed8671c71ca9954b1ac8c"))  ; declared as hl7.fhir.us.core.v311
 (define r4-core (spec-package-path "hl7.fhir.r4.core.tgz" #:optional? #t))
