@@ -1,0 +1,94 @@
+# ╭────────────────────────────────────────────────────────────────────────────────────────────────╮
+# │  ACTION REQUIRED: REVIEW AND EDIT THIS FILE TO ENSURE IT ACCURATELY REFLECTS YOUR PROJECT!     │
+# │                                                                                                │
+# │  This file was generated from your existing project files and will be used for SUSHI           │
+# │  configuration from now on. You may delete your package.json as it is no longer needed.        │
+# ╰────────────────────────────────────────────────────────────────────────────────────────────────╯
+
+# ╭───────────────────ImplementationGuide-hl7.fhir.us.davinci-pdex-plan-net.json───────────────────╮
+# │  The properties below are used to create the ImplementationGuide resource. For a list of       │
+# │  supported properties, see:                                                                    │
+# │  http://build.fhir.org/ig/HL7/fhir-shorthand/sushi.html#ig-development           │
+# ╰────────────────────────────────────────────────────────────────────────────────────────────────╯
+id: hl7.fhir.us.davinci-pdex-plan-net
+canonical: http://hl7.org/fhir/us/davinci-pdex-plan-net
+version: 1.2.0
+name: DaVinciPDEXPlanNet
+title: Da Vinci PDex Plan Net
+status: active
+publisher:
+  name: HL7 International / Financial Management
+  url: http://www.hl7.org/Special/committees/fm
+  email: fm@lists.HL7.org
+description: Da Vinci PDex Plan Net 
+jurisdiction: urn:iso:std:iso:3166#US
+extension:
+  - url: http://hl7.org/fhir/StructureDefinition/structuredefinition-standards-status
+    valueCode: trial-use
+  - url: http://hl7.org/fhir/StructureDefinition/structuredefinition-wg
+    valueCode: fm
+license: CC0-1.0
+fhirVersion: 4.0.1
+dependencies:  
+  hl7.fhir.us.core.v311:
+    version: 3.1.1
+    uri: http://hl7.org/fhir/us/core/ImplementationGuide/hl7.fhir.us.core
+    id: uscore3
+    reason: |
+      Needed for systems supporting USCDI v1
+  hl7.fhir.us.core.v610:
+    version: 6.1.0
+    uri: http://hl7.org/fhir/us/core/ImplementationGuide/hl7.fhir.us.core
+    id: uscore6
+    reason: |
+      Needed for systems supporting USCDI v3
+  hl7.fhir.us.core:
+    version: 7.0.0
+    uri: http://hl7.org/fhir/us/core/ImplementationGuide/hl7.fhir.us.core
+    id: uscore7
+    reason: |
+      Needed for systems supporting USCDI v4
+  hl7.fhir.us.davinci-hrex:
+    uri: http://hl7.org/fhir/us/davinci-hrex/ImplementationGuide/hl7.fhir.us.davinci-hrex
+    version: 1.1.0
+    id: hrex
+parameters:
+  show-inherited-invariants: false
+  jira-code: davinci-plannet
+  shownav: 'true'
+copyrightYear: 2025+
+releaseLabel: STU1.2
+
+# ╭───────────────────────────────────────package-list.json────────────────────────────────────────╮
+# │  To use a provided ig-data/package-list.json file, delete the "history" property below.        │
+# ╰────────────────────────────────────────────────────────────────────────────────────────────────╯
+
+# ╭────────────────────────────────────────────menu.xml────────────────────────────────────────────╮
+# │  To control the menu.xml using this config, uncomment and set the "menu" property.             │
+# ╰────────────────────────────────────────────────────────────────────────────────────────────────╯
+menu:
+  IG Home                  : index.html
+  Background:
+    Reading this IG: reading.html
+    Use Cases: background.html
+    Project and Participants: project.html
+  Specification: 
+    Conformance Expectations        : confexpectations.html
+    Implementation                  : implementation.html
+    Privacy, Safety, and Security   : security.html
+  FHIR Artifacts: artifacts.html
+  Base Specs:
+    FHIR R4 Spec: new-tab {{site.data.fhir.path}}
+    HRex 1.1.0: new-tab {{site.data.fhir.ver.hrex}}
+    US Core 3.1.1: new-tab http://hl7.org/fhir/us/core/STU3.1.1/index.html
+    US Core 6.1.0: new-tab https://hl7.org/fhir/us/core/STU6.1/index.html
+    US Core 7.0.0: new-tab https://hl7.org/fhir/us/core/STU7/index.html
+  Support:
+    Discussion Forum: https://chat.fhir.org/#narrow/stream/208874-Da-Vinci-PAS
+    Project Page: https://confluence.hl7.org/pages/viewpage.action?pageId=116462616
+    Implementer Support: https://confluence.hl7.org/pages/viewpage.action?pageId=116462616
+    Specification Dashboard: https://jira.hl7.org/secure/Dashboard.jspa?selectPageId=11903
+    Propose a Change: https://jira.hl7.org/secure/CreateIssueDetails!init.jspa?pid=10405&amp;issuetype=10600&amp;customfield_11302=FHIR-us-davinci-pas
+    Downloads: downloads.html
+  Change Log       : ChangeHistory.html
+  History       : http://www.hl7.org/fhir/us/davinci-pdex-plan-net/history.cfml

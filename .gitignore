@@ -13,3 +13,6 @@ Untitled.rkt
 
 # compiler output written beside a project by `raco fsh <dir>`
 fsh-generated/
+
+# published packages fetched as test oracles (tests/ig-fetch.rkt)
+tests/vendor/packages/

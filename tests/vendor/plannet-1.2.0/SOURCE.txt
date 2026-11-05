@@ -1,0 +1,11 @@
+Da Vinci PDex Plan-Net 1.2.0 — the IG's own FSH sources, vendored verbatim.
+
+Upstream: https://github.com/HL7/davinci-pdex-plan-net at tag 1.2.0
+  commit 0e1b5de066034ed3c6ac3b32ddaab77280497af7 (retrieved 2026-11-05)
+  copied verbatim: input/fsh/*.fsh (9 files, 119 entities) and sushi-config.yaml
+License: CC0-1.0 (sushi-config.yaml `license`)
+
+Compared against the PUBLISHED package hl7.fhir.us.davinci-pdex-plan-net 1.2.0 and its dependency
+hl7.fhir.us.core.v311 3.1.1, which tests/ig-fetch.rkt downloads from packages.fhir.org into
+tests/vendor/packages/ (not committed; shasums pinned in the test) — skipped with a note when the
+registry is unreachable. Driven by tests/ig-plannet-test.rkt.
