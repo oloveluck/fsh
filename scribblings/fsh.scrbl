@@ -4,42 +4,38 @@
 
 @title{fsh: FHIR Shorthand for Racket}
 
-A @hyperlink["https://hl7.org/fhir/uv/shorthand/"]{FHIR Shorthand} compiler and its reverse. FSH to
-FHIR: profiles, extensions, logical models and resources, instances, value sets, code systems, rule
-sets, mappings, slicing and reslicing, for R4 or R5, with a sushi-config.yaml's canonical, version
-and dependencies. FHIR to FSH: GoFSH-style decompilation. A @tt{.fsh} file is a module, and
-@tt{raco fsh check} validates a project's examples against its own profiles and positions every
-problem in the FSH.
+A @hyperlink["https://hl7.org/fhir/uv/shorthand/"]{FHIR Shorthand} compiler. You write profiles,
+extensions, value sets, code systems and example instances in @tt{.fsh} files, the way you would for
+SUSHI; @tt{raco fsh check} compiles them and validates every example against the profiles, pointing
+at the FSH line behind each problem. It also goes the other way (FHIR JSON to FSH), and a @tt{.fsh}
+file is a Racket module whose resources a program can use.
 
-Measured on real IGs against their published packages: IPS 2.0.1 and mCODE 4.0.0 compile from their
-own sources with no errors, and mCODE's 283 examples all validate against the profiles compiled
-here, as they do against the published package; the remaining differences are listed in the
-repository's notes.
-
-Part of the @hyperlink["https://github.com/oloveluck/fhir"]{fhir} family; depends on @tt{fhir},
-@tt{fhirpath}, @tt{fhir-tx} and @tt{fhir-validation}. Real projects need @tt{fhir-spec} too (the core and
-dependency packages).
+Held to real guides: IPS 2.0.1 and mCODE 4.0.0 compile from their own sources with no errors, and
+mCODE's 283 examples validate against the profiles compiled here, as they do against the published
+package. Part of the @hyperlink["https://github.com/oloveluck/fhir"]{fhir} family.
 
 @table-of-contents[]
 
-@section{Install}
+@section{Quick start}
+
+@bold{1. Install.} The packages are not on the Racket package server yet; clone the repositories
+side by side and install from source:
 
 @verbatim{
 raco pkg install --link --auto fhir/fhir fhir/fhir-spec fhirpath vcl fhir/fhir-tx fhir/fhir-validation fsh
-    # from source
 }
 
-@section{Writing FSH}
+@bold{2. Write a project.} A directory with a @tt{sushi-config.yaml} and @tt{.fsh} files under
+@tt{input/fsh/} (the SUSHI layout):
 
-Entities (@tt{Profile}, @tt{Extension}, @tt{Instance}, @tt{ValueSet}, @tt{CodeSystem},
-@tt{Invariant}, @tt{RuleSet}, @tt{Mapping}, @tt{Logical}, @tt{Resource}, @tt{Alias}) with their
-keyword lines, then rules, one per @tt{*}: cardinality (@tt{* subject 1..1}), flags (@tt{MS}),
-assignments (@tt{* status = #final}, @tt{* code = $loinc#85354-9 "Blood pressure panel"}),
-bindings (@tt{from VS (required)}), types (@tt{only Quantity}), slicing (@tt{contains a 1..1 and b
-0..*} with @tt{^slicing} carets), @tt{obeys}, @tt{insert}, and @tt{^} caret paths for anything
-else. The language reference is the @hyperlink["https://hl7.org/fhir/uv/shorthand/"]{FSH spec}.
+@verbatim|{# ig/sushi-config.yaml
+id: example.bp
+canonical: http://example.org/bp
+fhirVersion: 4.0.1
+dependencies:
+  hl7.fhir.us.core: 6.1.0}|
 
-@verbatim|{#lang fsh
+@verbatim|{// ig/input/fsh/bp.fsh
 Alias: $loinc = http://loinc.org
 
 Profile: ScreeningBloodPressure
@@ -55,102 +51,130 @@ Id: screening-blood-pressure
 * component[systolic].code = $loinc#8480-6 "Systolic blood pressure"
 * component[systolic].value[x] only Quantity
 
-Instance: ann
-InstanceOf: Patient
-* name.family = "Ng"
-* gender = #female}|
+Instance: reading-1
+InstanceOf: ScreeningBloodPressure
+Usage: #example
+* status = #final
+* subject = Reference(Patient/ann)
+* component[systolic].valueString = "high"}|
+
+@bold{3. Check it.}
+
+@verbatim{
+$ raco fsh check ig/
+ig/input/fsh/bp.fsh:22:3: fsh validate error: instance reading-1: Observation.component.value[x]:
+    valueString is not allowed in slice 'systolic' (value[x]: Quantity)
+    (constrained by profile ScreeningBloodPressure at ig/input/fsh/bp.fsh:15:3)
+22 | * component[systolic].valueString = "high"
+   |   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+fsh check: 1 examples, 1 with errors; 1 error(s), 0 warning(s)
+}
+
+The error sits on the instance rule that wrote the bad element and names the profile rule it breaks.
+Fix the line (@tt{valueQuantity = 140 'mm[Hg]'}), run again, exit 0. Then @tt{raco fsh ig/} writes
+the resources to @tt{ig/fsh-generated/}, and @tt{raco fsh ig/ --pack} writes the FHIR NPM package.
+
+@section{Writing FSH}
+
+The language is SUSHI's; the reference is the @hyperlink["https://hl7.org/fhir/uv/shorthand/"]{FSH
+specification}. In brief: an entity (@tt{Profile}, @tt{Extension}, @tt{Instance}, @tt{ValueSet},
+@tt{CodeSystem}, @tt{Invariant}, @tt{RuleSet}, @tt{Mapping}, @tt{Logical}, @tt{Resource},
+@tt{Alias}) is its keyword lines followed by rules, one per @tt{*}:
+
+@tabular[#:style 'boxed #:sep @hspace[2]
+(list (list @bold{rule} @bold{example})
+      (list "cardinality and flags" @tt{* subject 1..1 MS})
+      (list "assignment (a pattern; add (exactly) for a fixed value)" @tt{* code = $loinc#85354-9 "Blood pressure panel"})
+      (list "binding" @tt{* category from ObservationCategoryCodes (required)})
+      (list "type" @tt{* value[x] only Quantity or CodeableConcept})
+      (list "slicing" @tt{* component contains systolic 1..1 and diastolic 1..1})
+      (list "invariant" @tt{* obeys bp-1})
+      (list "rule set" @tt{* insert CommonMetadata})
+      (list "anything else, through the element definition" @tt{* code ^short = "What was measured"}))]
+
+Everything SUSHI accepts for R4 and R5 is accepted here: indented rules (path context), parameterized
+rule sets, reslicing, extension scaffolding, logical models and custom resources, mappings, and the
+dependencies named in @tt{sushi-config.yaml}, which are found in @tt{fhir-spec} as
+@tt{<id>-<version>.tgz}.
 
 @section{Using it}
 
-@bold{A project.} The SUSHI layout: @tt{sushi-config.yaml} (canonical, fhirVersion, dependencies,
-id, version) and @tt{input/fsh/*.fsh}. Dependencies are found in @tt{fhir-spec} as
-@tt{<id>-<version>.tgz} and put ahead of core when names resolve.
+@subsection{Command line}
 
-@verbatim{
-raco fsh ig/
-    compile every .fsh under ig/ to ig/fsh-generated/<Type>-<id>.json
-raco fsh check ig/
-    validate every example against the project's profiles; problems on their FSH lines
-raco fsh ig/ --pack              also write the FHIR NPM package, <id>-<version>.tgz
-raco fhir-server serve-ig example.notes-0.1.0.tgz --capability <id>    serve it (fhir-server)
-raco fsh --decompile StructureDefinition-x.json                          FHIR to FSH
-}
+@tabular[#:style 'boxed #:sep @hspace[2]
+(list (list @tt{raco fsh check ig/} "compile; validate every example against the project's profiles; problems on their FSH lines")
+      (list @tt{raco fsh check ig/ --capability <id>} "also what a server generated from that CapabilityStatement would not do (needs fhir-server)")
+      (list @tt{raco fsh ig/} @elem{compile every @tt{.fsh} to @tt{ig/fsh-generated/<Type>-<id>.json}})
+      (list @tt{raco fsh ig/ --pack [out.tgz]} "also write the FHIR NPM package")
+      (list @tt{raco fsh file.fsh} "one file, with the default canonical and R5")
+      (list @tt{raco fsh --decompile sd.json} "FHIR to FSH"))]
 
-@bold{Maps in the project.} A project may hold @tt{.map} files (the FHIR Mapping Language, the
-@tt{fml} package, loaded on demand): the arrows between its structures. Their StructureMaps join the
-artifacts, so the package carries both, and @tt{check} checks each map against the structures: an
-element path neither structure has, a value that cannot go into its element, a group call that does
-not fit, a required target element never assigned; then every example of the map's source structure
-is transformed and the result validated against the target, findings positioned in the map. A
-@tt{Logical:} model is registered as a type when it compiles, so an @tt{Instance:} of it builds like
-any resource. The worked project is @tt{fhir-examples/examples/intake-maps}.
+Flags: @litchar{-o <dir>}, @litchar{--fhir-version 4.0.1|5.0.0}, @litchar{--canonical <url>},
+@litchar{--snapshot} (also generate snapshots), @litchar{--format text|json|outcome} (how problems
+are reported: text with a caret on stderr, or JSON or a FHIR OperationOutcome on stdout for a
+program). Exit codes: 0, 1 on an FSH error, 2 on usage.
 
-@tt{check} prints each problem with its source line and a caret, naming the profile rule an example
-breaks, then a summary, and exits 1 on an error:
+A package written by @litchar{--pack} is served by @tt{raco fhir-server serve-ig out.tgz --capability
+<id>} (the fhir-server package), with its dependencies resolved from @tt{fhir-spec}.
 
-@verbatim{
-input/fsh/examples.fsh:5:3: fsh validate error: instance tumor-1: Observation.component.value[x]:
-    valueString is not allowed in slice 'longest' (value[x]: Quantity)
-    (constrained by profile TumorSize at input/fsh/profiles.fsh:10:3)
- 5 | * component[longest].valueString = "big"
-   |   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-fsh check: 3 examples, 1 with errors; 1 error(s), 0 warning(s)
-}
+@subsection{As a module}
 
-@litchar{--format json} or @tt{outcome} gives the same to a program. Flags: @litchar{-o <dir>},
-@litchar{--fhir-version 4.0.1|5.0.0}, @litchar{--canonical <url>}, @litchar{--snapshot}, @litchar{--pack [out.tgz]},
-@tt{check --capability <CapabilityStatement id>} (also reports what the generated server would not
-do). Exit codes: 0, 1 on an FSH error, 2 on usage.
-
-@bold{As a module.} @racket[(require "profile.fsh")] compiles the file when the program compiles
-(a parse or compile error is positioned in it) and gives @racket[document] (the entity ASTs),
-@racket[compiled] (the FHIR resources as jsexprs) and @racket[resources] (typed nodes, read
-leniently). The target is R5 with the default canonical; a project with a config is compiled with
-@racket[compile-project]. @tt{racket profile.fsh} prints the JSON.
+@racket[(require "bp.fsh")] compiles the file when the program compiles; a parse or compile error
+is positioned in it. The module provides @racket[compiled] (the FHIR resources as jsexprs),
+@racket[resources] (typed nodes) and @racket[document] (the entity ASTs). @tt{racket bp.fsh} prints
+the JSON. A single file is compiled for R5 with the default canonical; use @racket[compile-project]
+for a project with a config.
 
 @racketblock[
-(require (only-in "profile.fsh" [compiled clinic]))
-(code:comment "the profile is now resolvable")
+(require (only-in "bp.fsh" [compiled clinic])
+         fhir/data-source (only-in fhir/conformance/operations ensure-valid))
+(code:comment "the profile is resolvable by url, because requiring the module registered it")
 (parameterize ([current-data-source (resources->data-source clinic)])
   (ensure-valid reading #:profile "http://example.org/StructureDefinition/screening-blood-pressure"))
 ]
 
-@bold{From Racket.}
+@subsection{From Racket}
 
 @racketblock[
 (require fsh/compile fsh/project fsh/check fsh/decompile)
 (fsh->fhir text)                                   (code:comment "source -> (listof jsexpr)")
 (define p (compile-project "ig/"))                 (code:comment "with its sushi-config.yaml")
-(project-artifacts p) (project-diagnostics p)
-(code:comment "validate in the same context")
-(parameterize ([current-sd-packages (project-sd-packages p)])
-  (apply-operation "$validate" resource))
+(project-artifacts p)                              (code:comment "the resources")
+(project-diagnostics p)                            (code:comment "every problem, positioned")
 (check-report-diagnostics (check-fsh-project "ig/"))
 (fhir->fsh sd)                                     (code:comment "jsexpr -> FSH text")
 ]
+
+@subsection{Maps in a project}
+
+A project may also hold @tt{.map} files in the FHIR Mapping Language (the @tt{fml} package, loaded
+when present). Their StructureMaps join the package, and @tt{check} checks each map against the
+project's structures and transforms the examples of its source structure, validating the results
+against the target; findings are positioned in the map. A @tt{Logical:} model is registered as a
+type, so an @tt{Instance:} of it builds like any resource. The worked project is
+@tt{fhir-examples/examples/intake-maps}; the fml document walks through it.
 
 @section{Limits}
 
 Measured against the IGs' published packages: IPS 2.0.1 pairs 114 resources, 82 identical, 97 with
 all published content, 395 of 440 differential elements; mCODE 4.0.0 pairs 349, 206 identical, 282
-complete, 279 of 501 differential elements. What the differences are:
+complete, 279 of 501 differential elements. The differences:
 
 @itemlist[
-@item{28 mCODE profiles (genomics and performance status, mostly) whose differential lacks elements
-SUSHI writes; in IPS a few @tt{min}s, one slice-child order and a logical model's root @tt{short}.}
-@item{No ImplementationGuide resource, no narratives, no ActorDefinition conversion: publisher
-output, out of scope.}
+@item{Some profiles' differentials lack elements SUSHI writes (28 in mCODE, mostly genomics and
+performance status; in IPS a few @tt{min}s, one slice-child order and a logical model's root
+@tt{short}). The test prints the remaining difference classes, largest first.}
+@item{No ImplementationGuide resource, no narratives, no ActorDefinition conversion: these are
+publisher output.}
 @item{@tt{Characteristics:} and @tt{Context:} metadata are parsed but not read (an extension's
-context comes from a @tt{^context} caret). An @tt{insert} naming an unknown RuleSet is left
-unexpanded, not reported. A rule-level @tt{insert} with a path prefix drops the prefix.}
+context comes from a @tt{^context} caret). An @tt{insert} of an unknown RuleSet is left unexpanded,
+not reported.}
 @item{Snapshots are opt-in (@litchar{--snapshot}, @racket[emit-snapshot?]); the default output is
-differential only. R4 and R5 only: a @tt{4.x} version compiles against R4, anything else against R5.}
-@item{No code validation: a binding records its strength and value set, and @tt{raco fsh check}
-validates examples without a terminology service, so only bindings whose value set enumerates its
-codes are checked.}
-@item{The decompiler gives idiomatic FSH to StructureDefinitions, ValueSets and CodeSystems; any
-other resource becomes a per-leaf @tt{Instance} with explicit indices, and nothing is extracted into
-Aliases, RuleSets or Mappings.}]
+the differential. R4 and R5 only.}
+@item{No code validation: a binding records its strength and value set, and @tt{check} runs without
+a terminology service, so only bindings whose value set enumerates its codes are checked.}
+@item{The decompiler gives idiomatic FSH for StructureDefinitions, ValueSets and CodeSystems; any
+other resource becomes a per-leaf @tt{Instance}, and nothing is extracted into Aliases or RuleSets.}]
 
 @section{Reference}
 
