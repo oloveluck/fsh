@@ -5,7 +5,7 @@
 (require racket/match
          racket/string
          racket/contract
-         (only-in racket/list append-map make-list last filter-map remove-duplicates index-of drop-right take)
+         (only-in racket/list append-map make-list last filter-map remove-duplicates index-of drop-right take drop)
          "parser/ast.rkt"
          "parser/path.rkt"
          "caret.rkt"
@@ -97,7 +97,8 @@
                         'baseDefinition parent-url
                         'derivation "constraint"
                         ;; SUSHI carries the base definition's mapping declarations into the profile
-                        'mapping (inherited-mappings base-type)
+                        'mapping (or (and parent-sd (let ([m (hash-ref parent-sd 'mapping #f)]) (and (pair? m) m)))
+                                     (inherited-mappings base-type))
                         'differential (and (pair? diff) (hasheq 'element diff)))))
   (define own-context? (for/or ([r (in-list rules)])
                          (and (rule-caret? r) (member (rule-caret-path r) '(#f "" "."))
@@ -399,16 +400,27 @@
   (define code (and suffix (for/or ([c (in-list codes)]) (and (string-ci=? c suffix) c))))
   (define bmax (base-max base-type path))
   (hash-set* h 'min 0 'max (or bmax "1") 'type (and code (list (hasheq 'code code)))))
-(define (base-element base-type path)
+(define (base-element base-type path [fuel 8])
   (define sd (and (sd-index-available?) (resolve-sd-raw base-type)))
   (define els (and (hash? sd) (let ([sn (hash-ref sd 'snapshot #f)]) (and (hash? sn) (hash-ref sn 'element #f)))))
-  (and (list? els) (findf (lambda (e) (equal? (hash-ref e 'path #f) path)) els)))
+  (define (at p) (and (list? els) (findf (lambda (e) (equal? (hash-ref e 'path #f) p)) els)))
+  (or (at path)
+      ;; below a complex element the snapshot stops (`Extension.extension.value[x]`): dive through
+      ;; its one datatype
+      (and (> fuel 0)
+           (let ([segs (string-split path ".")])
+             (for/or ([n (in-range (sub1 (length segs)) 1 -1)])
+               (define prefix (string-join (take segs n) "."))
+               (define el (at prefix))
+               (define codes (and el (hash-ref el 'type '())))
+               (and (list? codes) (= 1 (length codes))
+                    (let ([c (hash-ref (car codes) 'code #f)])
+                      (and (string? c) (not (equal? c base-type))
+                           (base-element c (string-join (cons c (drop segs n)) ".") (sub1 fuel))))))))))
 (define (base-max base-type path) (let ([e (base-element base-type path)]) (and e (hash-ref e 'max #f))))
 ;; base-type-codes : base-type element-path -> (listof type code) | #f   from the base snapshot
 (define (base-type-codes base-type path)
-  (define sd (and (sd-index-available?) (resolve-sd-raw base-type)))
-  (define els (and (hash? sd) (let ([sn (hash-ref sd 'snapshot #f)]) (and (hash? sn) (hash-ref sn 'element #f)))))
-  (define el (and (list? els) (findf (lambda (e) (equal? (hash-ref e 'path #f) path)) els)))
+  (define el (base-element base-type path))
   (and el (for/list ([t (in-list (hash-ref el 'type '()))]) (hash-ref t 'code #f))))
 ;; the type-slicing a choice element gets when one of its types is constrained by name (SUSHI)
 (define type-slicing (hasheq 'discriminator (list (hasheq 'type "type" 'path "$this")) 'ordered #f 'rules "open"))

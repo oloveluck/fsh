@@ -11,7 +11,7 @@
 (require rackunit racket/runtime-path
          (only-in fhir/r4/schemas)                          ; Plan-Net is FHIR 4.0.1
          (only-in fhir/spec-package spec-package-path current-package-directories)
-         (only-in fhir/sd/sd-index current-sd-packages)
+         (only-in fhir/sd/sd-index current-sd-packages resolve-sd-raw) racket/port racket/system
          fsh/ig-config
          "ig-fetch.rkt" "ig-harness.rkt")
 
@@ -21,11 +21,20 @@
 (define r4-core (spec-package-path "hl7.fhir.r4.core.tgz" #:optional? #t))
 (define cfg (read-ig-config (build-path plannet "sushi-config.yaml")))
 
-(check-equal? (ig-config-dependencies cfg) '(("hl7.fhir.us.core.v311" . "3.1.1")))
+(check-equal? (ig-config-dependencies cfg)
+              '(("hl7.fhir.us.core.v311" . "3.1.1") ("hl7.fhir.us.core.v610" . "6.1.0")
+                ("hl7.fhir.us.core" . "7.0.0") ("hl7.fhir.us.davinci-hrex" . "1.1.0")))
+;; the profiles compile against US Core 3.1.1 alone (the later US Core versions and HRex are listed
+;; for conformance statements; no FSH rule reaches into them)
 (cond
   [(not (and published uscore311 r4-core))
    (printf "  Plan-Net IG corpus: skipped (needs the published package and US Core 3.1.1 from packages.fhir.org, and fhir-spec)\n")]
   [else
+   (parameterize ([current-sd-packages (list uscore311 r4-core)])
+     (printf "  US Core 3.1.1 (~a): us-core-location resolves: ~a; USCorePractitionerRoleProfile: ~a\n" uscore311
+             (and (resolve-sd-raw "http://hl7.org/fhir/us/core/StructureDefinition/us-core-location") #t)
+             (and (resolve-sd-raw "USCorePractitionerRoleProfile") #t)))
+   (printf "  entries: ~a\n" (with-output-to-string (lambda () (system (format "tar tzf ~a | head -5" uscore311)))))
    (define r (parameterize ([current-package-directories (list packages-dir)]
                             [current-sd-packages (list uscore311 r4-core)])
                (check-fsh-ig (build-path plannet "input" "fsh") published (ig-config-canonical cfg))))

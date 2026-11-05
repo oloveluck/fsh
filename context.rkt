@@ -58,12 +58,12 @@
     ;; `$sct#123` / `SCT#123`: the system part of a code is an alias, as in rules and value sets
     [(struct fsh-code (c d))
      (match (regexp-match #px"^([^#]+)#(.*)$" c)
-       [(list _ sys code) (fsh-code (string-append (resolve-alias sys aliases) "#" code) d)]
+       [(list _ sys code) (fsh-code (string-append (resolve-system sys aliases) "#" code) d)]
        [#f v])]
     ;; a quantity's coded unit (`1 SCT#428673006 "tablet"`): the system part is an alias too
     [(struct fsh-quantity (n u d))
      (match (and (string? u) (regexp-match #px"^([^#]+)#(.*)$" u))
-       [(list _ sys code) (fsh-quantity n (string-append (resolve-alias sys aliases) "#" code) d)]
+       [(list _ sys code) (fsh-quantity n (string-append (resolve-system sys aliases) "#" code) d)]
        [_ v])]
     ;; Canonical(Name) / Canonical(Name|version): an alias, this document's profiles, value sets and
     ;; code systems, or a definition in the packages, as its canonical url (the version kept)
@@ -83,6 +83,12 @@
     [(? string? s) (resolve-alias s aliases)]
     [_ v]))
 (define (resolve-alias s aliases) (if (and (string? s) (hash-has-key? aliases s)) (hash-ref aliases s) s))
+;; resolve-system : system-part aliases -> url   the system of a code: an alias, else the NAME of a
+;; CodeSystem of this document (`LanguageProficiencyCS#30`) or of the packages, else as written
+(define (resolve-system sys aliases)
+  (cond [(hash-has-key? aliases sys) (hash-ref aliases sys)]
+        [(regexp-match? #rx"[:/]" sys) sys]
+        [else (or ((current-local-canonical) sys) (external-canonical "CodeSystem" sys) sys)]))
 ;; resolve-reference : "Reference(X)" | "X" -> the reference string. X naming an instance of this
 ;; document becomes "<ResourceType>/<id>" (SUSHI); anything else (Type/id, a URL, an alias) stays.
 (define (resolve-reference t aliases)
