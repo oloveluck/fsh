@@ -289,8 +289,11 @@
 (define (param-arg x)
   (match x
     [(list (or 'parameter 'lastParameter) v)
-     (string-trim (regexp-replace #px"[),\\]]+$" (regexp-replace #px"^\\[+" (string-trim v) "") ""))]
+     (unescape-param (string-trim (regexp-replace #px"[),\\]]+$" (regexp-replace #px"^\\[+" (string-trim v) "") "")))]
     [_ #f]))
+;; unescape-param : string -> string   a `)` or `,` inside an argument is written `\)` / `\,` (and a
+;; backslash `\\`): the backslash goes, the character stays
+(define (unescape-param s) (regexp-replace* #px"\\\\([),\\\\])" s "\\1"))
 ;; instantiate a parameterized RuleSet: substitute {param}->arg in the raw body, re-parse to rules
 (define (instantiate-ruleset params body args)
   (define subst (map cons params args))
@@ -313,9 +316,11 @@
     ;; a STAR's lexeme can carry the comment lines before it (`// note\n* `): keep only its own line
     [(STAR) (string-append "\n" (last (string-split (string-append v " ") "\n")))]
     [else v]))
+;; substitute : string (listof (cons param arg)) -> string   each `{param}` becomes its argument,
+;; verbatim (a procedure, so a `\` or `&` in the argument is not read as a replacement pattern)
 (define (substitute s subst)
   (for/fold ([s s]) ([kv (in-list subst)])
-    (regexp-replace* (regexp (regexp-quote (string-append "{" (car kv) "}"))) s (cdr kv))))
+    (regexp-replace* (regexp (regexp-quote (string-append "{" (car kv) "}"))) s (lambda (_) (cdr kv)))))
 (define (expand-entity-inserts e rulesets param-rulesets)
   (define (xr rs) (expand-rules rs rulesets param-rulesets))
   (match e
@@ -341,6 +346,27 @@
 ;; ---- living examples ------------------------------------------------------------------------
 (module+ test
   (require rackunit (only-in fhir/r5/schemas))
+  ;; parameter values: `\)` and `\,` are the characters; an argument is inserted verbatim
+  (check-equal? (unescape-param "Aortic structure (body structure\\)") "Aortic structure (body structure)")
+  (check-equal? (unescape-param "a\\, b") "a, b")
+  (check-equal? (substitute "x = {d}" (list (cons "d" "\"a (b\\) & c\""))) "x = \"a (b\\) & c\"")
+  ;; a parameterized RuleSet in an instance: the display argument with an escaped paren arrives whole
+  (define cm (car (fsh->fhir (string-append
+                              "RuleSet: MapConcept(code, display, targetcode, targetdisplay)\n"
+                              "* group[=].element[+].code = {code}\n* group[=].element[=].display = {display}\n"
+                              "* group[=].element[=].target.code = {targetcode}\n* group[=].element[=].target.display = {targetdisplay}\n\n"
+                              "Instance: cm\nInstanceOf: ConceptMap\n* status = #draft\n* group[+].source = \"http://a\"\n* group[=].target = \"http://b\"\n"
+                              "* insert MapConcept(#A_Aorta, \"Aorta\", #15825003, \"Aortic structure (body structure\\)\")\n"))))
+  (define cm-target (car (hash-ref (car (hash-ref (car (hash-ref cm 'group)) 'element)) 'target)))
+  (check-equal? (hash-ref cm-target 'display) "Aortic structure (body structure)")
+  (check-equal? (hash-ref cm-target 'code) "15825003")
+  ;; a plain RuleSet whose rules insert a parameterized one: the nested insert expands too
+  (define nested (car (fsh->fhir (string-append
+                                  "RuleSet: NotUsed(path)\n* {path} ^short = \"Not used\"\n\n"
+                                  "RuleSet: Common\n* subject 1..1\n* insert NotUsed(device)\n\n"
+                                  "Profile: P\nParent: Observation\n* insert Common\n"))))
+  (check-equal? (for/list ([e (in-list (hash-ref (hash-ref nested 'differential) 'element))]) (hash-ref e 'id))
+                '("Observation.subject" "Observation.device"))
   ;; a document: an alias resolves, a profile becomes a differential, an instance a resource
   (define out (fsh->fhir (string-append
                           "Alias: $sct = http://snomed.info/sct\n\n"

@@ -58,7 +58,16 @@
                            [else (sd-url parent)]))
   (define id (or (assoc-ref meta 'id) name))
   (define self-url (string-append (canonical-base) "/StructureDefinition/" id))
-  (define-values (elems0 order0) (fold-sd-rules base-type rules invariants self-url))
+  ;; the nearest Parent in the packages (a local chain ends somewhere): its snapshot types inform `only`
+  (define parent-sd (let loop ([n parent] [fuel 16])
+                      (cond [(<= fuel 0) #f]
+                            [(hash-ref (current-profiles) n #f) => (lambda (p) (loop (car p) (sub1 fuel)))]
+                            [else (external-sd n)])))
+  (define (parent-types path)
+    (define els (and parent-sd (let ([sn (hash-ref parent-sd 'snapshot #f)]) (and (hash? sn) (hash-ref sn 'element '())))))
+    (define el (and (list? els) (findf (lambda (e) (equal? (hash-ref e 'path #f) path)) els)))
+    (if el (hash-ref el 'type '()) '()))
+  (define-values (elems0 order0) (fold-sd-rules base-type rules invariants self-url #:parent-types parent-types))
   (define-values (elems order)
     (if ext? (add-extension-scaffold elems0 order0 self-url meta) (values elems0 order0)))
   (define diff (snapshot-order base-type (for/list ([k (in-list (reverse order))]) (hash-ref elems k))))
@@ -118,8 +127,16 @@
               'differential (hasheq 'element diff)))
      'abstract #f)
     rules)))
+;; expand-flag-paths : rules -> rules   `* a and b and c MS` is one rule over three paths: one per path
+(define (expand-flag-paths rules)
+  (append-map (lambda (r)
+                (match r
+                  [(rule-flag p (? pair? extra) flags) (cons (rule-flag p '() flags) (for/list ([q (in-list extra)]) (rule-flag q '() flags)))]
+                  [_ (list r)]))
+              rules))
 ;; fold SD rules into an id-keyed differential-element accumulator (shared by profile/ext/logical)
-(define (fold-sd-rules base-type rules invariants self-url)
+;; parent-types : path -> (listof type) — the Parent's snapshot element at that path, for `only`
+(define (fold-sd-rules base-type rules invariants self-url #:parent-types [parent-types (lambda (_) '())])
   (define (constraint-of key)
     (define inv (hash-ref invariants key #f))
     (drop-false (hasheq 'key key
@@ -129,7 +146,7 @@
                         'xpath (and inv (hash-ref inv 'xpath #f))
                         'source self-url)))
   (define element-counters (make-hash))      ; element id -> soft-index counters for its carets
-  (for/fold ([elems (hash)] [order '()]) ([r (in-list rules)])
+  (for/fold ([elems (hash)] [order '()]) ([r (in-list (expand-flag-paths rules))])
     (define p (rule-path-of r))
     (define-values (rid rpath rslice)
       (let-values ([(id path slice) (if (string? p) (element-loc base-type p) (values #f #f #f))])
@@ -152,7 +169,13 @@
        ;; types in the base element's order (SUSHI), unknown ones after
        (define base-codes (or (base-type-codes base-type rpath) '()))
        (define (rank t) (or (index-of base-codes (hash-ref t 'code)) 1000))
-       (define new-types (sort (map type->jsexpr types) < #:key rank))
+       ;; a kept type carries the Parent's extension on it (US Core's type-level must-support), as
+       ;; SUSHI narrows the inherited type list rather than writing a new one
+       (define inherited (parent-types rpath))
+       (define (inherit t)
+         (define pt (findf (lambda (x) (equal? (hash-ref x 'code #f) (hash-ref t 'code #f))) inherited))
+         (if (and pt (hash-ref pt 'extension #f) (not (hash-ref t 'extension #f))) (hash-set t 'extension (hash-ref pt 'extension)) t))
+       (define new-types (sort (map (compose inherit type->jsexpr) types) < #:key rank))
        ;; an `only` naming exactly the base element's types narrows nothing: SUSHI emits no element
        (if (and (not (hash-has-key? elems rid)) (equal? (base-type-codes base-type rpath) (map (lambda (t) (hash-ref t 'code)) new-types))
                 (andmap (lambda (t) (= (hash-count t) 1)) new-types))
@@ -345,7 +368,7 @@
 ;; document's profiles: `only MyCodingProfile` = code Coding + profile [its url]; a Reference target
 ;; naming a local profile is that profile's canonical.
 (define (type->jsexpr t)
-  (match (regexp-match #px"^(Reference|Canonical|CodeableReference)\\((.*)\\)$" t)
+  (match (regexp-match #px"^(Reference|Canonical|CodeableReference)\\s*\\((.*)\\)$" t)
     [(list _ "Canonical" inner) (hasheq 'code "canonical" 'targetProfile (target-urls inner))]
     [(list _ kind inner) (hasheq 'code kind 'targetProfile (target-urls inner))]
     [_ (define n (resolve-alias t (current-aliases)))
@@ -466,6 +489,15 @@
 ;; ---- living examples ------------------------------------------------------------------------
 (module+ test
   (require rackunit (only-in fhir/r5/schemas))
+  ;; `* a and b MS` flags every path; `Reference (A or B)` with a space is a Reference type
+  (define multi (compile-profile (fsh-profile "P" '((parent . "Observation"))
+                                              (list (rule-flag "status" '("code" "subject") '(MS))
+                                                    (rule-only "basedOn" '("Reference (ServiceRequest or CarePlan)"))))))
+  (define (el id) (findf (lambda (e) (equal? (hash-ref e 'id) id)) (hash-ref (hash-ref multi 'differential) 'element)))
+  (check-equal? (map (lambda (id) (hash-ref (el id) 'mustSupport #f)) '("Observation.status" "Observation.code" "Observation.subject")) '(#t #t #t))
+  (check-equal? (hash-ref (car (hash-ref (el "Observation.basedOn") 'type)) 'code) "Reference")
+  (check-equal? (hash-ref (car (hash-ref (el "Observation.basedOn") 'type)) 'targetProfile)
+                '("http://hl7.org/fhir/StructureDefinition/ServiceRequest" "http://hl7.org/fhir/StructureDefinition/CarePlan"))
   ;; cardinalities and rule paths
   (check-equal? (card-lo "1..*") 1) (check-equal? (card-lo "0..1") 0) (check-equal? (card-lo "..1") 0)
   (check-equal? (rule-path-of (rule-card "component" "1..*" '())) "component")

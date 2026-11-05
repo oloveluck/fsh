@@ -10,3 +10,6 @@ Untitled.rkt
 
 # macOS
 .DS_Store
+
+# compiler output written beside a project by `raco fsh <dir>`
+fsh-generated/

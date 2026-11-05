@@ -9,7 +9,10 @@
 ;;;   top level   text, snapshot, date, version, publisher, contact, jurisdiction; meta except profile;
 ;;;               publisher-assigned OID identifiers on conformance resources
 ;;;   anywhere    structuredefinition-wg / -fmm / -standards-status / -normative-version extensions;
-;;;               a `|<version>` pin on hl7.org/fhir canonicals; xml:lang/lang on narrative divs;
+;;;               a `|<version>` pin on hl7.org/fhir canonicals; xml:lang/lang on narrative divs and
+;;;               their whitespace; the `text` of a nested resource (Bundle entries: generated
+;;;               narratives); a bare `{id, path}` differential element (the publisher inserts a root
+;;;               or an intermediate element on some profiles, by processing order);
 ;;;               a compose component `version` the publisher pinned where ours has none
 ;;; Measures (each ratcheted by the caller):
 ;;;   exact      — normalised published = normalised ours
@@ -74,12 +77,26 @@
          (if (null? kept) (hash-remove j 'identifier) (hash-set j 'identifier kept))]
         [else j]))
 
+;; the IG Publisher inserts a bare `{id, path}` root (and intermediate) element into a differential
+;; whose first element is below the root — on some profiles, by processing order. It says nothing;
+;; dropped on both sides. (SUSHI never writes one for a profile.)
+(define (content-free? e) (and (hash? e) (andmap (lambda (k) (memq k '(id path))) (hash-keys e))))
+(define (drop-content-free-elements j)
+  (define d (and (hash? j) (hash-ref j 'differential #f)))
+  (if (and (hash? d) (list? (hash-ref d 'element #f)))
+      (hash-set j 'differential (hash-set d 'element (filter (lambda (e) (not (content-free? e))) (hash-ref d 'element))))
+      j))
+;; narratives are publisher output: a resource's `text` (Bundle entries too) is dropped, and the
+;; XHTML of a hand-written one (Composition sections) is compared with its whitespace collapsed
+(define (collapse-xhtml s) (string-trim (regexp-replace* #px">\\s+<" (regexp-replace* #px"\\s+" s " ") "><")))
+
 (define (norm j0 #:top? [top? #t])
-  (define j (if top? (drop-publisher-oids j0) j0))
+  (define j (if top? (drop-content-free-elements (drop-publisher-oids j0)) j0))
   (cond
     [(hash? j)
      (for/hash ([(k v) (in-hash j)]
                 #:unless (and top? (memq k drop-top))
+                #:unless (and (not top?) (eq? k 'text) (hash-ref j 'resourceType #f))
                 #:unless (and top? (eq? k 'meta) (not (hash-ref v 'profile #f)))
                 #:unless (and (eq? k 'extension) (list? v) (andmap publisher-ext? v)))
        (values k (cond [(and top? (eq? k 'meta)) (hasheq 'profile (norm (hash-ref v 'profile) #:top? #f))]
@@ -88,7 +105,7 @@
     [(list? j) (map (lambda (x) (norm x #:top? #f)) j)]
     [(real? j) (exact->inexact j)]
     [(and (string? j) (regexp-match? #rx"^http://hl7[.]org/fhir/.*[|][0-9][^|/]*$" j)) (car (string-split j "|"))]
-    [(and (string? j) (regexp-match? #rx"^<div " j)) (regexp-replace* #rx" (xml:lang|lang)=\"[^\"]*\"" j "")]
+    [(and (string? j) (regexp-match? #rx"^<div " j)) (collapse-xhtml (regexp-replace* #rx" (xml:lang|lang)=\"[^\"]*\"" j ""))]
     [else j]))
 
 ;; the publisher pins versions on compose components; an unpinned component of ours still matches
@@ -146,7 +163,8 @@
   (sort (for/list ([(class kds) (in-hash groups)])
           (list class (length kds)
                 (for/list ([kd (in-list (take (reverse kds) (min 3 (length kds))))])
-                  (list (car kd) (cddr (cdr kd))))))   ; (key (published ours)) or (key (value))
+                  (list (car kd) (cddr (cdr kd))))     ; (key (published ours)) or (key (value))
+                (length (remove-duplicates (map car kds)))))   ; how many resources the class touches
         > #:key cadr))
 
 (define (first-diff a b path)
@@ -195,6 +213,6 @@
 (define (print-classes r [n 25])
   (define (short v) (let ([s (format "~s" v)]) (if (> (string-length s) 100) (string-append (substring s 0 100) "…") s)))
   (for ([c (in-list (take (ig-fsh-report-classes r) (min n (length (ig-fsh-report-classes r)))))])
-    (printf "    ~a  ~a\n" (cadr c) (car c))
+    (printf "    ~a  ~a~a\n" (cadr c) (car c) (if (> (cadddr c) 1) (format "  (~a resources)" (cadddr c)) ""))
     (for ([ex (in-list (caddr c))])
       (printf "        ~a/~a: ~a\n" (car (car ex)) (cdr (car ex)) (string-join (map short (cadr ex)) "  |  ")))))

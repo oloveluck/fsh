@@ -57,6 +57,19 @@
      (match (regexp-match #px"^([^#]+)#(.*)$" c)
        [(list _ sys code) (fsh-code (string-append (resolve-alias sys aliases) "#" code) d)]
        [#f v])]
+    ;; Canonical(Name) / Canonical(Name|version): an alias, this document's profiles, value sets and
+    ;; code systems, or a definition in the packages, as its canonical url (the version kept)
+    [(struct fsh-canonical (t))
+     (match-define (list _ n ver) (regexp-match #px"^([^|]*)(\\|.*)?$" t))
+     (define r (resolve-alias (string-trim n) aliases))
+     (define url (or (let ([p (hash-ref (current-profiles) r #f)])
+                       (and p (string-append (canonical-base) "/StructureDefinition/" (cdr p))))
+                     ((current-local-canonical) r)
+                     (external-canonical "StructureDefinition" r)
+                     (external-canonical "ValueSet" r)
+                     (external-canonical "CodeSystem" r)
+                     r))
+     (fsh-canonical (string-append url (or ver "")))]
     [(? string? s) (resolve-alias s aliases)]
     [_ v]))
 (define (resolve-alias s aliases) (if (and (string? s) (hash-has-key? aliases s)) (hash-ref aliases s) s))
