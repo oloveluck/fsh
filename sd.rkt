@@ -48,7 +48,7 @@
   (define-values (name meta rules)
     (match e [(fsh-profile n m r) (values n m r)] [(fsh-extension n m r) (values n m r)]))
   (define ext? (fsh-extension? e))
-  (define parent (resolve-alias (or (assoc-ref meta 'parent) (if ext? "Extension" "DomainResource")) (current-aliases)))
+  (define parent (strip-core-version (resolve-alias (or (assoc-ref meta 'parent) (if ext? "Extension" "DomainResource")) (current-aliases))))
   ;; a Parent defined in THIS document (by name, id or url): its canonical is local, and the
   ;; constrained type is found by following the Parent chain down to a base resource type
   (define local-parent (hash-ref (current-profiles) parent #f))
@@ -107,6 +107,12 @@
   (define base* (let ([b (if ext? (add-extension-header base (not own-context?)) base)])
                   (if (hash-ref b 'context #f) b (hash-remove b 'context))))
   (maybe-snapshot (apply-carets (hash-set base* 'abstract #f) rules)))
+;; strip-core-version : string -> string   a core type pinned to its version (`Parent:
+;; Observation|4.0.1`, as a published IG's baseDefinition reads) is the type itself
+(define (strip-core-version p)
+  (match (regexp-match #px"^([^|]+)[|][^|]+$" p)
+    [(list _ n) (if (type-registered? (string->symbol n)) n p)]
+    [_ p]))
 ;; ---- Logical / Resource -> StructureDefinition (specialization, addElement) ----------------
 (define (compile-logical-resource e)
   (define logical? (fsh-logical? e))

@@ -72,13 +72,18 @@
 (define (walk js path top?)
   (cond
     [(hash? js)
+     ;; `resourceType` first: an embedded resource is typed by the first rule that names it (its
+     ;; arrays nest right only once it is typed); `_x` rides with `x`, or alone (an absent value
+     ;; carrying extensions) is written at `x`
+     (define keys (sort (hash-keys js) symbol<?))
+     (define ordered (if (memq 'resourceType keys) (cons 'resourceType (remq 'resourceType keys)) keys))
      (append*
-      (for/list ([k (in-list (sort (hash-keys js) symbol<?))]
+      (for/list ([k (in-list ordered)]
                  #:unless (and top? (memq k '(resourceType id)))
-                 #:unless (underscore? k))
-        (define here (extend path (symbol->string k)))
+                 #:unless (and (underscore? k) (hash-has-key? js (plain k))))
+        (define here (extend path (symbol->string (if (underscore? k) (plain k) k))))
         (append (walk (hash-ref js k) here #f)
-                (let ([sib (hash-ref js (underscore k) #f)]) (if sib (walk sib here #f) '())))))]
+                (let ([sib (and (not (underscore? k)) (hash-ref js (underscore k) #f))]) (if sib (walk sib here #f) '())))))]
     [(list? js)
      (append* (for/list ([elt (in-list js)] [i (in-naturals)]) (walk elt (format "~a[~a]" path i) #f)))]
     [else (list (rule-assign path js #f))]))
@@ -86,6 +91,7 @@
 (define (extend path seg) (if (= 0 (string-length path)) seg (string-append path "." seg)))
 (define (underscore? k) (char=? (string-ref (symbol->string k) 0) #\_))
 (define (underscore k) (string->symbol (string-append "_" (symbol->string k))))
+(define (plain k) (string->symbol (substring (symbol->string k) 1)))
 (define (str x) (if (string? x) x (format "~a" x)))
 
 ;; ---- ValueSet / CodeSystem -----------------------------------------------------------------
@@ -97,23 +103,45 @@
      (caret-rest js '(resourceType id title description compose name url status version))))
   (fsh-valueset (entity-name js "ValueSet") (append (id-meta js) (sd-meta js)) rules))
 
-;; an include/exclude component -> one FSH vs-component per concept (or a whole-system `codes from`)
+;; an include/exclude component -> one FSH vs-component per concept, or a `codes from system X
+;; [and valueset A and B] [where filters]` component (a version rides on the system: `X|1.2`)
 (define (vs-include->rules inc include?)
-  (define sys (hash-ref inc 'system #f))
+  (define sys (let ([s (hash-ref inc 'system #f)] [v (hash-ref inc 'version #f)])
+                (and s (if v (format "~a|~a" s v) s))))
+  (define vss (let ([v (hash-ref inc 'valueSet '())]) (if (list? v) v '())))
   (define concepts (hash-ref inc 'concept '()))
+  (define filters (let ([f (hash-ref inc 'filter '())]) (if (list? f) f '())))
+  (define from-parts
+    (append (if sys (list (list 'vsFromSystem "system" (list 'name sys))) '())
+            (if (pair? vss) (list (list* 'vsFromValueset "valueset" (map (lambda (v) (list 'name v)) vss))) '())))
   (cond
-    [(null? concepts)
-     (if sys
-         (list (vs-component include? (list (list 'vsFilterComponent "codes"
-                                                  (list 'vsComponentFrom "from" (list 'vsFromSystem "system" (list 'name sys)))))))
-         '())]
-    [else
+    [(pair? concepts)
      (for/list ([c (in-list concepts)])
        (define disp (hash-ref c 'display #f))
        (define code-node (if disp
                              (list 'code (code-tok (format "~a#~a" (or sys "") (hash-ref c 'code))) disp)
                              (list 'code (code-tok (format "~a#~a" (or sys "") (hash-ref c 'code))))))
-       (vs-component include? (list (list 'vsConceptComponent code-node))))]))
+       (vs-component include? (list (list 'vsConceptComponent code-node))))]
+    [(null? from-parts) '()]
+    [else
+     (list (vs-component include?
+                         (list (list* 'vsFilterComponent "codes"
+                                      (list* 'vsComponentFrom "from" (add-between from-parts "and"))
+                                      (if (pair? filters)
+                                          (list "where" (cons 'vsFilterList (map filter->node filters)))
+                                          '())))))]))
+;; filter->node : ValueSet filter -> vsFilterDefinition datum   `property op value`: a code for the
+;; concept operators, true/false for exists, /re/ for regex, a string otherwise
+(define (filter->node f)
+  (define op (hash-ref f 'op "="))
+  (define v (hash-ref f 'value ""))
+  (define value
+    (cond [(member op '("is-a" "is-not-a" "descendent-of" "generalizes" "child-of" "descendent-leaf"))
+           (list 'code (code-tok (string-append "#" v)))]
+          [(equal? op "exists") (equal? v "true")]
+          [(equal? op "regex") (list 'regex v)]
+          [else v]))
+  (list 'vsFilterDefinition (list 'name (hash-ref f 'property "concept")) (list 'vsFilterOperator op) (list 'vsFilterValue value)))
 
 (define (decompile-codesystem js)
   (define rules
@@ -139,22 +167,50 @@
     [(equal? (hash-ref js 'type #f) "Extension") (decompile-extension js)]
     [else (decompile-profile-extension js)]))
 
-;; Logical / custom Resource -> addElement rules (element paths root at the entity id)
+;; Logical / custom Resource -> addElement rules (element paths root at the entity id); what else
+;; an element says (comment, mapping, …) follows as carets on it, the type-characteristics
+;; extensions are `Characteristics:`, and the rest of the definition is caret'd at the top
+(define type-characteristics-url "http://hl7.org/fhir/StructureDefinition/structuredefinition-type-characteristics")
 (define (decompile-logical-resource js)
   (define logical? (equal? (hash-ref js 'kind #f) "logical"))
   (define name (entity-name js "Model"))
-  (define parent (let ([p (hash-ref js 'baseDefinition #f)]) (and p (last-seg p))))
-  (define meta (append (if parent (list (cons 'parent parent)) '()) (id-meta js) (sd-meta js)))
+  (define parent (let ([p (hash-ref js 'baseDefinition #f)]) (and p (parent-name p))))
+  (define exts (let ([x (hash-ref js 'extension '())]) (if (list? x) x '())))
+  ;; each characteristic once: the compiler adds a local Parent's again (SUSHI's duplicate)
+  (define characteristics
+    (remove-duplicates
+     (for/list ([e (in-list exts)] #:when (equal? (hash-ref e 'url #f) type-characteristics-url))
+       (string-append "#" (hash-ref e 'valueCode "")))))
+  (define other-exts (filter (lambda (e) (not (equal? (hash-ref e 'url #f) type-characteristics-url))) exts))
+  (define meta (append (if parent (list (cons 'parent parent)) '()) (id-meta js) (sd-meta js)
+                       (if (pair? characteristics) (list (cons 'characteristics characteristics)) '())))
   (define elts (hash-ref* js 'differential 'element))
   ;; skip the root element (id == the model id); the rest become addElement rules
   (define rules
-    (for/list ([elt (in-list elts)] #:unless (equal? (hash-ref elt 'path) (hash-ref js 'id)))
-      (rule-add-element (relative-path (hash-ref elt 'path))
-                        (format "~a..~a" (hash-ref elt 'min 0) (hash-ref elt 'max "*"))
-                        '()
-                        (for/list ([t (in-list (hash-ref elt 'type '()))]) (hash-ref t 'code))
-                        (hash-ref elt 'short #f) (hash-ref elt 'definition #f))))
-  (if logical? (fsh-logical name meta rules) (fsh-resource name meta rules)))
+    (append*
+     (for/list ([elt (in-list elts)] #:unless (equal? (hash-ref elt 'path) (hash-ref js 'id)))
+       (define rel (relative-path (hash-ref elt 'path)))
+       (cons (rule-add-element rel
+                               (format "~a..~a" (hash-ref elt 'min 0) (hash-ref elt 'max "*"))
+                               '()
+                               ;; a logical model's type is its canonical: the name in FSH
+                               (for/list ([t (in-list (hash-ref elt 'type '()))])
+                                 (let ([c (hash-ref t 'code)]) (if (regexp-match? #rx"^https?://" c) (last-seg c) c)))
+                               (hash-ref elt 'short #f) (hash-ref elt 'definition #f))
+             (for/list ([prop (in-list (caret-rest elt '(path id min max base type short definition)))])
+               (caret-on rel prop))))))
+  ;; the other extensions keep their places after the characteristics
+  (define ext-carets
+    (append* (for/list ([e (in-list other-exts)] [i (in-naturals (length characteristics))])
+               (value->carets (format "^extension[~a]" i) e))))
+  (define top-carets (caret-rest js '(resourceType id title description name url version baseDefinition type kind
+                                       derivation differential abstract fhirVersion extension)))
+  (define all (append rules ext-carets top-carets))
+  (if logical? (fsh-logical name meta all) (fsh-resource name meta all)))
+;; parent-name : canonical -> string   the Parent's name without its version pin (a published IG
+;; pins `Patient|4.0.1`, `Document|2.0.1`; GoFSH writes the name, and the forward compiler reads
+;; a pinned core type too)
+(define (parent-name p) (car (string-split (last-seg p) "|")))
 
 ;; Extension -> minimal FSH: emit only the user-meaningful rules and let the forward compiler
 ;; regenerate SUSHI's scaffold (root short/definition, extension 0..0 / min, per-slice .extension /
@@ -192,7 +248,7 @@
   (define base-type (hash-ref js 'type (hash-ref js 'id "Base")))
   (define name (entity-name js "Profile"))
   (define meta
-    (append (let ([p (hash-ref js 'baseDefinition #f)]) (if p (list (cons 'parent (last-seg p))) '()))
+    (append (let ([p (hash-ref js 'baseDefinition #f)]) (if p (list (cons 'parent (parent-name p))) '()))
             (id-meta js)
             (sd-meta js)))
   (define elements (hash-ref* js 'differential 'element))

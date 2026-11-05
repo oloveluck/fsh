@@ -134,6 +134,15 @@
     [(list 'vsFromSystem "system" (list 'name s)) (format "system ~a" s)]
     [(list 'vsFromValueset "valueset" rest ...)
      (sp "valueset" (string-join (for/list ([x rest] #:when (and (pair? x) (eq? (car x) 'name))) (cadr x)) " and "))]
+    ;; `where p op v and …` (the `and`/`where` words ride along as strings in a parsed body)
+    [(list 'vsFilterList defs ...) (string-join (for/list ([d defs] #:when (pair? d)) (print-vs-node d)) " and ")]
+    [(list 'vsFilterDefinition (list 'name p) (list 'vsFilterOperator op) v ...)
+     (sp p op (and (pair? v) (print-vs-node (car v))))]
+    [(list 'vsFilterValue (list 'code c d ...)) (code-text* c)]
+    [(list 'vsFilterValue (list 'regex s)) (format "/~a/" s)]
+    [(list 'vsFilterValue (? string? s)) (if (regexp-match? #px"^/.*/$" s) s (qstr s))]
+    [(list 'vsFilterValue (? boolean? b)) (if b "true" "false")]
+    [(list 'vsFilterValue x) (format "~a" x)]
     [(list 'code c d ...) (sp (code-text* c) (and (pair? d) (qstr (car d))))]
     [(list 'name s) s]
     [(? string? s) s]
