@@ -200,9 +200,11 @@
                                (hash-ref elt 'short #f) (hash-ref elt 'definition #f))
              (for/list ([prop (in-list (caret-rest elt '(path id min max base type short definition)))])
                (caret-on rel prop))))))
-  ;; the other extensions keep their places after the characteristics
+  ;; the other extensions keep their places after the characteristics AS PUBLISHED (the compiler
+  ;; writes a local Parent's again, so their count is the published one, not the deduplicated)
+  (define published-tc (count (lambda (e) (equal? (hash-ref e 'url #f) type-characteristics-url)) exts))
   (define ext-carets
-    (append* (for/list ([e (in-list other-exts)] [i (in-naturals (length characteristics))])
+    (append* (for/list ([e (in-list other-exts)] [i (in-naturals published-tc)])
                (value->carets (format "^extension[~a]" i) e))))
   (define top-carets (caret-rest js (append publisher-only '(resourceType id title description name url version baseDefinition type kind
                                                               derivation differential abstract fhirVersion extension))))

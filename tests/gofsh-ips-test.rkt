@@ -46,8 +46,7 @@
    (printf "  GoFSH IPS 2.0.1: ~a resources decompiled, ~a failed\n" n (length failures))
    (for ([f (in-list failures)]) (eprintf "     decompile ~a: ~a\n" (car f) (cdr f)))
    (define r (parameterize ([current-sd-packages (list r4-core)])
-               (check-fsh-ig dir published "http://hl7.org/fhir/uv/ips"
-                             #:dump '("IPSSectionsLM" "Document"))))
+               (check-fsh-ig dir published "http://hl7.org/fhir/uv/ips")))
    (printf "  GoFSH IPS 2.0.1 recompiled: ~a resources paired; ~a exact, ~a with all published content; SD differential ~a/~a elements\n"
            (ig-fsh-report-pairs r) (ig-fsh-report-exact r) (ig-fsh-report-contained r)
            (ig-fsh-report-elements-ok r) (ig-fsh-report-elements-total r))
@@ -61,6 +60,6 @@
    ;; floors (ratcheted): decompile everything, compile everything, and the counts only rise
    (check-equal? (ig-fsh-report-errors r) '())
    (check-true (>= (ig-fsh-report-pairs r) 117))
-   (check-true (>= (ig-fsh-report-exact r) 113) "fewer exact resources than the floor")
-   (check-true (>= (ig-fsh-report-contained r) 113) "fewer fully-matching resources than the floor")
-   (check-true (>= (ig-fsh-report-elements-ok r) 433) "fewer matching differential elements than the floor")])
+   (check-true (>= (ig-fsh-report-exact r) 116) "fewer exact resources than the floor")
+   (check-true (>= (ig-fsh-report-contained r) 116) "fewer fully-matching resources than the floor")
+   (check-true (>= (ig-fsh-report-elements-ok r) 438) "fewer matching differential elements than the floor")])
