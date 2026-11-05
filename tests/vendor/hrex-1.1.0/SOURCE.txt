@@ -1,0 +1,11 @@
+Da Vinci Health Record Exchange (HRex) 1.1.0 — the IG's own FSH sources, vendored verbatim.
+
+Upstream: https://github.com/HL7/davinci-ehrx at tag 1.1.0
+  commit de034649c19a113fa35ad11a499196136ef67df7 (retrieved 2026-11-05)
+  copied verbatim: input/fsh/**/*.fsh (46 files, 99 entities) and sushi-config.yaml
+License: CC0-1.0 (sushi-config.yaml `license`)
+
+Compared against the PUBLISHED package hl7.fhir.us.davinci-hrex 1.1.0 and its dependency US Core
+7.0.0 (US Core 6.1.0, declared as hl7.fhir.us.core.v610, is in fhir-spec), which tests/ig-fetch.rkt
+downloads from packages.fhir.org into tests/vendor/packages/ (not committed; shasums pinned in the
+test) — skipped with a note when the registry is unreachable. Driven by tests/ig-hrex-test.rkt.
