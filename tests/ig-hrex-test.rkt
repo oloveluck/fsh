@@ -9,7 +9,8 @@
 ;;; Reference targets to 7.0.0 (`USCoreProvenance|7.0.0`); the packages go into the SD context in
 ;;; that order, so an unpinned US Core name resolves to its 7.0.0 definition.
 ;;;
-;;; RATCHETED — floors only rise. Known and out of scope: the ImplementationGuide resource (sushi-config).
+;;; RATCHETED — floors only rise. Known and out of scope: the ImplementationGuide resource (sushi-config),
+;;; the OIDs the publisher gives ConceptMaps.
 
 (require rackunit racket/runtime-path (only-in racket/list remove-duplicates)
          (only-in fhir/r4/schemas)                          ; HRex is FHIR 4.0.1
@@ -35,8 +36,7 @@
   [else
    (define r (parameterize ([current-package-directories (list packages-dir)]
                             [current-sd-packages (list uscore7 uscore6 uscore3 r4-core)])
-               (check-fsh-ig (build-path hrex "input" "fsh") published (ig-config-canonical cfg)
-                             #:dump '("hrex-parameters-member-match-out"))))
+               (check-fsh-ig (build-path hrex "input" "fsh") published (ig-config-canonical cfg))))
    (printf "  HRex 1.1.0 from FSH: ~a resources paired; ~a exact, ~a with all published content; SD differential ~a/~a elements\n"
            (ig-fsh-report-pairs r) (ig-fsh-report-exact r) (ig-fsh-report-contained r)
            (ig-fsh-report-elements-ok r) (ig-fsh-report-elements-total r))
@@ -45,7 +45,12 @@
            (remove-duplicates (map car (ig-fsh-report-published-unmatched r))))
    (printf "  difference classes (published vs ours), largest first:\n")
    (print-classes r)
-   (check-true (>= (ig-fsh-report-pairs r) 0))
-   (check-true (>= (ig-fsh-report-exact r) 0))
-   (check-true (>= (ig-fsh-report-contained r) 0))
-   (check-true (>= (ig-fsh-report-elements-ok r) 0))])
+   (check-equal? (ig-fsh-report-errors r) '())
+   (check-equal? (ig-fsh-report-ours-unmatched r) '())
+   ;; not FSH-authored: a Basic, a Binary, the IG, and one StructureDefinition kept as JSON
+   (check-equal? (remove-duplicates (map car (ig-fsh-report-published-unmatched r)))
+                 '("Basic" "Binary" "ImplementationGuide" "StructureDefinition"))
+   (check-true (>= (ig-fsh-report-pairs r) 46))
+   (check-true (>= (ig-fsh-report-exact r) 20) "fewer exact resources than the floor")
+   (check-true (>= (ig-fsh-report-contained r) 40) "fewer fully-matching resources than the floor")
+   (check-true (>= (ig-fsh-report-elements-ok r) 138) "fewer matching differential elements than the floor")])

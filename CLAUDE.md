@@ -129,6 +129,30 @@ Extension's own declaration order (`declared` follows the context's slices into 
 HansSoloRole1: `code`, `status`, then the optional `issuer`). Remaining: `OrgPeriod named org-period` resolving to core's `organization-period` (whose R4 name is `period` — SUSHI
 finds it through the extensions package it loads implicitly).
 
+## Real-IG corpus 4: Da Vinci HRex 1.1.0 (`tests/ig-hrex-test.rkt`)
+Health Record Exchange's own FSH (`tests/vendor/hrex-1.1.0`, HL7/davinci-ehrx at tag 1.1.0, 46 files /
+99 entities, CC0) against its published package (fetched, pinned). It declares THREE US Core
+versions (7.0.0, and 6.1.0 / 3.1.1 as `.v610`/`.v311` aliases; 6.1.0 from fhir-spec, the others
+fetched) and pins Parents and Reference targets to one (`Parent: USCoreProvenance|7.0.0`,
+`Reference(USCorePatientProfile|7.0.0)`); the packages go into the SD context in the declared order.
+Current: **0 compile errors; 46 paired (a Basic, a Binary, the IG and one JSON-kept SD are not
+FSH-authored); 20 exact, 40 with all published content; 138/138 differential elements** — ratcheted.
+It drove: a Reference target by package NAME with its `|version` kept on the canonical
+(`target-urls`); a parameterized RuleSet inserting another parameterized RuleSet (the nested
+reference re-texts with its paren — HRex's concept maps, 500 `insert map…` rows); a failing
+expansion is one entity's error; an embedded resource typed by the `resourceType` its rules set first
+(`* parameter[x].resource` + `* resourceType = "Coverage"` + the Coverage's elements, shaped by its
+schema — `ftype->type`); `multipleOr.extension[$alias]` under a primitive (`_multipleOr`) gets the
+alias's url (`json-key`); a caret on a concept (`* #code` + indented `^property[0].code`); carets with
+aliased urls (`^extension[$compliesWithProfile]`); `1..` / `..3` keep the other bound; `valueIdentifier
+1..` makes value[x] required as well, and the type-slice defaults stop at the slice (its children got
+min 0 / max 1 before); an assigned discriminator gets min 1 only where the base is optional
+(Parameters.parameter.name is 1..1 — SUSHI writes what changes); `^binding.extension…` on an element
+the Parent binds starts from the inherited binding; `Reference(X)` to a contained instance is `#id`;
+the harness `#:dump`s named resources' (id min max). Remaining: the required pattern of an embedded
+resource's profile (`resource only HRexConsent` → Consent.category) and of a type slice
+(`valueIdentifier.type = UMB`) filled into instances; one example's repeated `class` blocks.
+
 ## Projects and packages (`fsh/project.rkt`, `fsh/pack.rkt`, `raco fsh <dir> --pack [out.tgz]`)
 `compile-project` finds the files and sushi-config.yaml, parses each file (diagnostics name the file),
 compiles with the dependency packages in the SD context, and never exits: parse errors and failing

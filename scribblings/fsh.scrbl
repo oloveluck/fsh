@@ -10,8 +10,8 @@ SUSHI; @tt{raco fsh check} compiles them and validates every example against the
 at the FSH line behind each problem. It also goes the other way (FHIR JSON to FSH), and a @tt{.fsh}
 file is a Racket module whose resources a program can use.
 
-Held to real guides: IPS 2.0.1, mCODE 4.0.0 and Da Vinci Plan-Net 1.2.0 compile from their own
-sources with no errors, their published packages are reproduced resource for resource but for a
+Held to real guides: IPS 2.0.1, mCODE 4.0.0, Da Vinci Plan-Net 1.2.0 and Da Vinci HRex 1.1.0 compile
+from their own sources with no errors, their published packages are reproduced resource for resource but for a
 handful of named differences, and mCODE's 283 examples validate against the profiles compiled here,
 as they do against the published package. Part of the @hyperlink["https://github.com/oloveluck/fhir"]{fhir} family.
 
@@ -161,13 +161,16 @@ Measured against the IGs' published packages: IPS 2.0.1 pairs 114 resources, 84 
 all published content, 435 of 438 differential elements; mCODE 4.0.0 pairs 349, 225 identical, 329
 complete, 472 of 473 differential elements; Plan-Net 1.2.0 (its package and US Core 3.1.1 fetched from
 the registry when the tests run) pairs 109, 78 identical, 94 complete, 320 of 321 differential
-elements. The tests print every remaining difference, classified, largest first. The differences:
+elements; HRex 1.1.0 (three US Core versions in context) pairs 46, 20 identical, 40 complete, all 138
+differential elements. The tests print every remaining difference, classified, largest first. The differences:
 
 @itemlist[
 @item{A few caret extensions on one IPS profile land in a different order (a url-keyed extension
 among @tt{[+]}-indexed ones); a few mCODE examples whose published JSON differs from the tagged FSH
 sources; one element's @tt{min}; a UCUM unit with an annotation; in Plan-Net, a core extension named as
-SUSHI's implicit extensions package knows it.}
+SUSHI's implicit extensions package knows it; in HRex, the required values a profile fixes inside an
+embedded resource or a type slice are not filled into examples yet, and the OIDs the publisher gives
+concept maps.}
 @item{No ImplementationGuide resource, no narratives, no ActorDefinition conversion: these are
 publisher output.}
 @item{@tt{Characteristics:} and @tt{Context:} metadata are parsed but not read (an extension's
