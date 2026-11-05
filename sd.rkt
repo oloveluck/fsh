@@ -266,7 +266,9 @@
                 (andmap (lambda (t) (= (hash-count t) 1)) new-types))
            (values elems order)
            (upd elems order rid rpath rslice (lambda (h) (hash-set h 'type new-types))))]
-      [(rule-assign p v exact?) (upd elems order rid rpath rslice (lambda (h) (apply-pattern h base-type p (resolve v (current-aliases)) exact?)))]
+      [(rule-assign p v exact?)
+       (let-values ([(e o) (upd elems order rid rpath rslice (lambda (h) (apply-pattern h base-type p (resolve v (current-aliases)) exact?)))])
+         (values (require-discriminator e rid) o))]
       [(rule-caret p cp v)      (if p (upd elems order rid rpath rslice
                                            (lambda (h) (typed-caret-set h cp v 'ElementDefinition
                                                                         (hash-ref! element-counters rid make-hash))))
@@ -437,6 +439,21 @@
     [(rule-card p _ _) p] [(rule-flag p _ _) p] [(rule-binding p _ _) p] [(rule-only p _) p]
     [(rule-assign p _ _) p] [(rule-caret p _ _) p] [(rule-obeys p _) p] [(rule-contains p _) p]
     [(rule-add-element p _ _ _ _ _) p] [_ #f]))
+;; require-discriminator : elems id -> elems   a value assigned to a slice's value/pattern
+;; discriminator element makes that element required (SUSHI: the slice is told apart by it, so an
+;; instance of the slice must carry it): `identifier[displayName].use = #usual` under an `identifier`
+;; sliced by `use` gives `identifier:displayName.use` min 1
+(define (require-discriminator elems id)
+  (match (regexp-match #px"^(.*):[^.:/]+[.]([^:]+)$" id)
+    [(list _ sliced rel)
+     (define disc (let ([sl (hash-ref (hash-ref elems sliced (hash)) 'slicing #f)]) (and (hash? sl) (hash-ref sl 'discriminator '()))))
+     (if (and (list? disc)
+              (for/or ([d (in-list disc)])
+                (and (hash? d) (member (hash-ref d 'type #f) '("value" "pattern")) (equal? (hash-ref d 'path #f) rel)))
+              (not (hash-has-key? (hash-ref elems id (hash)) 'min)))
+         (hash-update elems id (lambda (h) (hash-set h 'min 1)))
+         elems)]
+    [#f elems]))
 (define (card-lo card)
   (match (regexp-match #px"^([0-9]*)\\.\\." card) [(list _ lo) (if (positive? (string-length lo)) (string->number lo) 0)] [_ 0]))
 ;; differential element accumulator keyed by ElementDefinition id
@@ -601,6 +618,13 @@
 ;; ---- living examples ------------------------------------------------------------------------
 (module+ test
   (require rackunit (only-in fhir/r5/schemas))
+  ;; an assignment to a slice's value discriminator makes it required; another element is untouched
+  (let ([elems (hash "B.identifier" (hasheq 'slicing (hasheq 'discriminator (list (hasheq 'type "value" 'path "use"))))
+                     "B.identifier:displayName.use" (hasheq 'patternCode "usual")
+                     "B.identifier:displayName.value" (hasheq 'mustSupport #t))])
+    (check-equal? (hash-ref (hash-ref (require-discriminator elems "B.identifier:displayName.use") "B.identifier:displayName.use") 'min #f) 1)
+    (check-false (hash-ref (hash-ref (require-discriminator elems "B.identifier:displayName.value") "B.identifier:displayName.value") 'min #f))
+    (check-equal? (require-discriminator elems "B.description") elems))
   ;; `* a and b MS` flags every path; `Reference (A or B)` with a space is a Reference type
   (define multi (compile-profile (fsh-profile "P" '((parent . "Observation"))
                                               (list (rule-flag "status" '("code" "subject") '(MS))

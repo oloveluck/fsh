@@ -115,16 +115,18 @@ pin it), and returns #f offline (the test skips with a note; CI has the network)
 on `hl7.fhir.us.core 3.1.1` and nothing else — which the fetcher follows (`stub-dependency`) to the real
 package; the test pins the real one. US Core 7.0.0, 6.1.0 and HRex are declared too but no rule reaches
 them. Current: **0 compile errors; 109 paired (the CapabilityStatement, SearchParameters and IG are not
-FSH-authored); 77 exact, 91 with all published content; 320/321 differential elements** — ratcheted.
+FSH-authored); 78 exact, 94 with all published content; 320/321 differential elements** — ratcheted.
 It drove: a code's system part as a CodeSystem NAME (`LanguageProficiencyCS#30`, this document's or a
 dependency's — `resolve-system`); `[slice][k]` as the k-th slot of a slice (base+k while no other slice
 holds it, else the next unused position — `daysOfWeek[5]` written after `allDay` lands after it);
 a type slice below a nested extension (`extension[x].value[x]:valueCodeableConcept`) typed through
 `Extension.extension`'s datatype (`base-element` dives); a RuleSet argument ending in an escaped paren
 (`Canonical(TG263CS\)`) kept whole; profiles of a dependency's profile carry the BASE resource's core
-mapping declarations (SUSHI), not the Parent's. Remaining: a nested extension's sub-slices in
-required-first order (HansSoloRole1: SUSHI puts `status` 1..1 before the optional `issuer`);
-`OrgPeriod named org-period` resolving to core's `organization-period` (whose R4 name is `period` — SUSHI
+mapping declarations (SUSHI), not the Parent's; a value assigned to a slice's value/pattern
+discriminator element makes it required (`identifier[displayName].use = #usual` -> min 1,
+`require-discriminator`; mCODE's RadiotherapyVolume). A nested extension's sub-slices take the required ones first too, in the
+Extension's own declaration order (`declared` follows the context's slices into their Extensions;
+HansSoloRole1: `code`, `status`, then the optional `issuer`). Remaining: `OrgPeriod named org-period` resolving to core's `organization-period` (whose R4 name is `period` — SUSHI
 finds it through the extensions package it loads implicitly).
 
 ## Projects and packages (`fsh/project.rkt`, `fsh/pack.rkt`, `raco fsh <dir> --pack [out.tgz]`)

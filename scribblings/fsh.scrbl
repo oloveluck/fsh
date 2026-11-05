@@ -160,15 +160,14 @@ type, so an @tt{Instance:} of it builds like any resource. The worked project is
 Measured against the IGs' published packages: IPS 2.0.1 pairs 114 resources, 84 identical, 106 with
 all published content, 435 of 438 differential elements; mCODE 4.0.0 pairs 349, 225 identical, 328
 complete, 471 of 473 differential elements; Plan-Net 1.2.0 (its package and US Core 3.1.1 fetched from
-the registry when the tests run) pairs 109, 77 identical, 91 complete, 320 of 321 differential
+the registry when the tests run) pairs 109, 78 identical, 94 complete, 320 of 321 differential
 elements. The tests print every remaining difference, classified, largest first. The differences:
 
 @itemlist[
 @item{A few caret extensions on one IPS profile land in a different order (a url-keyed extension
 among @tt{[+]}-indexed ones); a few mCODE examples whose published JSON differs from the tagged FSH
-sources; one element's @tt{min}; a UCUM unit with an annotation; in Plan-Net, the order of a nested
-extension's sub-extensions in one example and a core extension named as SUSHI's implicit extensions
-package knows it.}
+sources; one element's @tt{min}; a UCUM unit with an annotation; in Plan-Net, a core extension named as
+SUSHI's implicit extensions package knows it.}
 @item{No ImplementationGuide resource, no narratives, no ActorDefinition conversion: these are
 publisher output.}
 @item{@tt{Characteristics:} and @tt{Context:} metadata are parsed but not read (an extension's
