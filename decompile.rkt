@@ -148,6 +148,7 @@
   (define rules
     (append
      (concepts->rules (hash-ref js 'concept '()) '())
+     (if (member (hash-ref js 'content "complete") '("complete" #f)) '() (list (rule-caret #f "^content" (hash-ref js 'content))))
      (caret-rest js (append publisher-only '(resourceType id title description concept name content url status version count)))))
   (fsh-codesystem (entity-name js "CodeSystem") (append (id-meta js) (sd-meta js)) rules))
 
@@ -218,34 +219,27 @@
 ;; Extension -> minimal FSH: emit only the user-meaningful rules and let the forward compiler
 ;; regenerate SUSHI's scaffold (root short/definition, extension 0..0 / min, per-slice .extension /
 ;; .url, url fixedUri). Rule order mirrors the forward fold so the round-trip element order matches.
+;; an Extension through the profile machinery, minus the scaffold the forward compiler regenerates
+;; (the root's short/definition from Title/Description, `extension` 0..0 or sliced by url,
+;; `url` fixedUri, a sub-extension's own `url`/`extension`) — what stays: `contains` for the
+;; sub-extensions, every value[x]'s type/binding/pattern/card, a sub-extension's short/definition,
+;; and the definition's own context, status and abstract as carets
+(define (extension-scaffold? js e)
+  (define id (hash-ref e 'id ""))
+  (cond [(equal? id "Extension")
+         (and (equal? (hash-ref e 'short #f) (hash-ref js 'title (hash-ref js 'name #f)))
+              (equal? (hash-ref e 'definition #f) (hash-ref js 'description (hash-ref js 'title (hash-ref js 'name #f))))
+              (<= (hash-count (hash-remove (hash-remove (hash-remove (hash-remove e 'id) 'path) 'short) 'definition)) 0))]
+        [(member id '("Extension.url" "Extension.extension")) #t]
+        [(regexp-match? #px"^Extension\\.extension:[^.]+\\.(url|extension)$" id) #t]
+        [else #f]))
 (define (decompile-extension js)
-  (define elts (hash-ref* js 'differential 'element))
-  (define (by-id id) (findf (lambda (e) (equal? (hash-ref e 'id #f) id)) elts))
-  (define (types-of e) (for/list ([t (in-list (hash-ref e 'type '()))]) (hash-ref t 'code)))
-  ;; sub-extension slices (id "Extension.extension:NAME", sliceName present)
-  (define slices
-    (for/list ([e (in-list elts)]
-               #:when (regexp-match? #px"^Extension\\.extension:[^.]+$" (hash-ref e 'id "")))
-      (hash-ref e 'sliceName)))
-  (define contains-rule
-    (and (pair? slices)
-         (rule-contains "extension"
-                        (for/list ([sn (in-list slices)])
-                          (define se (by-id (string-append "Extension.extension:" sn)))
-                          (contains-item sn #f (card-str (hash-ref se 'min 0) (hash-ref se 'max "*")) '())))))
-  (define slice-value-rules
-    (for/list ([sn (in-list slices)]
-               #:when (let ([ve (by-id (format "Extension.extension:~a.value[x]" sn))]) (and ve (pair? (types-of ve)))))
-      (rule-only (format "extension[~a].value[x]" sn)
-                 (types-of (by-id (format "Extension.extension:~a.value[x]" sn))))))
-  (define value-el (by-id "Extension.value[x]"))
-  (define value-rule
-    (cond [(and value-el (pair? (types-of value-el))) (rule-only "value[x]" (types-of value-el))]
-          [(and value-el (equal? (hash-ref value-el 'max #f) "0")) (rule-card "value[x]" "0..0" '())]
-          [else #f]))
-  (define rules (filter values (append (list contains-rule) slice-value-rules (list value-rule))))
+  (define rules (sd-element-rules js "Extension" #:skip? (lambda (e) (extension-scaffold? js e))))
+  (define top-carets (append (if (eq? (hash-ref js 'abstract #f) #t) (list (rule-caret #f "^abstract" #t)) '())
+                             (caret-rest js (append publisher-only '(resourceType id title description name url version
+                                                                     baseDefinition type kind derivation differential abstract fhirVersion mapping)))))
   (fsh-extension (entity-name js "Extension")
-                 (append (id-meta js) (sd-meta js)) rules))
+                 (append (id-meta js) (sd-meta js)) (append rules top-carets)))
 
 (define (decompile-profile-extension js)
   (define base-type (hash-ref js 'type (hash-ref js 'id "Base")))
@@ -254,6 +248,21 @@
     (append (let ([p (hash-ref js 'baseDefinition #f)]) (if p (list (cons 'parent (parent-name p))) '()))
             (id-meta js)
             (sd-meta js)))
+  (define elem-rules (sd-element-rules js base-type))
+  ;; `status` is NOT excluded: the forward compiler defaults it, so an overriding value must be
+  ;; caret'd; `abstract` only when true (the compiler writes false)
+  (define top-carets (append (if (eq? (hash-ref js 'abstract #f) #t) (list (rule-caret #f "^abstract" #t)) '())
+                             (caret-rest js (append publisher-only '(resourceType id title description name url version
+                                                                     baseDefinition type kind derivation differential abstract fhirVersion mapping)))))
+  (fsh-profile name meta (append elem-rules top-carets)))
+
+;; sd-element-rules : StructureDefinition base-type [#:skip? pred] -> rules   the differential as
+;; FSH rules, slice-aware: a sliced base emits its ^slicing carets then its `contains`; a declared
+;; slice (a type or a card of its own) is folded into that `contains`, a RESTATED slice (an
+;; inherited one the profile only flags or annotates) is written at `path[slice]`; a RESLICED
+;; slice (a slice that is itself a base) emits both; a sliced base the differential does not
+;; carry (its slicing inherited) still gets its `contains`. Everything else emits ordinary rules.
+(define (sd-element-rules js base-type #:skip? [skip? (lambda (e) #f)])
   (define elements0 (hash-ref* js 'differential 'element))
   ;; SUSHI's derived elements are not written: a slice child copied into every slice of the sliced
   ;; element (`section:X.extension:note` repeating `section.extension:note` — the compiler copies
@@ -271,7 +280,7 @@
   (define type-sliced-ids
     (remove-duplicates (for/list ([e (in-list elements0)] #:when (type-slice? e)) (regexp-replace #px":[^.:]+$" (hash-ref e 'id) ""))))
   (define elements
-    (for/list ([e (in-list elements0)] #:unless (derived-copy? e))
+    (for/list ([e (in-list elements0)] #:unless (derived-copy? e) #:unless (skip? e))
       (if (member (hash-ref e 'id #f) type-sliced-ids) (hash-remove e 'slicing) e)))
   ;; the root element's rules are written at `.` (a bare caret would be the definition's own); a
   ;; type slice (`performed[x]:performedDateTime`) is the choice path `performedDateTime`
@@ -280,7 +289,8 @@
     (define r (id->fsh-rel base-type (if (type-slice? elt) (regexp-replace #px"[A-Za-z]+\\[x\\]:([A-Za-z]+)$" id "\\1") id)))
     (if (equal? r "") "." r))
   ;; slices: elements with a sliceName define a slice; group them under their base element id
-  (define slice-defs (filter (lambda (e) (and (hash-ref e 'sliceName #f) (not (type-slice? e)))) elements))
+  (define (declared-slice? e) (or (hash-ref e 'type #f) (hash-has-key? e 'min) (hash-has-key? e 'max)))
+  (define slice-defs (filter (lambda (e) (and (hash-ref e 'sliceName #f) (not (type-slice? e)) (declared-slice? e))) elements))
   ;; the base element a slice belongs to: a reslice (id …:Lab/Chem) bases on …:Lab; else drop :slice
   (define (base-id-of e)
     (define id (hash-ref e 'id))
@@ -302,30 +312,32 @@
                      (define url (extension-profile-of e))
                      (contains-item (or url sn) (and url sn)
                                     (card-str (hash-ref e 'min 0) (hash-ref e 'max "*")) (elt-flags e)))))
-  ;; per-element rules, slice-aware: a sliced base emits its ^slicing carets then its `contains`; a
-  ;; plain slice is folded into its parent `contains`; a RESLICED slice (a slice that is itself a base)
-  ;; emits both. Everything else emits ordinary rules.
+  (define present-ids (for/list ([e (in-list elements)]) (hash-ref e 'id #f)))
   (define elem-rules
     (append*
      (for/list ([elt (in-list elements)])
        (define id (hash-ref elt 'id #f))
        (define base? (member id sliced-base-ids))
        (cond
-         [(and (hash-ref elt 'sliceName #f) base?) (append (element->rules elt (rel-of elt) #t) (list (contains-for id)))]
-         ;; a plain slice: its card and flags ride in the `contains`; what else it says (a pattern,
-         ;; a binding, a short, its constraints) is written at `path[slice]`
+         [(and (hash-ref elt 'sliceName #f) base? (declared-slice? elt))
+          (append (element->rules elt (rel-of elt) #t) (list (contains-for id)))]
          ;; a type slice is written at its choice path with its own card (the compiler makes the
          ;; `[x]` element's type slicing from it)
          [(type-slice? elt) (element->rules elt (rel-of elt) #f)]
-         [(hash-ref elt 'sliceName #f)
+         ;; a plain slice: its card and flags ride in the `contains`; what else it says (a pattern,
+         ;; a binding, a short, its constraints) is written at `path[slice]`
+         [(and (hash-ref elt 'sliceName #f) (declared-slice? elt))
           (filter (lambda (r) (not (or (rule-flag? r) (and (extension-profile-of elt) (rule-only? r)))))
                   (element->rules elt (rel-of elt) #t))]
+         ;; a restated slice: flags and annotations at `path[slice]`
+         [(hash-ref elt 'sliceName #f) (element->rules elt (rel-of elt) #t)]
          [base? (append (element->rules elt (rel-of elt) #t) (list (contains-for id)))]
          [else (element->rules elt (rel-of elt) #f)]))))
-  ;; `status` is NOT excluded: the forward compiler defaults it, so an overriding value must be caret'd
-  (define top-carets (caret-rest js (append publisher-only '(resourceType id title description name url version
-                                                              baseDefinition type kind derivation differential abstract fhirVersion mapping))))
-  (fsh-profile name meta (append elem-rules top-carets)))
+  ;; a sliced base the differential does not carry (`bodySite.extension` under a dependency's
+  ;; profile): its `contains` alone
+  (define absent-bases
+    (for/list ([bid (in-list sliced-base-ids)] #:unless (member bid present-ids)) (contains-for bid)))
+  (append absent-bases elem-rules))
 
 ;; card-str : min max -> "min..max"   a published package's integers may read back inexact (1.0)
 (define (card-str mn mx)

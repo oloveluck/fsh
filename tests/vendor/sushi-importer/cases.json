@@ -1,0 +1,4841 @@
+[
+ {
+  "file": "FSHImporter.Alias.test.ts",
+  "name": "should collect and return aliases in result",
+  "fsh_file": "Test.fsh",
+  "input": "Alias: LOINC = http://loinc.org\nAlias: SCT = http://snomed.info/sct\n\nProfile: ObservationProfile\nParent: Observation\n\nAlias: RXNORM = http://www.nlm.nih.gov/research/umls/rxnorm\n\nProfile: AnotherObservationProfile\nParent: Observation\n\nAlias: UCUM = http://unitsofmeasure.org",
+  "expects": [],
+  "no_messages": true
+ },
+ {
+  "file": "FSHImporter.Alias.test.ts",
+  "name": "should parse aliases that replicate the syntax of a code",
+  "fsh_file": "Test.fsh",
+  "input": "Alias: LOINC = http://loinc.org#1234",
+  "expects": [],
+  "no_messages": true
+ },
+ {
+  "file": "FSHImporter.Alias.test.ts",
+  "name": "should report when the same alias is defined twice w/ different values in the same file",
+  "fsh_file": "Test.fsh",
+  "input": "Alias: USCoreRace = http://hl7.org/fhir/us/core/ValueSet/omb-race-category\nAlias: USCoreRace = http://hl7.org/fhir/us/core/StructureDefinition/us-core-race",
+  "expects": [
+   {
+    "level": "error",
+    "regex": "Alias USCoreRace cannot be redefined to http:\\/\\/hl7.org\\/fhir\\/us\\/core\\/StructureDefinition\\/us-core-race; it is already defined as http:\\/\\/hl7.org\\/fhir\\/us\\/core\\/ValueSet\\/omb-race-category\\..*Line: 3\\D*"
+   }
+  ],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Alias.test.ts",
+  "name": "should translate an alias when the alias is defined before its use",
+  "fsh_file": "Test.fsh",
+  "input": "Alias: LOINC = http://loinc.org\n\nProfile: ObservationProfile\nParent: Observation\n* code from LOINC",
+  "expects": [],
+  "no_messages": true
+ },
+ {
+  "file": "FSHImporter.Alias.test.ts",
+  "name": "should translate an alias when the alias is defined after its use",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* code from LOINC\n\nAlias: LOINC = http://loinc.org",
+  "expects": [],
+  "no_messages": true
+ },
+ {
+  "file": "FSHImporter.Alias.test.ts",
+  "name": "should not translate an alias when the alias does not match",
+  "fsh_file": "Test.fsh",
+  "input": "Alias: LOINC = http://loinc.org\n\nProfile: ObservationProfile\nParent: Observation\n* code from LAINC",
+  "expects": [],
+  "no_messages": true
+ },
+ {
+  "file": "FSHImporter.CodeSystem.test.ts",
+  "name": "should parse the simplest possible code system",
+  "fsh_file": "Zoo.fsh",
+  "input": "CodeSystem: ZOO",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.CodeSystem.test.ts",
+  "name": "should parse a code system with additional metadata",
+  "fsh_file": "Zoo.fsh",
+  "input": "CodeSystem: ZOO\nId: zoo-codes\nTitle: \"Zoo Animals\"\nDescription: \"Animals and cryptids that may be at a zoo.\"",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.CodeSystem.test.ts",
+  "name": "should parse numeric code system name and id",
+  "fsh_file": "Zoo.fsh",
+  "input": "CodeSystem: 123\nId: 456",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.CodeSystem.test.ts",
+  "name": "should parse a code system with a multi-line description",
+  "fsh_file": "Zoo.fsh",
+  "input": "CodeSystem: ZOO\nId: zoo-codes\nTitle: \"Zoo Animals\"\nDescription: \"\"\"\nAnimals that may be present at the zoo. This includes\nanimals that have been classified by biologists, as\nwell as certain cryptids, such as:\n* quadrapedal cryptids\n  * jackalope\n  * hodag\n* bipedal cryptids\n  * swamp ape\n  * hopkinsville goblin\n\"\"\"",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.CodeSystem.test.ts",
+  "name": "should only apply each metadata attribute the first time it is declared",
+  "fsh_file": "Zoo.fsh",
+  "input": "CodeSystem: ZOO\nId: zoo-codes\nTitle: \"Zoo Animals\"\nDescription: \"Animals and cryptids that may be at a zoo.\"\nTitle: \"Duplicate Animals\"\nId: zoo-codes-again\nDescription: \"Lions and tigers and bears!\"",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.CodeSystem.test.ts",
+  "name": "should log an error when encountering a duplicate metadata attribute",
+  "fsh_file": "Zoo.fsh",
+  "input": "CodeSystem: ZOO\nId: zoo-codes\nTitle: \"Zoo Animals\"\nDescription: \"Animals and cryptids that may be at a zoo.\"\nTitle: \"Duplicate Animals\"\nId: zoo-codes-again\nDescription: \"Lions and tigers and bears!\"",
+  "expects": [
+   {
+    "level": "error",
+    "regex": "File: Zoo\\.fsh.*Line: 8\\D*"
+   }
+  ],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.CodeSystem.test.ts",
+  "name": "should log an error and skip the code system when encountering a code system with a name used by another code system",
+  "fsh_file": "Bread.fsh",
+  "input": "CodeSystem: BREAD\nTitle: \"Known Bread\"\n\nCodeSystem: BREAD\nTitle: \"Unknown Bread\"",
+  "expects": [
+   {
+    "level": "error",
+    "regex": "code system named BREAD already exists"
+   },
+   {
+    "level": "error",
+    "regex": "File: Bread\\.fsh.*Line: 5 - 6\\D*"
+   }
+  ],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.CodeSystem.test.ts",
+  "name": "should parse a code system with one concept",
+  "fsh_file": "Zoo.fsh",
+  "input": "CodeSystem: ZOO\n* #lion",
+  "expects": [],
+  "no_messages": true
+ },
+ {
+  "file": "FSHImporter.CodeSystem.test.ts",
+  "name": "should parse a code system with one concept with a display string",
+  "fsh_file": "Zoo.fsh",
+  "input": "CodeSystem: ZOO\n* #tiger \"Tiger\"",
+  "expects": [],
+  "no_messages": true
+ },
+ {
+  "file": "FSHImporter.CodeSystem.test.ts",
+  "name": "should parse a code system with one concept with display and definition strings",
+  "fsh_file": "Zoo.fsh",
+  "input": "CodeSystem: ZOO\n* #bear \"Bear\" \"A member of family Ursidae.\"",
+  "expects": [],
+  "no_messages": true
+ },
+ {
+  "file": "FSHImporter.CodeSystem.test.ts",
+  "name": "should parse a concept with a multi-line definition string",
+  "fsh_file": "Zoo.fsh",
+  "input": "CodeSystem: ZOO\n* #gorilla \"Gorilla\" \"\"\"\nLet there be no mistake\nabout the greatest ape of all.\n\"\"\"",
+  "expects": [],
+  "no_messages": true
+ },
+ {
+  "file": "FSHImporter.CodeSystem.test.ts",
+  "name": "should parse a code system with more than one concept",
+  "fsh_file": "Zoo.fsh",
+  "input": "CodeSystem: ZOO\n* #lion\n* #tiger \"Tiger\"\n* #bear \"Bear\" \"A member of family Ursidae.\"",
+  "expects": [],
+  "no_messages": true
+ },
+ {
+  "file": "FSHImporter.CodeSystem.test.ts",
+  "name": "should parse a code system with hierarchical codes",
+  "fsh_file": "Zoo.fsh",
+  "input": "CodeSystem: ZOO\n* #bear \"Bear\" \"A member of family Ursidae.\"\n* #bear #sunbear \"Sun bear\" \"Helarctos malayanus\"\n* #bear #sunbear #ursula \"Ursula the sun bear\"",
+  "expects": [],
+  "no_messages": true
+ },
+ {
+  "file": "FSHImporter.CodeSystem.test.ts",
+  "name": "should log an error when a concept includes a system declaration",
+  "fsh_file": "Zoo.fsh",
+  "input": "CodeSystem: ZOO\n* #goat\n* ZOO#bat\n* CRYPTID#jackalope\n* ZOO#goat #mountaingoat",
+  "expects": [
+   {
+    "level": "error",
+    "regex": "File: Zoo\\.fsh.*Line: 6\\D*"
+   }
+  ],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.CodeSystem.test.ts",
+  "name": "should parse a code system that uses a CaretValueRule with no codes",
+  "fsh_file": "Test.fsh",
+  "input": "CodeSystem: ZOO\n* ^publisher = \"Matt\"",
+  "expects": [],
+  "no_messages": true
+ },
+ {
+  "file": "FSHImporter.CodeSystem.test.ts",
+  "name": "should parse a code system that uses CaretValueRules with no codes alongside rules",
+  "fsh_file": "Zoo.fsh",
+  "input": "CodeSystem: ZOO\n* #lion\n* ^publisher = \"Damon\"",
+  "expects": [],
+  "no_messages": true
+ },
+ {
+  "file": "FSHImporter.CodeSystem.test.ts",
+  "name": "should parse a code system that uses a CaretValueRule on a top-level concept",
+  "fsh_file": "Zoo.fsh",
+  "input": "CodeSystem: ZOO\n* #anteater \"Anteater\"\n* #anteater ^property[0].valueString = \"Their threat pose is really cute.\"",
+  "expects": [],
+  "no_messages": true
+ },
+ {
+  "file": "FSHImporter.CodeSystem.test.ts",
+  "name": "should parse a code system that uses a CaretValueRule on a nested concept",
+  "fsh_file": "Zoo.fsh",
+  "input": "CodeSystem: ZOO\n* #anteater \"Anteater\"\n* #anteater #northern \"Northern tamandua\"\n* #anteater #northern ^property[0].valueString = \"They are strong climbers.\"",
+  "expects": [],
+  "no_messages": true
+ },
+ {
+  "file": "FSHImporter.CodeSystem.test.ts",
+  "name": "should keep the raw value of a code caret value rule when the value is a number or boolean",
+  "fsh_file": "Zoo.fsh",
+  "input": "CodeSystem: ZOO\n* #anteater \"Anteater\"\n* #anteater ^extension[0].valueInteger = 0.4500\n* #anteater ^extension[1].valueBoolean = true",
+  "expects": [],
+  "no_messages": true
+ },
+ {
+  "file": "FSHImporter.CodeSystem.test.ts",
+  "name": "should parse an insert rule with a single RuleSet",
+  "fsh_file": "Insert.fsh",
+  "input": "CodeSystem: MyCS\n* insert MyRuleSet",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.CodeSystem.test.ts",
+  "name": "should parse an insert rule with a single RuleSet and a code path",
+  "fsh_file": "Insert.fsh",
+  "input": "CodeSystem: MyCS\n* #cookie \"Cookie\"\n* #cookie insert MyRuleSet",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Extension.test.ts",
+  "name": "should parse the simplest possible extension",
+  "fsh_file": "Test.fsh",
+  "input": "\n        Extension: SomeExtension\n        ",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Extension.test.ts",
+  "name": "should parse profile with additional metadata properties",
+  "fsh_file": "Test.fsh",
+  "input": "\n        Extension: SomeExtension\n        Parent: ParentExtension\n        Id: some-extension\n        Title: \"Some Extension\"\n        Description: \"An extension on something\"\n        Context: \"some.fhirpath()\"\n        ",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Extension.test.ts",
+  "name": "should parse numeric extension name, parent, and id",
+  "fsh_file": "Test.fsh",
+  "input": "\n        Extension: 123\n        Parent: 456\n        Id: 789\n        ",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Extension.test.ts",
+  "name": "should parse an extension with multiple contexts",
+  "fsh_file": "Test.fsh",
+  "input": "\n        Extension: SomeExtension\n        Parent: ParentExtension\n        Id: some-extension\n        Context: \"some.fhirpath()\", Observation.component, http://example.org/MyPatient#identifier,\n                 \"another.fhirpath(var, 0)\"\n        ",
+  "expects": [],
+  "no_messages": true
+ },
+ {
+  "file": "FSHImporter.Extension.test.ts",
+  "name": "should only apply each metadata attribute the first time it is declared",
+  "fsh_file": "Test.fsh",
+  "input": "\n        Extension: SomeExtension\n        Parent: ParentExtension\n        Id: some-extension\n        Title: \"Some Extension\"\n        Description: \"An extension on something\"\n        Context: SomeElement\n        Parent: DuplicateParentExtension\n        Id: some-duplicate-extension\n        Title: \"Some Duplicate Extension\"\n        Description: \"A duplicated extension on something\"\n        Context: SomeOtherElement\n        ",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Extension.test.ts",
+  "name": "should log an error when encountering a duplicate metadata attribute",
+  "fsh_file": "Dupe.fsh",
+  "input": "\n        Extension: SomeExtension\n        Parent: ParentExtension\n        Id: some-extension\n        Title: \"Some Extension\"\n        Description: \"An extension on something\"\n        Title: \"Some Duplicate Extension\"\n        Description: \"A duplicated extension on something\"\n        Context: \"SomeContext\"\n        Context: AnotherContext\n        ",
+  "expects": [
+   {
+    "level": "error",
+    "regex": "File: Dupe\\.fsh.*Line: 10\\D*"
+   }
+  ],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Extension.test.ts",
+  "name": "should log an error and skip the extension when encountering an extension with a name used by another extension",
+  "fsh_file": "SameName.fsh",
+  "input": "\n        Extension: SomeExtension\n        Title: \"This Extension\"\n\n        Extension: SomeExtension\n        Title: \"That Extension\"\n        ",
+  "expects": [
+   {
+    "level": "error",
+    "regex": "Extension named SomeExtension already exists"
+   },
+   {
+    "level": "error",
+    "regex": "File: SameName\\.fsh.*Line: 5 - 6\\D*"
+   }
+  ],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Extension.test.ts",
+  "name": "should log an error when the deprecated Mixins keyword is used",
+  "fsh_file": "Deprecated.fsh",
+  "input": "\n        Extension: SomeExtension\n        Mixins: RuleSet1 and RuleSet2\n        ",
+  "expects": [
+   {
+    "level": "error",
+    "regex": "The 'Mixins' keyword is no longer supported\\."
+   },
+   {
+    "level": "error",
+    "regex": "File: Deprecated\\.fsh.*Line: 3\\D*"
+   }
+  ],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Extension.test.ts",
+  "name": "should parse simple card rules",
+  "fsh_file": "Test.fsh",
+  "input": "\n        Extension: SomeExtension\n        * extension 0..0\n        * value[x] 1..1\n        ",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Extension.test.ts",
+  "name": "should parse card rules w/ flags",
+  "fsh_file": "Test.fsh",
+  "input": "\n        Extension: SomeExtension\n        * extension 0..0\n        * value[x] 1..1 MS N\n        ",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Extension.test.ts",
+  "name": "should parse single-path single-value flag rules",
+  "fsh_file": "Test.fsh",
+  "input": "\n        Extension: SomeExtension\n        * extension MS\n        ",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Extension.test.ts",
+  "name": "should parse value set rules w/ names and strength",
+  "fsh_file": "Test.fsh",
+  "input": "\n        Extension: SomeExtension\n        Parent: ParentExtension\n        * valueCodeableConcept from ExtensionValueSet (extensible)\n        ",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Extension.test.ts",
+  "name": "should parse assigned value boolean rule",
+  "fsh_file": "Test.fsh",
+  "input": "\n        Extension: SomeExtension\n        * valueBoolean = true\n        ",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Extension.test.ts",
+  "name": "should parse assigned value boolean rule with (exactly) modifier",
+  "fsh_file": "Test.fsh",
+  "input": "\n        Extension: SomeExtension\n        * valueBoolean = true (exactly)\n        ",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Extension.test.ts",
+  "name": "should parse an only rule with one type",
+  "fsh_file": "Test.fsh",
+  "input": "\n        Extension: SomeExtension\n        * value[x] only Quantity\n        ",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Extension.test.ts",
+  "name": "should parse contains rule with one item",
+  "fsh_file": "Test.fsh",
+  "input": "\n        Extension: SomeExtension\n        * extension contains foo 1..1\n        * extension[foo].value[x] only Quantity\n        ",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Extension.test.ts",
+  "name": "should parse contains rule with reserved word (code)",
+  "fsh_file": "Test.fsh",
+  "input": "\n        Extension: SomeExtension\n        * extension contains code 1..1\n        * extension[code].value[x] only Quantity\n        ",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Extension.test.ts",
+  "name": "should parse contains rule with item declaring a type",
+  "fsh_file": "Test.fsh",
+  "input": "\n        Alias: MaxSizeExtension = http://hl7.org/fhir/StructureDefinition/maxSize\n        Extension: SomeExtension\n        * extension contains MaxSizeExtension named max 1..1\n        * extension[max].value[x] MS N\n        ",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Extension.test.ts",
+  "name": "should parse a caret value rule with a path",
+  "fsh_file": "Test.fsh",
+  "input": "\n        Extension: SomeExtension\n        * id ^short = \"foo\"\n        ",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Extension.test.ts",
+  "name": "should parse an obeys rule with a path and multiple invariants",
+  "fsh_file": "Test.fsh",
+  "input": "\n        Extension: SomeExtension\n        * extension obeys inv-1 and inv-2\n        ",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Extension.test.ts",
+  "name": "should parse an insert rule with a single RuleSet",
+  "fsh_file": "Insert.fsh",
+  "input": "\n        Extension: MyExtension\n        * insert MyRuleSet\n        ",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Instance.test.ts",
+  "name": "should parse the simplest possible instance",
+  "fsh_file": "SimpleInstance.fsh",
+  "input": "\n        Instance: MyObservation\n        InstanceOf: Observation\n        ",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Instance.test.ts",
+  "name": "should parse numeric instance name and numeric instanceOf",
+  "fsh_file": "SimpleInstance.fsh",
+  "input": "\n        Instance: 123\n        InstanceOf: 456\n        ",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Instance.test.ts",
+  "name": "should parse an instance with an aliased type",
+  "fsh_file": "Test.fsh",
+  "input": "\n        Alias: obs = Observation\n        Instance: MyObservation\n        InstanceOf: obs\n        ",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Instance.test.ts",
+  "name": "should not parse an instance that has no type",
+  "fsh_file": "Missing.fsh",
+  "input": "\n        Instance: MyObservation\n        Title: \"My Important Observation\"\n        ",
+  "expects": [
+   {
+    "level": "error",
+    "regex": "File: Missing\\.fsh.*Line: 2 - 3\\D*"
+   }
+  ],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Instance.test.ts",
+  "name": "should parse an instance with a title",
+  "fsh_file": "Test.fsh",
+  "input": "\n        Instance: MyObservation\n        InstanceOf: Observation\n        Title: \"My Important Observation\"\n        ",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Instance.test.ts",
+  "name": "should parse an instance with a description",
+  "fsh_file": "Test.fsh",
+  "input": "\n        Instance: MyObservation\n        InstanceOf: Observation\n        Description: \"Shows an example of an Observation\"\n        ",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Instance.test.ts",
+  "name": "should parse an instance with a usage",
+  "fsh_file": "Test.fsh",
+  "input": "\n        Instance: MyObservation\n        InstanceOf: Observation\n        Usage: #example\n        ",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Instance.test.ts",
+  "name": "should log an error for invalid usage and set default usage to example",
+  "fsh_file": "Bad.fsh",
+  "input": "\n        Instance: MyBadObservation\n        InstanceOf: Observation\n        Usage: #baduse\n        ",
+  "expects": [
+   {
+    "level": "error",
+    "regex": "Invalid Usage. Supported usage codes are \"#example\", \"#definition\", and \"#inline\". Instance will be treated as an example."
+   },
+   {
+    "level": "error",
+    "regex": "File: Bad\\.fsh.*Line: 4\\D*"
+   }
+  ],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Instance.test.ts",
+  "name": "should log a warning if a system is specified on usage",
+  "fsh_file": "Bad.fsh",
+  "input": "\n        Instance: MyBadObservation\n        InstanceOf: Observation\n        Usage: badsystem#example\n        ",
+  "expects": [
+   {
+    "level": "warn",
+    "regex": "Do not specify a system for instance Usage."
+   },
+   {
+    "level": "warn",
+    "regex": "File: Bad\\.fsh.*Line: 4\\D*"
+   }
+  ],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Instance.test.ts",
+  "name": "should log a warning if a conformance or terminology resource does not have a usage (and therefore will default to example)",
+  "fsh_file": "CS.fsh",
+  "input": "\n        Instance: MyCapabilityStatementDefinition\n        InstanceOf: CapabilityStatement\n        ",
+  "expects": [
+   {
+    "level": "warn",
+    "regex": "No usage was specified on MyCapabilityStatementDefinition\\. The default #example usage will be applied, but CapabilityStatement Instances are typically definitions"
+   },
+   {
+    "level": "warn",
+    "regex": "File: CS\\.fsh.*Line: 2 - 3\\D*"
+   }
+  ],
+  "no_messages": true
+ },
+ {
+  "file": "FSHImporter.Instance.test.ts",
+  "name": "should log an error when the deprecated Mixins keyword is used",
+  "fsh_file": "Deprecated.fsh",
+  "input": "\n        Instance: MyObservation\n        InstanceOf: Observation\n        Mixins: RuleSet1 and RuleSet2\n        ",
+  "expects": [
+   {
+    "level": "error",
+    "regex": "The 'Mixins' keyword is no longer supported\\."
+   },
+   {
+    "level": "error",
+    "regex": "File: Deprecated\\.fsh.*Line: 4\\D*"
+   }
+  ],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Instance.test.ts",
+  "name": "should parse an instance with assigned value rules",
+  "fsh_file": "Test.fsh",
+  "input": "\n        Instance: SamplePatient\n        InstanceOf: Patient\n        Title: \"Georgio Manos\"\n        Description: \"An example of a fictional patient named Georgio Manos\"\n        Usage: #example\n        * name[0].family = \"Georgio\"\n        * name[0].given[0] = \"Manos\"\n        * gender = #other\n        ",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Instance.test.ts",
+  "name": "should parse an instance with assigned values that are an alias",
+  "fsh_file": "Test.fsh",
+  "input": "\n        Alias: EXAMPLE = http://example.org\n\n        Instance: PatientExample\n        InstanceOf: Patient\n        * identifier[0].system = EXAMPLE\n        ",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Instance.test.ts",
+  "name": "should parse an instance with assigned value resource rules",
+  "fsh_file": "Test.fsh",
+  "input": "\n        Instance: SamplePatient\n        InstanceOf: Patient\n        Title: \"Georgio Manos\"\n        Description: \"An example of a fictional patient named Georgio Manos\"\n        * contained[0] = SomeInstance\n        ",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Instance.test.ts",
+  "name": "should parse a pathRule",
+  "fsh_file": "Path.fsh",
+  "input": "\n        Instance: PatientProfile\n        InstanceOf: Patient\n        * name\n        ",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Instance.test.ts",
+  "name": "should parse an insert rule with a single RuleSet",
+  "fsh_file": "Insert.fsh",
+  "input": "\n        Instance: MyPatient\n        InstanceOf: Patient\n        * insert MyRuleSet\n        ",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Instance.test.ts",
+  "name": "should parse an insert rule with an empty parameter value",
+  "fsh_file": "Insert.fsh",
+  "input": "\n        RuleSet: Question(context, linkId, text, type, repeats)\n        * {context}item[+].linkId = \"{linkId}\"\n        * {context}item[=].text = \"{text}\"\n        * {context}item[=].type = #{type}\n        * {context}item[=].repeats = {repeats}\n\n        Instance: case-reporting-questionnaire\n        InstanceOf: Questionnaire\n        * insert Question(,title, HIV Case Report, display, false)\n        ",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Instance.test.ts",
+  "name": "should only apply each metadata attribute the first time it is declared",
+  "fsh_file": "Test.fsh",
+  "input": "\n        Instance: MyObservation\n        InstanceOf: Observation\n        Title: \"My Important Observation\"\n        Description: \"My Observation Description\"\n        Usage: #example\n        InstanceOf: DuplicateObservation\n        Title: \"My Duplicate Observation\"\n        Description: \"My Duplicate Observation Description\"\n        Usage: #non-example\n        ",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Instance.test.ts",
+  "name": "should log an error when encountering a duplicate metadata attribute",
+  "fsh_file": "Dupe.fsh",
+  "input": "\n        Instance: MyObservation\n        InstanceOf: Observation\n        Title: \"My Important Observation\"\n        Description: \"My Observation Description\"\n        Usage: #example\n        InstanceOf: DuplicateObservation\n        Title: \"My Duplicate Observation\"\n        Description: \"My Duplicate Observation Description\"\n        Usage: #non-example\n        ",
+  "expects": [
+   {
+    "level": "error",
+    "regex": "File: Dupe\\.fsh.*Line: 10\\D*"
+   }
+  ],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Instance.test.ts",
+  "name": "should log an error and skip the instance when encountering an instance with a name used by another instance",
+  "fsh_file": "SameName.fsh",
+  "input": "\n        Instance: MyInstance\n        InstanceOf: Observation\n\n        Instance: MyInstance\n        InstanceOf: Patient\n        ",
+  "expects": [
+   {
+    "level": "error",
+    "regex": "Instance named MyInstance already exists"
+   },
+   {
+    "level": "error",
+    "regex": "File: SameName\\.fsh.*Line: 5 - 6\\D*"
+   }
+  ],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Invariant.test.ts",
+  "name": "should parse the simplest possible invariant",
+  "fsh_file": "Empty.fsh",
+  "input": "\n        Invariant: emp-1\n        Severity: #error\n        Description: \"This does not actually require anything.\"\n        ",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Invariant.test.ts",
+  "name": "should parse numeric invariant name",
+  "fsh_file": "Empty.fsh",
+  "input": "\n        Invariant: 123\n        Severity: #error\n        Description: \"This does not actually require anything.\"\n        ",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Invariant.test.ts",
+  "name": "should parse an invariant with additional metadata",
+  "fsh_file": "Full.fsh",
+  "input": "\n        Invariant: full-1\n        Description: \"This resource must define a cage and aquarium.\"\n        Expression: \"cage.exists() and aquarium.exists()\"\n        XPath: \"exists(f:cage) and exists(f:aquarium)\"\n        Severity: #error\n        ",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Invariant.test.ts",
+  "name": "should parse an invariant with multiline expression",
+  "fsh_file": "Multiline.fsh",
+  "input": "\n        Invariant: multiline-1\n        Description: \"This invariant has a multiline expression.\"\n        Expression: \"\"\"\n          (cage.exists() and aquarium.exists()) or\n          (habitat.exists() and enclosure.exists())\n        \"\"\"\n        Severity: #error\n        ",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Invariant.test.ts",
+  "name": "should only apply each metadata attribute the first time it is declared",
+  "fsh_file": "Twice.fsh",
+  "input": "\n        Invariant: twice-1\n        Description: \"This resource is described.\"\n        Expression: \"description.exists()\"\n        XPath: \"exists(f:description)\"\n        Severity: #error\n        Description: \"This resource is not described.\"\n        Expression: \"not(description.exists())\"\n        XPath: \"not(exists(f:description))\"\n        Severity: #warning\n        ",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Invariant.test.ts",
+  "name": "should log an error when encountering a duplicate metadata attribute",
+  "fsh_file": "Twice.fsh",
+  "input": "\n        Invariant: twice-1\n        Description: \"This resource is described.\"\n        Expression: \"description.exists()\"\n        XPath: \"exists(f:description)\"\n        Severity: #error\n        Description: \"This resource is not described.\"\n        Expression: \"not(description.exists())\"\n        XPath: \"not(exists(f:description))\"\n        Severity: #warning\n        ",
+  "expects": [
+   {
+    "level": "error",
+    "regex": "File: Twice\\.fsh.*Line: 10\\D*"
+   }
+  ],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Invariant.test.ts",
+  "name": "should log an error and skip the invariant when encountering a invariant with a name used by another invariant",
+  "fsh_file": "SameName.fsh",
+  "input": "\n        Invariant: same-1\n        Severity: #error\n        Description: \"First description.\"\n\n        Invariant: same-1\n        Severity: #error\n        Description: \"Second description.\"\n        ",
+  "expects": [
+   {
+    "level": "error",
+    "regex": "Invariant named same-1 already exists"
+   },
+   {
+    "level": "error",
+    "regex": "File: SameName\\.fsh.*Line: 6 - 8\\D*"
+   }
+  ],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Invariant.test.ts",
+  "name": "should parse an invariant with assigned value rules",
+  "fsh_file": "InvariantRules.fsh",
+  "input": "\n        Invariant: rules-1\n        Severity: #error\n        Description: \"This has some rules.\"\n        * requirements = \"This invariant exists because I willed it so.\"\n        * expression = \"name.exists()\"\n        ",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Invariant.test.ts",
+  "name": "should parse an instance with assigned values that are an alias",
+  "fsh_file": "InvariantRules.fsh",
+  "input": "\n        Alias: SOURCE = http://example.org/something\n\n        Invariant: rules-2\n        Severity: #error\n        Description: \"This has a rule.\"\n        * source = SOURCE\n        ",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Invariant.test.ts",
+  "name": "should parse a pathRule but then discard it",
+  "fsh_file": "InvariantRules.fsh",
+  "input": "\n        Invariant: rules-3\n        Severity: #error\n        Description: \"This has a rule.\"\n        * requirements\n        ",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Invariant.test.ts",
+  "name": "should use a pathRule to construct a full path",
+  "fsh_file": "InvariantRules.fsh",
+  "input": "Invariant: rules-3\nSeverity: #error\nDescription: \"This has a rule.\"\n* requirements\n  * id = \"req-id\"",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Invariant.test.ts",
+  "name": "should properly handle soft indices with pathRules",
+  "fsh_file": "InvariantRules.fsh",
+  "input": "Invariant: rules-3\nSeverity: #error\nDescription: \"This has a rule.\"\n* extension[+]\n  * url = \"http://example.org/ext1\"\n  * valueBoolean = true\n* extension[+]\n  * url = \"http://example.org/ext2\"\n  * valueBoolean = false",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Invariant.test.ts",
+  "name": "should parse an insert rule",
+  "fsh_file": "InvariantRules.fsh",
+  "input": "\n        Invariant: rules-4\n        Severity: #error\n        Description: \"This has a rule.\"\n        * insert MyRuleSet\n        ",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Logical.test.ts",
+  "name": "should parse the simplest possible logical model",
+  "fsh_file": "Simple.fsh",
+  "input": "\n        Logical: MyLogicalModel\n        ",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Logical.test.ts",
+  "name": "should log an error when encountering the mixins metadata attribute",
+  "fsh_file": "TestWithMixins.fsh",
+  "input": "\n        Logical: TestWithMixins\n        Mixins: Mixin1 and Mixin2 and Mixin3 and Mixin4\n        ",
+  "expects": [
+   {
+    "level": "error",
+    "regex": "File: TestWithMixins\\.fsh.*Line: 3\\D*"
+   }
+  ],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Logical.test.ts",
+  "name": "should parse logical model with additional metadata properties",
+  "fsh_file": "Test.fsh",
+  "input": "\n        Logical: MyObservationModel\n        Parent: BaseObservationModel\n        Id: observation-model\n        Title: \"An Observation-based Logical Model\"\n        Description: \"A logical model based on Observation\"\n        Characteristics: #can-be-target\n        ",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Logical.test.ts",
+  "name": "should parse logical model with numeric name, parent, and id",
+  "fsh_file": "Test.fsh",
+  "input": "\n        Logical: 123\n        Parent: 456\n        Id: 789\n        ",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Logical.test.ts",
+  "name": "should properly parse a multi-string description",
+  "fsh_file": "Test.fsh",
+  "input": "\n        Logical: MyObservationModel\n        Parent: BaseObservationModel\n        Description:\n          \"\"\"\n          This is a multi-string description\n          with a couple of paragraphs.\n\n          This is the second paragraph.  It has bullet points w/ indentation:\n\n          * Bullet 1\n            * Bullet A\n            * Bullet B\n              * Bullet i\n            * Bullet C\n          * Bullet 2\n          \"\"\"\n        ",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Logical.test.ts",
+  "name": "should accept and translate an alias for the parent",
+  "fsh_file": "Test.fsh",
+  "input": "\n        Alias: OBS = http://example.com/fhir/StructureDefinition/BaseObservationModel\n\n        Logical: MyObservationModel\n        Parent: OBS\n        ",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Logical.test.ts",
+  "name": "should parse a list of multiple characteristics",
+  "fsh_file": "Test.fsh",
+  "input": "\n        Logical: MyObservationModel\n        Parent: BaseObservationModel\n        Id: observation-model\n        Title: \"An Observation-based Logical Model\"\n        Description: \"A logical model based on Observation\"\n        Characteristics: #has-range, #is-continuous , #can-bind,\n                         #has-units\n        ",
+  "expects": [],
+  "no_messages": true
+ },
+ {
+  "file": "FSHImporter.Logical.test.ts",
+  "name": "should only apply each metadata attribute the first time it is declared",
+  "fsh_file": "Test.fsh",
+  "input": "\n        Logical: MyObservationModel\n        Parent: BaseObservationModel\n        Id: observation-model\n        Title: \"An Observation-based Logical Model\"\n        Description: \"A logical model based on Observation\"\n        Parent: DuplicateBaseObservationModel\n        Id: duplicate-observation-model\n        Title: \"Duplicate Observation-based Logical Model\"\n        Description: \"Duplicate logical model based on Observation\"\n        ",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Logical.test.ts",
+  "name": "should log an error when encountering a duplicate metadata attribute",
+  "fsh_file": "Dupe.fsh",
+  "input": "\n        Logical: MyObservationModel\n        Parent: BaseObservationModel\n        Id: observation-model\n        Title: \"An Observation-based Logical Model\"\n        Description: \"A logical model based on Observation\"\n        Parent: DuplicateBaseObservationModel\n        Id: duplicate-observation-model\n        Title: \"Duplicate Observation-based Logical Model\"\n        Description: \"Duplicate logical model based on Observation\"\n        ",
+  "expects": [
+   {
+    "level": "error",
+    "regex": "File: Dupe\\.fsh.*Line: 10\\D*"
+   }
+  ],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Logical.test.ts",
+  "name": "should log an error and skip the logical model when encountering a logical model with a name used by another logical model",
+  "fsh_file": "SameName.fsh",
+  "input": "\n        Logical: MyObservationModel\n        Parent: BaseObservationModel\n        Title: \"An Observation-based Logical Model\"\n\n        Logical: MyObservationModel\n        Parent: BaseObservationModel\n        Title: \"Second Observation-based Logical Model\"\n        ",
+  "expects": [
+   {
+    "level": "error",
+    "regex": "Logical Model named MyObservationModel already exists"
+   },
+   {
+    "level": "error",
+    "regex": "File: SameName\\.fsh.*Line: 6 - 8\\D*"
+   }
+  ],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Logical.test.ts",
+  "name": "should parse simple card rules",
+  "fsh_file": "Test.fsh",
+  "input": "\n        Logical: LogicalModel\n        * category 1..5\n        * value[x] 1..1\n        * component 2..*\n        ",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Logical.test.ts",
+  "name": "should parse card rules w/ multiple flags",
+  "fsh_file": "Test.fsh",
+  "input": "\n        Logical: LogicalModel\n        * category 1..5 MS ?! TU\n        * value[x] 1..1 ?! SU N\n        * component 2..* SU MS D\n        ",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Logical.test.ts",
+  "name": "should parse single-path single-value flag rules",
+  "fsh_file": "Test.fsh",
+  "input": "\n        Logical: LogicalModel\n        * category MS\n        * value[x] ?!\n        * component SU\n        * interpretation TU\n        * note N\n        * bodySite D\n        ",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Logical.test.ts",
+  "name": "should parse value set rules w/ names and strengths",
+  "fsh_file": "Test.fsh",
+  "input": "\n        Logical: LogicalModel\n        * category from CategoryValueSet (required)\n        * code from CodeValueSet (extensible)\n        * valueCodeableConcept from ValueValueSet (preferred)\n        * component.code from ComponentCodeValueSet (example)\n        ",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Logical.test.ts",
+  "name": "should parse assigned value boolean rule",
+  "fsh_file": "Test.fsh",
+  "input": "\n        Logical: LogicalModel\n        * valueBoolean = true\n        ",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Logical.test.ts",
+  "name": "should parse assigned value boolean rule with (exactly) modifier",
+  "fsh_file": "Test.fsh",
+  "input": "\n        Logical: LogicalModel\n        * valueBoolean = true (exactly)\n        ",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Logical.test.ts",
+  "name": "should parse an only rule with one type",
+  "fsh_file": "Test.fsh",
+  "input": "\n        Logical: LogicalModel\n        * value[x] only Quantity\n        ",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Logical.test.ts",
+  "name": "should parse contains rule with one item",
+  "fsh_file": "Test.fsh",
+  "input": "\n        Logical: LogicalModel\n        * component contains SystolicBP 1..1\n        ",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Logical.test.ts",
+  "name": "should parse contains rule with one item declaring an aliased type",
+  "fsh_file": "Test.fsh",
+  "input": "\n        Alias: OffsetExtension = http://hl7.org/fhir/StructureDefinition/observation-timeOffset\n        Logical: LogicalModel\n        * component.extension contains OffsetExtension named offset 0..1\n        ",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Logical.test.ts",
+  "name": "should parse caret value rules with a path",
+  "fsh_file": "Test.fsh",
+  "input": "\n        Logical: LogicalModel\n        * status ^short = \"foo\"\n        * status ^sliceIsConstraining = false\n        * status ^code[0] = foo#bar \"baz\"\n        ",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Logical.test.ts",
+  "name": "should parse an obeys rule with multiple invariants and a path",
+  "fsh_file": "Obeys.fsh",
+  "input": "\n        Logical: LogicalModel\n        * category obeys SomeInvariant and ThisInvariant and ThatInvariant\n        ",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Logical.test.ts",
+  "name": "should parse an obeys rule on an element named obeys",
+  "fsh_file": "Obeys.fsh",
+  "input": "\n        Logical: LogicalModel\n        * obeys obeys SomeInvariant and ThisInvariant and ThatInvariant\n        ",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Logical.test.ts",
+  "name": "should parse an insert rule with a single RuleSet",
+  "fsh_file": "Insert.fsh",
+  "input": "\n        Logical: LogicalModel\n        * insert MyRuleSet\n        ",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Logical.test.ts",
+  "name": "should parse complete add element rules",
+  "fsh_file": "Test.fsh",
+  "input": "\n        Logical: LogicalModel\n        * isValid 1..1 MS boolean \"is it valid?\"\n        * stuff 0..* string \"just stuff\" \"a list of some stuff\"\n        * address 1..* Address\n        ",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Logical.test.ts",
+  "name": "should parse add element rules where the element name is numeric",
+  "fsh_file": "NumericElementNames.fsh",
+  "input": "Logical: LogicalModel\n* 7 0..1 string \"This element's name is seven\"\n* 35 0..* BackboneElement \"This complex element is three five\"\n* 35.79 1..1 boolean \"This is seven nine, contained within three five\"",
+  "expects": [],
+  "no_messages": true
+ },
+ {
+  "file": "FSHImporter.Logical.test.ts",
+  "name": "should parse add element rules where the element name is a FSH keyword",
+  "fsh_file": "KeywordLogical.fsh",
+  "input": "Logical: KeywordLogical\n* MS 0..1 string \"Element named MS\"\n* SU 0..2 number \"Element named SU\"\n* TU 1..1 boolean \"Element named TU\"\n* N 0..* code \"Element named N\"\n* D 1..* MS Coding \"Element named D\"\n* from 0..1 Address \"From an address\"\n* contains 0..* string \"Contains many strings\"\n* named 1..1 HumanName \"Has a name\"\n* and 0..1 boolean \"And what?\"\n* only 0..1 number \"Only number\"\n* or 0..3 string \"Or three strings\"\n* obeys 1..1 boolean \"Obey boolean\"\n* true 0..1 boolean \"Please don't make an element named true\"\n* false 0..1 boolean \"Please don't make an element named false, either\"\n* include 0..1 Coding \"Include a coding\"\n* exclude 0..1 Coding \"Exclude a coding\"\n* codes 0..* code \"List of codes\"\n* where 1..1 Address \"Where is it?\"\n* valueset 0..1 uri \"Give me a value set\"\n* system 0..1 uri \"Give me a system\"\n* contentReference 1..1 contentReference http://example.org/StructureDefinition/Keywords#Keywords.content \"A content reference with a content reference\"",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Logical.test.ts",
+  "name": "should parse content reference add element rules",
+  "fsh_file": "ContentReference.fsh",
+  "input": "\n        Logical: LogicalModel\n        * oranges 1..* MS contentReference http://example.org/StructureDefinition/Citrus#Citrus.orange \"oranges\" \"oranges are a citrus\"\n        * apples 0..3 contentReference http://example.org/StructureDefinition/Fruit#Fruit.apple \"apples\"\n        ",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Logical.test.ts",
+  "name": "should parse content reference add element rules that use an alias",
+  "fsh_file": "ContentReference.fsh",
+  "input": "\n        Alias: $orange = http://example.org/StructureDefinition/Citrus#Citrus.orange\n        Logical: LogicalModel\n        * oranges 1..* MS contentReference $orange \"oranges\" \"oranges are a citrus\"\n        * apples 0..3 contentReference http://example.org/StructureDefinition/Fruit#Fruit.apple \"apples\"\n        ",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Logical.test.ts",
+  "name": "should log a warning when a data type is defined with a flag value",
+  "fsh_file": "WarnDataType.fsh",
+  "input": "\n        Logical: LogicalModel\n        * isValid 1..1 MS boolean \"is it valid?\"\n        * stuff 0..* N \"just stuff\" \"a list of some stuff\"\n        * address 1..* Address\n        ",
+  "expects": [
+   {
+    "level": "warn",
+    "regex": "The targetType 'N' appears to be a flag value rather than a valid target data type."
+   }
+  ],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Mapping.test.ts",
+  "name": "should parse the simplest possible Mapping",
+  "fsh_file": "Mapping.fsh",
+  "input": "\n        Mapping: MyMapping\n        ",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Mapping.test.ts",
+  "name": "should parse a Mapping with additional metadata properties",
+  "fsh_file": "Mapping.fsh",
+  "input": "\n        Mapping: MyMapping\n        Id: my-map\n        Source: Patient\n        Target: \"http://some.com/mappedTo\"\n        Description: \"This is a description\"\n        Title: \"This is a title\"\n        ",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Mapping.test.ts",
+  "name": "should parse numeric Mapping name, id, and source",
+  "fsh_file": "Mapping.fsh",
+  "input": "\n        Mapping: 123\n        Id: 456\n        Source: 789\n        ",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Mapping.test.ts",
+  "name": "should only apply each metadata attribute the first time it is declared",
+  "fsh_file": "Mapping.fsh",
+  "input": "\n        Mapping: MyMapping\n        Id: my-map\n        Source: Patient\n        Target: \"http://some.com/mappedTo\"\n        Title: \"This is a title\"\n        Description: \"This is a description\"\n        Id: my-map-2\n        Source: Patient2\n        Target: \"http://some.com/mappedTo2\"\n        Title: \"This is a title 2\"\n        Description: \"This is a description 2\"\n        ",
+  "expects": [
+   {
+    "level": "error",
+    "regex": "This is a description.*File: Mapping\\.fsh.*Line: 12\\D*"
+   }
+  ],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Mapping.test.ts",
+  "name": "should accept and translate an alias for the Source",
+  "fsh_file": "Mapping.fsh",
+  "input": "\n        Alias: OBS = http://hl7.org/fhir/StructureDefinition/Observation\n\n        Mapping: MyMapping\n        Source: OBS\n        ",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Mapping.test.ts",
+  "name": "should log an error and skip the mapping when encountering a mapping with a name used by another mapping",
+  "fsh_file": "SameName.fsh",
+  "input": "\n      Mapping: SameMapping\n      Title: \"First Mapping\"\n\n      Mapping: SameMapping\n      Title: \"Second Mapping\"\n      ",
+  "expects": [
+   {
+    "level": "error",
+    "regex": "Mapping named SameMapping already exists"
+   },
+   {
+    "level": "error",
+    "regex": "File: SameName\\.fsh.*Line: 5 - 6\\D*"
+   }
+  ],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Mapping.test.ts",
+  "name": "should parse a simple mapping rule",
+  "fsh_file": "Test.fsh",
+  "input": "\n          Mapping: MyMapping\n          * identifier -> \"Patient.identifier\"\n          ",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Mapping.test.ts",
+  "name": "should parse a mapping rule with no path",
+  "fsh_file": "Test.fsh",
+  "input": "\n          Mapping: MyMapping\n          * -> \"Patient\"\n          ",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Mapping.test.ts",
+  "name": "should parse a mapping rule with a comment",
+  "fsh_file": "Test.fsh",
+  "input": "\n          Mapping: MyMapping\n          * identifier -> \"Patient.identifier\" \"some comment\"\n          ",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Mapping.test.ts",
+  "name": "should parse a mapping rule with a language",
+  "fsh_file": "Test.fsh",
+  "input": "\n          Mapping: MyMapping\n          * identifier -> \"Patient.identifier\" #lang\n          ",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Mapping.test.ts",
+  "name": "should parse a mapping rule with comment and language",
+  "fsh_file": "Test.fsh",
+  "input": "\n          Mapping: MyMapping\n          * identifier -> \"Patient.identifier\" \"some comment\" #lang\n          ",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Mapping.test.ts",
+  "name": "should log an error when a language has a system",
+  "fsh_file": "Mapping.fsh",
+  "input": "\n          Mapping: MyMapping\n          * identifier -> \"Patient.identifier\" sys#lang\n          ",
+  "expects": [
+   {
+    "level": "warn",
+    "regex": "Do not specify a system for mapping language.*File: Mapping\\.fsh.*Line: 3\\D*"
+   }
+  ],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Mapping.test.ts",
+  "name": "should parse a mapping rule with a multiline comment",
+  "fsh_file": "Test.fsh",
+  "input": "\n          Mapping: MyMapping\n          * identifier -> \"Patient.identifier\" \"\"\"\n          This is a multiline comment\n          that spans multiple lines\n          \"\"\"\n          ",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Mapping.test.ts",
+  "name": "should parse a mapping rule with a multiline comment and language",
+  "fsh_file": "Test.fsh",
+  "input": "\n          Mapping: MyMapping\n          * identifier -> \"Patient.identifier\" \"\"\"\n          This is a multiline comment\n          with a language code\n          \"\"\" #lang\n          ",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Mapping.test.ts",
+  "name": "should parse an insert rule with a single RuleSet",
+  "fsh_file": "Insert.fsh",
+  "input": "\n        Mapping: MyMapping\n        * insert MyRuleSet\n        ",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Mapping.test.ts",
+  "name": "should parse a pathRule",
+  "fsh_file": "Path.fsh",
+  "input": "\n        Mapping: MyMapping\n        Source: Patient1\n        Target: http://example.org/target\n        * name\n        ",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Profile.test.ts",
+  "name": "should parse the simplest possible profile",
+  "fsh_file": "Simple.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Profile.test.ts",
+  "name": "should parse profile with additional metadata properties",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\nId: observation-profile\nTitle: \"An Observation Profile\"\nDescription: \"A profile on Observation\"",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Profile.test.ts",
+  "name": "should parse profile with numeric name, parent, and id",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: 123\nParent: 456\nId: 789",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Profile.test.ts",
+  "name": "should properly parse a multi-string description",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\nDescription:\n  \"\"\"\n  This is a multi-string description\n  with a couple of paragraphs.\n\n  This is the second paragraph.  It has bullet points w/ indentation:\n\n  * Bullet 1\n    * Bullet A\n    * Bullet B\n      * Bullet i\n    * Bullet C\n  * Bullet 2\n  \"\"\"",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Profile.test.ts",
+  "name": "should accept and translate an alias for the parent",
+  "fsh_file": "Test.fsh",
+  "input": "Alias: OBS = http://hl7.org/fhir/StructureDefinition/Observation\n\nProfile: ObservationProfile\nParent: OBS",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Profile.test.ts",
+  "name": "should only apply each metadata attribute the first time it is declared",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\nId: observation-profile\nTitle: \"An Observation Profile\"\nDescription: \"A profile on Observation\"\nParent: DuplicateObservation\nId: duplicate-observation-profile\nTitle: \"Duplicate Observation Profile\"\nDescription: \"A duplicated profile on Observation\"",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Profile.test.ts",
+  "name": "should log an error when encountering a duplicate metadata attribute",
+  "fsh_file": "Dupe.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\nId: observation-profile\nTitle: \"An Observation Profile\"\nDescription: \"A profile on Observation\"\nTitle: \"Duplicate Observation Profile\"\nDescription: \"A duplicated profile on Observation\"",
+  "expects": [
+   {
+    "level": "error",
+    "regex": "File: Dupe\\.fsh.*Line: 8\\D*"
+   }
+  ],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Profile.test.ts",
+  "name": "should log an error and skip the profile when encountering a profile with a name used by another profile",
+  "fsh_file": "SameName.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\nTitle: \"First Observation Profile\"\n\nProfile: ObservationProfile\nParent: Observation\nTitle: \"Second Observation Profile\"",
+  "expects": [
+   {
+    "level": "error",
+    "regex": "Profile named ObservationProfile already exists"
+   },
+   {
+    "level": "error",
+    "regex": "File: SameName\\.fsh.*Line: 6 - 8\\D*"
+   }
+  ],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Profile.test.ts",
+  "name": "should log an error when the deprecated Mixins keyword is used",
+  "fsh_file": "Deprecated.fsh",
+  "input": "Profile: SomeProfile\nParent: Observation\nMixins: RuleSet1 and RuleSet2",
+  "expects": [
+   {
+    "level": "error",
+    "regex": "The 'Mixins' keyword is no longer supported\\."
+   },
+   {
+    "level": "error",
+    "regex": "File: Deprecated\\.fsh.*Line: 4\\D*"
+   }
+  ],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Profile.test.ts",
+  "name": "should parse simple card rules",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* category 1..5\n* value[x] 1..1\n* component 2..*",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Profile.test.ts",
+  "name": "should parse card rule with only min",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* category 1..",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Profile.test.ts",
+  "name": "should parse card rule with only max",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* category ..5",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Profile.test.ts",
+  "name": "should log an error if neither side is specified",
+  "fsh_file": "BadCard.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* category ..",
+  "expects": [
+   {
+    "level": "error",
+    "regex": "Neither side of the cardinality was specified on path \\\"category\\\". A min, max, or both need to be specified.\\D*"
+   },
+   {
+    "level": "error",
+    "regex": "File: BadCard\\.fsh.*Line: 4\\D*"
+   }
+  ],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Profile.test.ts",
+  "name": "should parse card rules w/ flags",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* category 1..5 MS\n* value[x] 1..1 ?!\n* component 2..* SU\n* interpretation 1..* TU\n* note 0..11 N\n* bodySite 1..1 D",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Profile.test.ts",
+  "name": "should parse card rules w/ multiple flags",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* category 1..5 MS ?! TU\n* value[x] 1..1 ?! SU N\n* component 2..* SU MS D",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Profile.test.ts",
+  "name": "should parse single-path single-value flag rules",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* category MS\n* value[x] ?!\n* component SU\n* interpretation TU\n* note N\n* bodySite D",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Profile.test.ts",
+  "name": "should parse single-path multi-value flag rules",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* category MS ?! N\n* value[x] ?! SU D\n* component MS SU ?! TU",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Profile.test.ts",
+  "name": "should parse multi-path single-value flag rules",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* category and value[x] and component MS\n* subject and focus ?!\n* interpretation and note N",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Profile.test.ts",
+  "name": "should parse multi-path multi-value flag rules",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* category and value[x] and component MS SU N\n* subject and focus ?! SU TU",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Profile.test.ts",
+  "name": "should log an error when paths are listed with commas",
+  "fsh_file": "Deprecated.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* category, value[x] , component MS SU N",
+  "expects": [
+   {
+    "level": "error",
+    "regex": "Using ',' to list items is no longer supported"
+   },
+   {
+    "level": "error",
+    "regex": "File: Deprecated\\.fsh.*Line: 4\\D*"
+   }
+  ],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Profile.test.ts",
+  "name": "should parse value set rules w/ names and strengths",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* category from CategoryValueSet (required)\n* code from CodeValueSet (extensible)\n* valueCodeableConcept from ValueValueSet (preferred)\n* component.code from ComponentCodeValueSet (example)",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Profile.test.ts",
+  "name": "should parse value set rules w/ urls and strengths",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* category from http://example.org/fhir/ValueSet/CategoryValueSet (required)\n* code from http://example.org/fhir/ValueSet/CodeValueSet (extensible)\n* valueCodeableConcept from http://example.org/fhir/ValueSet/ValueValueSet (preferred)\n* component.code from http://example.org/fhir/ValueSet/ComponentCodeValueSet (example)",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Profile.test.ts",
+  "name": "should accept and translate aliases for value set URLs",
+  "fsh_file": "Test.fsh",
+  "input": "Alias: CAT = http://example.org/fhir/ValueSet/CategoryValueSet\nAlias: CODE = http://example.org/fhir/ValueSet/CodeValueSet\nAlias: VALUE = http://example.org/fhir/ValueSet/ValueValueSet\nAlias: COMP = http://example.org/fhir/ValueSet/ComponentCodeValueSet\n\nProfile: ObservationProfile\nParent: Observation\n* category from CAT (required)\n* code from CODE (extensible)\n* valueCodeableConcept from VALUE (preferred)\n* component.code from COMP (example)",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Profile.test.ts",
+  "name": "should parse value set rules w/ numeric names",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* category from 123 (required)\n* code from 456 (extensible)",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Profile.test.ts",
+  "name": "should parse value set rules w/ no strength and default to required",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* category from CategoryValueSet\n* code from http://example.org/fhir/ValueSet/CodeValueSet",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Profile.test.ts",
+  "name": "should parse value set rules on Quantity",
+  "fsh_file": "UselessQuant.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* valueQuantity from http://unitsofmeasure.org",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Profile.test.ts",
+  "name": "should log an error when parsing value set rules using the unit keyword",
+  "fsh_file": "Deprecated.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* valueQuantity units from http://unitsofmeasure.org",
+  "expects": [
+   {
+    "level": "error",
+    "regex": "The 'units' keyword is no longer supported.*File: Deprecated\\.fsh.*Line: 4\\D*"
+   }
+  ],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Profile.test.ts",
+  "name": "should parse assigned value boolean rule",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* valueBoolean = true",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Profile.test.ts",
+  "name": "should parse assigned value boolean rule with (exactly) modifier",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* valueBoolean = true (exactly)",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Profile.test.ts",
+  "name": "should parse assigned value number (decimal) rule",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* valueDecimal = 1.23",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Profile.test.ts",
+  "name": "should parse assigned value number (integer) rule",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* valueInteger = 123",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Profile.test.ts",
+  "name": "should parse assigned value string rule",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* valueString = \"hello world\"",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Profile.test.ts",
+  "name": "should parse assigned value multi-line string rule",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* valueString = \"\"\"\n    hello\n    world\n    \"\"\"",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Profile.test.ts",
+  "name": "should parse assigned value date rule",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* valueDateTime = 2019-11-01T12:30:01.999Z",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Profile.test.ts",
+  "name": "should parse assigned value time rule",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* valueTime = 12:30:01.999-05:00",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Profile.test.ts",
+  "name": "should parse assigned value code rule",
+  "fsh_file": "Test.fsh",
+  "input": "Alias: LOINC = http://loinc.org\n\nProfile: ObservationProfile\nParent: Observation\n* status = #final",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Profile.test.ts",
+  "name": "should parse assigned value CodeableConcept rule",
+  "fsh_file": "Test.fsh",
+  "input": "Alias: LOINC = http://loinc.org\n\nProfile: ObservationProfile\nParent: Observation\n* valueCodeableConcept = LOINC#718-7 \"Hemoglobin [Mass/volume] in Blood\"",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Profile.test.ts",
+  "name": "should parse assigned value CodeableConcept rule with (exactly) modifier",
+  "fsh_file": "Test.fsh",
+  "input": "Alias: LOINC = http://loinc.org\n\nProfile: ObservationProfile\nParent: Observation\n* valueCodeableConcept = LOINC#718-7 \"Hemoglobin [Mass/volume] in Blood\" (exactly)",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Profile.test.ts",
+  "name": "should parse an assigned value FSHCode rule with units on Quantity",
+  "fsh_file": "UselessUnits.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* valueQuantity = http://unitsofmeasure.org#cGy",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Profile.test.ts",
+  "name": "should log an error when parsing an assigned value FSHCode rule using the unit keyword",
+  "fsh_file": "Deprecated.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* valueQuantity units = http://unitsofmeasure.org#cGy",
+  "expects": [
+   {
+    "level": "error",
+    "regex": "The 'units' keyword is no longer supported.*File: Deprecated\\.fsh.*Line: 4\\D*"
+   }
+  ],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Profile.test.ts",
+  "name": "should parse assigned value Quantity rule",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* valueQuantity = 1.5 'mm'",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Profile.test.ts",
+  "name": "should parse assigned value Quantity rule with unit display",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* valueQuantity = 155.0 '[lb_av]' \"lb\"",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Profile.test.ts",
+  "name": "should parse assigned value Ratio rule",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* valueRatio = 130 'mg' : 1 'dL'",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Profile.test.ts",
+  "name": "should parse assigned value Ratio rule w/ numeric numerator",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* valueRatio = 130 : 1 'dL'",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Profile.test.ts",
+  "name": "should parse assigned value Ratio rule w/ numeric denominator",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* valueRatio = 130 'mg' : 1",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Profile.test.ts",
+  "name": "should parse assigned value Ratio rule w/ numeric numerator and denominator",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* valueRatio = 130 : 1",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Profile.test.ts",
+  "name": "should parse assigned value Reference rule",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* basedOn = Reference(fooProfile)",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Profile.test.ts",
+  "name": "should parse assigned value Reference rules while allowing and translating aliases",
+  "fsh_file": "Test.fsh",
+  "input": "Alias: FOO = http://hl7.org/fhir/StructureDefinition/Foo\n\nProfile: ObservationProfile\nParent: Observation\n* basedOn = Reference(FOO) \"bar\"",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Profile.test.ts",
+  "name": "should parse assigned value Reference rule with a display string",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* basedOn = Reference(fooProfile) \"bar\"",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Profile.test.ts",
+  "name": "should parse assigned value Reference rule with whitespace",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* basedOn = Reference(   fooProfile   )",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Profile.test.ts",
+  "name": "should log an error when an assigned value Reference rule has a choice of references",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* basedOn = Reference(cakeProfile or pieProfile)",
+  "expects": [
+   {
+    "level": "error",
+    "regex": "Multiple choices of references are not allowed when setting a value.*Line: 5\\D*"
+   }
+  ],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Profile.test.ts",
+  "name": "should parse assigned value using Canonical",
+  "fsh_file": "Test.fsh",
+  "input": "CodeSystem: Example\n* #first\n* #second\n\nProfile: ObservationProfile\nParent: Observation\n* code.coding.system = Canonical(Example)",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Profile.test.ts",
+  "name": "should parse assigned value using Canonical with spaces around entity name",
+  "fsh_file": "Test.fsh",
+  "input": "CodeSystem: SpaceyExample\n* #first\n* #second\n\nProfile: ObservationProfile\nParent: Observation\n* code.coding.system = Canonical(   SpaceyExample )",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Profile.test.ts",
+  "name": "should parse assigned value using Canonical with a version",
+  "fsh_file": "Test.fsh",
+  "input": "CodeSystem: Example\n* #first\n* #second\n\nProfile: ObservationProfile\nParent: Observation\n* code.coding.system = Canonical(Example|1.2.3)",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Profile.test.ts",
+  "name": "should parse assigned value using Canonical with a version which contains a |",
+  "fsh_file": "Test.fsh",
+  "input": "CodeSystem: Example\n* #first\n* #second\n\nProfile: ObservationProfile\nParent: Observation\n* code.coding.system = Canonical(  Example|1.2.3|aWeirdVersion  )",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Profile.test.ts",
+  "name": "should log an error when an assigned value Canonical rule has a choice of canonicals",
+  "fsh_file": "Test.fsh",
+  "input": "CodeSystem: Example\n* #first\n* #second\n\nProfile: ObservationProfile\nParent: Observation\n* code.coding.system = Canonical(Example or OtherExample)",
+  "expects": [
+   {
+    "level": "error",
+    "regex": "Multiple choices of canonicals are not allowed when setting a value.*Line: 8\\D*"
+   }
+  ],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Profile.test.ts",
+  "name": "should parse assigned values that are an alias",
+  "fsh_file": "Test.fsh",
+  "input": "Alias: EXAMPLE = http://example.org\n\nProfile: PatientProfile\nParent: Patient\n* identifier.system = EXAMPLE",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Profile.test.ts",
+  "name": "should parse an assigned value Resource rule",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* contained[0] = SomeInstance",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Profile.test.ts",
+  "name": "should parse an only rule with one type",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* value[x] only Quantity",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Profile.test.ts",
+  "name": "should parse an only rule with multiple types",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* value[x] only Quantity or CodeableConcept or string",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Profile.test.ts",
+  "name": "should parse an only rule with one numeric type name",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* value[x] only 123",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Profile.test.ts",
+  "name": "should parse an only rule with multiple numeric type names",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* value[x] only 123 or 456 or 789",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Profile.test.ts",
+  "name": "should parse an only rule with a reference to one type",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* performer only Reference(Practitioner)",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Profile.test.ts",
+  "name": "should parse an only rule with a reference to multiple types",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* performer only Reference(Organization or CareTeam)",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Profile.test.ts",
+  "name": "should parse an only rule with a reference to multiple types with whitespace",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* performer only Reference(   Organization    or  CareTeam)",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Profile.test.ts",
+  "name": "should parse an only rule with a canonical to one type",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: PlanDefinitionProfile\nParent: PlanDefinition\n* action.definition[x] only Canonical(ActivityDefinition)",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Profile.test.ts",
+  "name": "should parse an only rule with a canonical to multiple types",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: PlanDefinitionProfile\nParent: PlanDefinition\n* action.definition[x] only Canonical(ActivityDefinition or PlanDefinition)",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Profile.test.ts",
+  "name": "should parse an only rule with a canonical to multiple types with whitespace",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: PlanDefinitionProfile\nParent: PlanDefinition\n* action.definition[x] only Canonical(     ActivityDefinition   or    PlanDefinition    )",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Profile.test.ts",
+  "name": "should parse an only rule with a canonical to multiple types with versions",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: PlanDefinitionProfile\nParent: PlanDefinition\n* action.definition[x] only Canonical(ActivityDefinition|4.0.1 or PlanDefinition|4.0.1)",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Profile.test.ts",
+  "name": "should allow and translate aliases for only types",
+  "fsh_file": "Test.fsh",
+  "input": "Alias: QUANTITY = http://hl7.org/fhir/StructureDefinition/Quantity\nAlias: CODING = http://hl7.org/fhir/StructureDefinition/Coding\n\nProfile: ObservationProfile\nParent: Observation\n* value[x] only CodeableConcept or CODING or string or QUANTITY",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Profile.test.ts",
+  "name": "should log an error when references are listed with pipes",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* performer only Reference(Organization | CareTeam)",
+  "expects": [
+   {
+    "level": "error",
+    "regex": "Using '\\|' to list references is no longer supported\\..*Line: 4\\D*"
+   }
+  ],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Profile.test.ts",
+  "name": "should log an error when references are listed with pipes with whitespace",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* performer only Reference(   Organization  |   CareTeam)",
+  "expects": [
+   {
+    "level": "error",
+    "regex": "Using '\\|' to list references is no longer supported\\..*Line: 4\\D*"
+   }
+  ],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Profile.test.ts",
+  "name": "should parse contains rule with one item",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* component contains SystolicBP 1..1",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Profile.test.ts",
+  "name": "should parse contains rule with one item declaring an aliased type",
+  "fsh_file": "Test.fsh",
+  "input": "Alias: OffsetExtension = http://hl7.org/fhir/StructureDefinition/observation-timeOffset\nProfile: ObservationProfile\nParent: Observation\n* component.extension contains OffsetExtension named offset 0..1",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Profile.test.ts",
+  "name": "should parse contains rule with one item declaring an FSH extension type",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* component.extension contains ComponentExtension named compext 0..1\n\nExtension: ComponentExtension\nId: component-extension\n* value[x] only CodeableConcept",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Profile.test.ts",
+  "name": "should parse contains rules with multiple items",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* component contains SystolicBP 1..1 and DiastolicBP 2..*",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Profile.test.ts",
+  "name": "should parse contains rule with mutliple items, some declaring types",
+  "fsh_file": "Test.fsh",
+  "input": "Alias: FocusCodeExtension = http://hl7.org/fhir/StructureDefinition/observation-focusCode\nAlias: PreconditionExtension = http://hl7.org/fhir/StructureDefinition/observation-precondition\nProfile: ObservationProfile\nParent: Observation\n* extension contains\n    foo 0..1 and\n    FocusCodeExtension named focus 1..1 and\n    bar 0..* and\n    PreconditionExtension named pc 1..*",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Profile.test.ts",
+  "name": "should parse contains rules with flags",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* component contains SystolicBP 1..1 MS D and DiastolicBP 2..* MS SU",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Profile.test.ts",
+  "name": "should parse contains rule with item declaring a type and flags",
+  "fsh_file": "Test.fsh",
+  "input": "Alias: OffsetExtension = http://hl7.org/fhir/StructureDefinition/observation-timeOffset\nProfile: ObservationProfile\nParent: Observation\n* component.extension contains OffsetExtension named offset 0..1 MS TU",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Profile.test.ts",
+  "name": "should parse caret value rules with no path",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* ^description = \"foo\"\n* ^experimental = false\n* ^keyword[0] = foo#bar \"baz\"",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Profile.test.ts",
+  "name": "should parse caret value rules with a . path",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* . ^definition = \"foo\"",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Profile.test.ts",
+  "name": "should parse caret value rules with a path",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* status ^short = \"foo\"\n* status ^sliceIsConstraining = false\n* status ^code[0] = foo#bar \"baz\"",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Profile.test.ts",
+  "name": "should not include non-breaking spaces as part of the caret path",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* status ^short\\u00A0= \"Non-breaking\"",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Profile.test.ts",
+  "name": "should add resources to the contained array using a CaretValueRule",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* ^contained = myResource",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Profile.test.ts",
+  "name": "should parse an obeys rule with one invariant and no path",
+  "fsh_file": "Obeys.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* obeys SomeInvariant",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Profile.test.ts",
+  "name": "should parse an obeys rule with one invariant and a path",
+  "fsh_file": "Obeys.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* category obeys SomeInvariant",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Profile.test.ts",
+  "name": "should parse an obeys rule with multiple invariants and no path",
+  "fsh_file": "Obeys.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* obeys SomeInvariant and ThisInvariant and ThatInvariant",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Profile.test.ts",
+  "name": "should parse an obeys rule with multiple invariants and a path",
+  "fsh_file": "Obeys.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* category obeys SomeInvariant and ThisInvariant and ThatInvariant",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Profile.test.ts",
+  "name": "should parse an obeys rule with a numeric invariant name",
+  "fsh_file": "Obeys.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* obeys 123",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Profile.test.ts",
+  "name": "should parse a pathRule",
+  "fsh_file": "Path.fsh",
+  "input": "Profile: PatientProfile\nParent: Patient\n* name",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Profile.test.ts",
+  "name": "should parse an insert rule with a single RuleSet",
+  "fsh_file": "Insert.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* insert MyRuleSet",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Profile.test.ts",
+  "name": "should parse an insert rule with a single RuleSet and a path",
+  "fsh_file": "Insert.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* code insert MyRuleSet",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Resource.test.ts",
+  "name": "should parse the simplest possible resource",
+  "fsh_file": "Simple.fsh",
+  "input": "\n        Resource: Simple\n        ",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Resource.test.ts",
+  "name": "should log an error when encountering the mixins metadata attribute",
+  "fsh_file": "TestWithMixins.fsh",
+  "input": "\n        Resource: TestWithMixins\n        Mixins: Mixin1 and Mixin2 and Mixin3 and Mixin4\n        ",
+  "expects": [
+   {
+    "level": "error",
+    "regex": "File: TestWithMixins\\.fsh.*Line: 3\\D*"
+   }
+  ],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Resource.test.ts",
+  "name": "should parse resource with additional metadata properties",
+  "fsh_file": "Test.fsh",
+  "input": "\n        Resource: TestWithMeta\n        Id: test-with-meta\n        Title: \"A Test with Meta Resource\"\n        Description: \"Test resource with meta\"\n        ",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Resource.test.ts",
+  "name": "should parse resource with numeric name and id",
+  "fsh_file": "Test.fsh",
+  "input": "\n        Resource: 123\n        Id: 789\n        ",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Resource.test.ts",
+  "name": "should properly parse a multi-string description",
+  "fsh_file": "Test.fsh",
+  "input": "\n        Resource: TestWithMultiStringDesc\n        Description:\n          \"\"\"\n          This is a multi-string description\n          with a couple of paragraphs.\n\n          This is the second paragraph.  It has bullet points w/ indentation:\n\n          * Bullet 1\n            * Bullet A\n            * Bullet B\n              * Bullet i\n            * Bullet C\n          * Bullet 2\n          \"\"\"\n        ",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Resource.test.ts",
+  "name": "should only apply each metadata attribute the first time it is declared",
+  "fsh_file": "Test.fsh",
+  "input": "\n        Resource: TestResource\n        Id: test-resource\n        Title: \"A Test Resource\"\n        Description: \"A resource used for tests\"\n        Id: duplicate-test-resource\n        Title: \"Duplicate Test Resource\"\n        Description: \"A duplicated resource\"\n        ",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Resource.test.ts",
+  "name": "should log an error when encountering a duplicate metadata attribute",
+  "fsh_file": "Dupe.fsh",
+  "input": "\n        Resource: TestResource\n        Id: test-resource\n        Title: \"A Test Resource\"\n        Description: \"A resource used for tests\"\n        Id: duplicate-test-resource\n        Title: \"Duplicate Test Resource\"\n        Description: \"A duplicated resource\"\n        ",
+  "expects": [
+   {
+    "level": "error",
+    "regex": "File: Dupe\\.fsh.*Line: 8\\D*"
+   }
+  ],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Resource.test.ts",
+  "name": "should log an error and skip the resource when encountering a resource with a name used by another resource",
+  "fsh_file": "SameName.fsh",
+  "input": "\n        Resource: TestResource\n        Title: \"First Test Resource\"\n\n        Resource: TestResource\n        Title: \"Second Test Resource\"\n        ",
+  "expects": [
+   {
+    "level": "error",
+    "regex": "Resource named TestResource already exists"
+   },
+   {
+    "level": "error",
+    "regex": "File: SameName\\.fsh.*Line: 5 - 6\\D*"
+   }
+  ],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Resource.test.ts",
+  "name": "should parse simple card rules",
+  "fsh_file": "Test.fsh",
+  "input": "\n        Resource: TestResource\n        * category 1..5\n        * value[x] 1..1\n        * component 2..*\n        ",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Resource.test.ts",
+  "name": "should parse card rules w/ multiple flags",
+  "fsh_file": "Test.fsh",
+  "input": "\n        Resource: TestResource\n        * category 1..5 MS ?! TU\n        * value[x] 1..1 ?! SU N\n        * component 2..* SU MS D\n        ",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Resource.test.ts",
+  "name": "should parse single-path single-value flag rules",
+  "fsh_file": "Test.fsh",
+  "input": "\n        Resource: TestResource\n        * category MS\n        * value[x] ?!\n        * component SU\n        * interpretation TU\n        * note N\n        * bodySite D\n        ",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Resource.test.ts",
+  "name": "should parse value set rules w/ names and strengths",
+  "fsh_file": "Test.fsh",
+  "input": "\n        Resource: TestResource\n        * category from CategoryValueSet (required)\n        * code from CodeValueSet (extensible)\n        * valueCodeableConcept from ValueValueSet (preferred)\n        * component.code from ComponentCodeValueSet (example)\n        ",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Resource.test.ts",
+  "name": "should parse assigned value boolean rule",
+  "fsh_file": "Test.fsh",
+  "input": "\n        Resource: TestResource\n        * valueBoolean = true\n        ",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Resource.test.ts",
+  "name": "should parse assigned value boolean rule with (exactly) modifier",
+  "fsh_file": "Test.fsh",
+  "input": "\n        Resource: TestResource\n        * valueBoolean = true (exactly)\n        ",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Resource.test.ts",
+  "name": "should parse an only rule with one type",
+  "fsh_file": "Test.fsh",
+  "input": "\n        Resource: TestResource\n        * value[x] only Quantity\n        ",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Resource.test.ts",
+  "name": "should parse contains rule with one item",
+  "fsh_file": "Test.fsh",
+  "input": "\n        Resource: TestResource\n        * component contains SystolicBP 1..1\n        ",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Resource.test.ts",
+  "name": "should parse contains rule with one item declaring an aliased type",
+  "fsh_file": "Test.fsh",
+  "input": "\n        Alias: OffsetExtension = http://hl7.org/fhir/StructureDefinition/observation-timeOffset\n        Resource: TestResource\n        * component.extension contains OffsetExtension named offset 0..1\n        ",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Resource.test.ts",
+  "name": "should parse caret value rules with a path",
+  "fsh_file": "Test.fsh",
+  "input": "\n        Resource: TestResource\n        * status ^short = \"foo\"\n        * status ^sliceIsConstraining = false\n        * status ^code[0] = foo#bar \"baz\"\n        ",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Resource.test.ts",
+  "name": "should parse caret value rules with triple-quoted string",
+  "fsh_file": "Test.fsh",
+  "input": "\n        Resource: TestResource\n        * status ^short = \"foo\"\n        * status ^definition = \"\"\"\n          This definition includes markdown for unordered lists:\n          * Level 1 list item 1\n            * Level 2 list item 1a\n            * Level 2 list item 1b\n          * Level 1 list item 2\n        \"\"\"\n        * status ^sliceIsConstraining = false\n        * status ^code[0] = foo#bar \"baz\"\n        ",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Resource.test.ts",
+  "name": "should parse an obeys rule with multiple invariants and a path",
+  "fsh_file": "Obeys.fsh",
+  "input": "\n        Resource: TestResource\n        * category obeys SomeInvariant and ThisInvariant and ThatInvariant\n        ",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Resource.test.ts",
+  "name": "should parse an insert rule with a single RuleSet",
+  "fsh_file": "Insert.fsh",
+  "input": "\n        Resource: TestResource\n        * insert MyRuleSet\n        ",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Resource.test.ts",
+  "name": "should parse complete add element rules",
+  "fsh_file": "Test.fsh",
+  "input": "\n        Resource: TestResource\n        * isValid 1..1 MS boolean \"is it valid?\"\n        * stuff 0..* string \"just stuff\" \"a list of some stuff\"\n        * address 1..* Address \"Just an address\"\n        * extraThing 0..3 contentReference http://example.org/StructureDefinition/Thing#Thing.extra \"extra thing\"\n        ",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.Resource.test.ts",
+  "name": "should parse complete add element rules with triple-quoted string for definition",
+  "fsh_file": "Test.fsh",
+  "input": "\n        Resource: TestResource\n        * isValid 1..1 MS boolean \"is it valid?\"\n        * stuff 0..* string \"just stuff\" \"a list of some stuff\"\n        * address 1..* Address \"Just an address\" \n          \"\"\"\n            This definition for address includes markdown for unordered lists:\n            * Level 1 list item 1\n              * Level 2 list item 1a\n              * Level 2 list item 1b\n            * Level 1 list item 2\n          \"\"\"\n        ",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.RuleSet.test.ts",
+  "name": "should parse a RuleSet with a rule",
+  "fsh_file": "OneRule.fsh",
+  "input": "\n        RuleSet: OneRuleSet\n        * active = true\n        ",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.RuleSet.test.ts",
+  "name": "should parse a RuleSet with a numeric name",
+  "fsh_file": "NumericName.fsh",
+  "input": "\n        RuleSet: 123\n        * active = true\n        ",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.RuleSet.test.ts",
+  "name": "should parse a RuleSet with multiple rules",
+  "fsh_file": "Rules.fsh",
+  "input": "\n        RuleSet: RuleRuleSet\n        * gender from https://www.hl7.org/fhir/valueset-administrative-gender.html\n        * active = true (exactly)\n        * contact 1..1\n        ",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.RuleSet.test.ts",
+  "name": "should parse a RuleSet with an insert rule",
+  "fsh_file": "Rules.fsh",
+  "input": "\n        RuleSet: RuleRuleSet\n        * gender from https://www.hl7.org/fhir/valueset-administrative-gender.html\n        * insert OtherRuleSet\n        * contact 1..1\n        ",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.RuleSet.test.ts",
+  "name": "should parse a RuleSet with an AddElementRule",
+  "fsh_file": "Rules.fsh",
+  "input": "\n        RuleSet: RuleRuleSet\n        * gender from https://www.hl7.org/fhir/valueset-administrative-gender.html\n        * contact 1..1\n        * newStuff 0..* string \"short for newStuff property\"\n        ",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.RuleSet.test.ts",
+  "name": "should parse a RuleSet with a content reference AddElementRule",
+  "fsh_file": "Rules.fsh",
+  "input": "\n        RuleSet: RuleRuleSet\n        * gender from https://www.hl7.org/fhir/valueset-administrative-gender.html\n        * contact 1..1\n        * newStuff 0..3 contentReference http://example.org/StructureDefinition/Stuff#Stuff.new \"short for newStuff property\"\n      ",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.RuleSet.test.ts",
+  "name": "should parse a RuleSet with a MappingRule",
+  "fsh_file": "OneRule.fsh",
+  "input": "\n        RuleSet: OneRuleSet\n        * identifier.system -> \"Patient.identifier.system\"\n        * identifier.value -> \"Patient.identifier.value\" \"This is a comment\" #code\n        ",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.RuleSet.test.ts",
+  "name": "should parse a RuleSet with rules, ValueSetComponents, ConceptRules, and CaretValueRules",
+  "fsh_file": "Rules.fsh",
+  "input": "\n        RuleSet: RuleRuleSet\n        * gender from https://www.hl7.org/fhir/valueset-administrative-gender.html\n        * #bear from system ZOO\n        * #lion\n        * #lion ^designation.value = \"Watch out for big cat!\"\n        ",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.RuleSet.test.ts",
+  "name": "should log an error when parsing a mixin with no rules",
+  "fsh_file": "Empty.fsh",
+  "input": "\n        RuleSet: EmptyRuleSet\n        ",
+  "expects": [
+   {
+    "level": "error",
+    "regex": "File: Empty\\.fsh.*Line: 4\\D*"
+   }
+  ],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.RuleSet.test.ts",
+  "name": "should log an error and skip the RuleSet when encountering a RuleSet with a name used by another RuleSet",
+  "fsh_file": "SameName.fsh",
+  "input": "\n      RuleSet: SameRuleSet\n      * gender 0..0\n\n      RuleSet: SameRuleSet\n      * active = true\n      ",
+  "expects": [
+   {
+    "level": "error",
+    "regex": "RuleSet named SameRuleSet already exists"
+   },
+   {
+    "level": "error",
+    "regex": "File: SameName\\.fsh.*Line: 5 - 6\\D*"
+   }
+  ],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.RuleSet.test.ts",
+  "name": "should not log an error when the ConceptRule has one code with a system, no definition, and no hierarchy",
+  "fsh_file": "VSRules.fsh",
+  "input": "RuleSet: VSRuleSet\n* ZOO#bear\n* ZOO#gator \"Alligator\"",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.SDRules.test.ts",
+  "name": "should parse simple card rules",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* category 1..5\n* value[x] 1..1\n* component 2..*",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.SDRules.test.ts",
+  "name": "should parse card rule with only min",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* category 1..",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.SDRules.test.ts",
+  "name": "should parse card rule with only max",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* category ..5",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.SDRules.test.ts",
+  "name": "should log an error if neither side is specified",
+  "fsh_file": "BadCard.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* category ..",
+  "expects": [
+   {
+    "level": "error",
+    "regex": "Neither side of the cardinality was specified on path \\\"category\\\". A min, max, or both need to be specified.\\D*"
+   },
+   {
+    "level": "error",
+    "regex": "File: BadCard\\.fsh.*Line: 4\\D*"
+   }
+  ],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.SDRules.test.ts",
+  "name": "should parse card rules w/ flags",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* category 1..5 MS\n* value[x] 1..1 ?!\n* component 2..* SU\n* interpretation 1..* TU\n* note 0..11 N\n* bodySite 1..1 D",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.SDRules.test.ts",
+  "name": "should parse card rules w/ multiple flags",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* category 1..5 MS ?! TU\n* value[x] 1..1 ?! SU N\n* component 2..* SU MS D",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.SDRules.test.ts",
+  "name": "should parse single-path single-value flag rules",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* category MS\n* value[x] ?!\n* component SU\n* interpretation TU\n* note N\n* bodySite D",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.SDRules.test.ts",
+  "name": "should parse single-path multi-value flag rules",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* category MS ?! N\n* value[x] ?! SU D\n* component MS SU ?! TU",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.SDRules.test.ts",
+  "name": "should parse multi-path single-value flag rules",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* category and value[x] and component MS\n* subject and focus ?!\n* interpretation and note N",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.SDRules.test.ts",
+  "name": "should parse multi-path multi-value flag rules",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* category and value[x] and component MS SU N\n* subject and focus ?! SU TU",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.SDRules.test.ts",
+  "name": "should log an error when paths are listed with commas",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* category, value[x] , component MS SU N",
+  "expects": [
+   {
+    "level": "error",
+    "regex": "Using ',' to list items is no longer supported"
+   }
+  ],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.SDRules.test.ts",
+  "name": "should parse value set rules w/ names and strengths",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* category from CategoryValueSet (required)\n* code from CodeValueSet (extensible)\n* valueCodeableConcept from ValueValueSet (preferred)\n* component.code from ComponentCodeValueSet (example)",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.SDRules.test.ts",
+  "name": "should parse value set rules w/ urls and strengths",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* category from http://example.org/fhir/ValueSet/CategoryValueSet (required)\n* code from http://example.org/fhir/ValueSet/CodeValueSet (extensible)\n* valueCodeableConcept from http://example.org/fhir/ValueSet/ValueValueSet (preferred)\n* component.code from http://example.org/fhir/ValueSet/ComponentCodeValueSet (example)",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.SDRules.test.ts",
+  "name": "should accept and translate aliases for value set URLs",
+  "fsh_file": "Test.fsh",
+  "input": "Alias: CAT = http://example.org/fhir/ValueSet/CategoryValueSet\nAlias: CODE = http://example.org/fhir/ValueSet/CodeValueSet\nAlias: VALUE = http://example.org/fhir/ValueSet/ValueValueSet\nAlias: COMP = http://example.org/fhir/ValueSet/ComponentCodeValueSet\n\nProfile: ObservationProfile\nParent: Observation\n* category from CAT (required)\n* code from CODE (extensible)\n* valueCodeableConcept from VALUE (preferred)\n* component.code from COMP (example)",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.SDRules.test.ts",
+  "name": "should parse value set rules w/ numeric names",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* category from 123 (required)\n* code from 456 (extensible)",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.SDRules.test.ts",
+  "name": "should parse value set rules w/ no strength and default to required",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* category from CategoryValueSet\n* code from http://example.org/fhir/ValueSet/CodeValueSet",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.SDRules.test.ts",
+  "name": "should ignore the units keyword and log an error when parsing value set rules on Quantity",
+  "fsh_file": "UselessQuant.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* valueQuantity units from http://unitsofmeasure.org",
+  "expects": [
+   {
+    "level": "error",
+    "regex": "The 'units' keyword is no longer supported.*File: UselessQuant\\.fsh.*Line: 4\\D*"
+   }
+  ],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.SDRules.test.ts",
+  "name": "should parse assigned value boolean rule",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* valueBoolean = true",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.SDRules.test.ts",
+  "name": "should parse assigned value boolean rule with (exactly) modifier",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* valueBoolean = true (exactly)",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.SDRules.test.ts",
+  "name": "should parse assigned value number (decimal) rule",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* valueDecimal = 1.23",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.SDRules.test.ts",
+  "name": "should parse assigned value number (integer) rule",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* valueInteger = 12E4",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.SDRules.test.ts",
+  "name": "should parse assigned value string rule",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* valueString = \"hello world\"",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.SDRules.test.ts",
+  "name": "should parse assigned value multi-line string rule",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* valueString = \"\"\"\n    hello\n    world\n    \"\"\"",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.SDRules.test.ts",
+  "name": "should parse assigned value date rule",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* valueDateTime = 2019-11-01T12:30:01.999Z",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.SDRules.test.ts",
+  "name": "should parse assigned value time rule",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* valueTime = 12:30:01.999-05:00",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.SDRules.test.ts",
+  "name": "should parse assigned value code rule",
+  "fsh_file": "Test.fsh",
+  "input": "Alias: LOINC = http://loinc.org\n\nProfile: ObservationProfile\nParent: Observation\n* status = #final",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.SDRules.test.ts",
+  "name": "should parse assigned value CodeableConcept rule",
+  "fsh_file": "Test.fsh",
+  "input": "Alias: LOINC = http://loinc.org\n\nProfile: ObservationProfile\nParent: Observation\n* valueCodeableConcept = LOINC#718-7 \"Hemoglobin [Mass/volume] in Blood\"",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.SDRules.test.ts",
+  "name": "should parse assigned value CodeableConcept rule with (exactly) modifier",
+  "fsh_file": "Test.fsh",
+  "input": "Alias: LOINC = http://loinc.org\n\nProfile: ObservationProfile\nParent: Observation\n* valueCodeableConcept = LOINC#718-7 \"Hemoglobin [Mass/volume] in Blood\" (exactly)",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.SDRules.test.ts",
+  "name": "should ignore the units keyword and log a warning when parsing an assigned value FSHCode rule with units on Quantity",
+  "fsh_file": "UselessUnits.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* valueQuantity units = http://unitsofmeasure.org#cGy",
+  "expects": [
+   {
+    "level": "error",
+    "regex": "The 'units' keyword is no longer supported.*File: UselessUnits\\.fsh.*Line: 4\\D*"
+   }
+  ],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.SDRules.test.ts",
+  "name": "should parse assigned value Quantity rule",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* valueQuantity = 1.5 'mm'",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.SDRules.test.ts",
+  "name": "should parse assigned value Quantity rule with unit display",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* valueQuantity = 155.0 '[lb_av]' \"lb\"",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.SDRules.test.ts",
+  "name": "should parse assigned value Quantity rule with UCUM units and no value",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* valueQuantity = 'mm'",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.SDRules.test.ts",
+  "name": "should parse assigned value Quantity rule with UCUM units, display, and no value",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* valueQuantity = '[lb_av]' \"lb\"",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.SDRules.test.ts",
+  "name": "should parse assigned value Ratio rule",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* valueRatio = 130 'mg' : 1 'dL'",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.SDRules.test.ts",
+  "name": "should parse assigned value Ratio rule w/ numeric numerator",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* valueRatio = 130 : 1 'dL'",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.SDRules.test.ts",
+  "name": "should parse assigned value Ratio rule w/ numeric denominator",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* valueRatio = 130 'mg' : 1",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.SDRules.test.ts",
+  "name": "should parse assigned value Ratio rule w/ numeric numerator and denominator",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* valueRatio = 130 : 1",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.SDRules.test.ts",
+  "name": "should parse assigned value Ratio rule with non-numeric numerator",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* valueRatio = 'mg' : 1 'dL'",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.SDRules.test.ts",
+  "name": "should parse assigned value Ratio rule with non-numeric denominator",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* valueRatio = 130 'mg' : 'dL'",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.SDRules.test.ts",
+  "name": "should parse assigned value Ratio rule with non-numeric numerator and denominator",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* valueRatio = 'mg' : 'dL'",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.SDRules.test.ts",
+  "name": "should parse assigned value Reference rule",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* basedOn = Reference(fooProfile)",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.SDRules.test.ts",
+  "name": "should parse assigned value Reference rules while allowing and translating aliases",
+  "fsh_file": "Test.fsh",
+  "input": "Alias: FOO = http://hl7.org/fhir/StructureDefinition/Foo\n\nProfile: ObservationProfile\nParent: Observation\n* basedOn = Reference(FOO) \"bar\"",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.SDRules.test.ts",
+  "name": "should parse assigned value Reference rule with a display string",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* basedOn = Reference(fooProfile) \"bar\"",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.SDRules.test.ts",
+  "name": "should parse assigned value Reference rule with whitespace",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* basedOn = Reference(   fooProfile   )",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.SDRules.test.ts",
+  "name": "should log an error when an assigned value Reference rule has a choice of references",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* basedOn = Reference(cakeProfile or pieProfile)",
+  "expects": [
+   {
+    "level": "error",
+    "regex": "Multiple choices of references are not allowed when setting a value.*Line: 5\\D*"
+   }
+  ],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.SDRules.test.ts",
+  "name": "should parse assigned value using Canonical",
+  "fsh_file": "Test.fsh",
+  "input": "CodeSystem: Example\n* #first\n* #second\n\nProfile: ObservationProfile\nParent: Observation\n* code.coding.system = Canonical(Example)",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.SDRules.test.ts",
+  "name": "should parse assigned value using Canonical with spaces around entity name",
+  "fsh_file": "Test.fsh",
+  "input": "CodeSystem: SpaceyExample\n* #first\n* #second\n\nProfile: ObservationProfile\nParent: Observation\n* code.coding.system = Canonical(   SpaceyExample )",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.SDRules.test.ts",
+  "name": "should parse assigned value using Canonical with a version",
+  "fsh_file": "Test.fsh",
+  "input": "CodeSystem: Example\n* #first\n* #second\n\nProfile: ObservationProfile\nParent: Observation\n* code.coding.system = Canonical(Example|1.2.3)",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.SDRules.test.ts",
+  "name": "should parse assigned value using Canonical with a version which contains a |",
+  "fsh_file": "Test.fsh",
+  "input": "CodeSystem: Example\n* #first\n* #second\n\nProfile: ObservationProfile\nParent: Observation\n* code.coding.system = Canonical(  Example|1.2.3|aWeirdVersion  )",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.SDRules.test.ts",
+  "name": "should parse assigned values that are an alias",
+  "fsh_file": "Test.fsh",
+  "input": "Alias: EXAMPLE = http://example.org\n\nProfile: PatientProfile\nParent: Patient\n* identifier.system = EXAMPLE",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.SDRules.test.ts",
+  "name": "should parse an assigned value Resource rule",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* contained[0] = SomeInstance",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.SDRules.test.ts",
+  "name": "should parse an only rule with one type",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* value[x] only Quantity",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.SDRules.test.ts",
+  "name": "should parse an only rule with multiple types",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* value[x] only Quantity or CodeableConcept or string",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.SDRules.test.ts",
+  "name": "should parse an only rule with one numeric type name",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* value[x] only 123",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.SDRules.test.ts",
+  "name": "should parse an only rule with multiple numeric type names",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* value[x] only 123 or 456 or 789",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.SDRules.test.ts",
+  "name": "should parse an only rule with a reference to one type",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* performer only Reference(Practitioner)",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.SDRules.test.ts",
+  "name": "should parse an only rule with a reference to multiple types",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* performer only Reference(Organization or CareTeam)",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.SDRules.test.ts",
+  "name": "should parse an only rule with a reference to multiple types with whitespace",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* performer only Reference(   Organization    or  CareTeam)",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.SDRules.test.ts",
+  "name": "should parse an only rule with a CodeableReference to one type",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* performer only CodeableReference(Practitioner)",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.SDRules.test.ts",
+  "name": "should parse an only rule with a CodeableReference to multiple types",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* performer only CodeableReference(Organization or CareTeam)",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.SDRules.test.ts",
+  "name": "should parse an only rule with a CodeableReference to multiple types with whitespace",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* performer only CodeableReference(   Organization    or  CareTeam      )",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.SDRules.test.ts",
+  "name": "should allow and translate aliases for only types",
+  "fsh_file": "Test.fsh",
+  "input": "Alias: QUANTITY = http://hl7.org/fhir/StructureDefinition/Quantity\nAlias: CODING = http://hl7.org/fhir/StructureDefinition/Coding\n\nProfile: ObservationProfile\nParent: Observation\n* value[x] only CodeableConcept or CODING or string or QUANTITY",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.SDRules.test.ts",
+  "name": "should log an error when references are listed with pipes",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* performer only Reference(Organization | CareTeam)",
+  "expects": [
+   {
+    "level": "error",
+    "regex": "Using '|' to list references is no longer supported\\..*Line: 4\\D*"
+   }
+  ],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.SDRules.test.ts",
+  "name": "should log an error when references are listed with pipes with whitespace",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* performer only Reference(   Organization  |   CareTeam)",
+  "expects": [
+   {
+    "level": "error",
+    "regex": "Using '|' to list references is no longer supported\\..*Line: 4\\D*"
+   }
+  ],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.SDRules.test.ts",
+  "name": "should parse contains rule with one item",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* component contains SystolicBP 1..1",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.SDRules.test.ts",
+  "name": "should parse contains rule with one item declaring an aliased type",
+  "fsh_file": "Test.fsh",
+  "input": "Alias: OffsetExtension = http://hl7.org/fhir/StructureDefinition/observation-timeOffset\nProfile: ObservationProfile\nParent: Observation\n* component.extension contains OffsetExtension named offset 0..1",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.SDRules.test.ts",
+  "name": "should parse contains rule with one item declaring an FSH extension type",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* component.extension contains ComponentExtension named compext 0..1\n\nExtension: ComponentExtension\nId: component-extension\n* value[x] only CodeableConcept",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.SDRules.test.ts",
+  "name": "should parse contains rules with multiple items",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* component contains SystolicBP 1..1 and DiastolicBP 2..*",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.SDRules.test.ts",
+  "name": "should parse contains rule with mutliple items, some declaring types",
+  "fsh_file": "Test.fsh",
+  "input": "Alias: FocusCodeExtension = http://hl7.org/fhir/StructureDefinition/observation-focusCode\nAlias: PreconditionExtension = http://hl7.org/fhir/StructureDefinition/observation-precondition\nProfile: ObservationProfile\nParent: Observation\n* extension contains\n    foo 0..1 and\n    FocusCodeExtension named focus 1..1 and\n    bar 0..* and\n    PreconditionExtension named pc 1..*",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.SDRules.test.ts",
+  "name": "should parse contains rules with flags",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* component contains SystolicBP 1..1 MS D and DiastolicBP 2..* MS SU",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.SDRules.test.ts",
+  "name": "should parse contains rule with item declaring a type and flags",
+  "fsh_file": "Test.fsh",
+  "input": "Alias: OffsetExtension = http://hl7.org/fhir/StructureDefinition/observation-timeOffset\nProfile: ObservationProfile\nParent: Observation\n* component.extension contains OffsetExtension named offset 0..1 MS TU",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.SDRules.test.ts",
+  "name": "should parse contains rule on a choice with two items",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* value[x] contains valueString 0..1 and valueOther 0..1\n* value[x][valueString] only string\n* value[x][valueOther] only Quantity or CodeableConcept\n* value[x][valueOther].extension 1..1",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.SDRules.test.ts",
+  "name": "should parse caret value rules with no path",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* ^description = \"foo\"\n* ^experimental = false\n* ^keyword[0] = foo#bar \"baz\"",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.SDRules.test.ts",
+  "name": "should parse caret value rules with a path",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* status ^short = \"foo\"\n* status ^sliceIsConstraining = false\n* status ^code[0] = foo#bar \"baz\"",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.SDRules.test.ts",
+  "name": "should not include non-breaking spaces as part of the caret path",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* status ^short\\u00A0= \"Non-breaking\"",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.SDRules.test.ts",
+  "name": "should add resources to the contained array using a CaretValueRule",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* ^contained = myResource",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.SDRules.test.ts",
+  "name": "should keep the raw value of a caret value rule when the value is a number or boolean",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* ^extension[0].valueAddress = 0064\n* ^extension[1].valueAddress = false",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.SDRules.test.ts",
+  "name": "should parse an obeys rule with one invariant and no path",
+  "fsh_file": "Obeys.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* obeys SomeInvariant",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.SDRules.test.ts",
+  "name": "should parse an obeys rule with one invariant and a path",
+  "fsh_file": "Obeys.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* category obeys SomeInvariant",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.SDRules.test.ts",
+  "name": "should parse an obeys rule with multiple invariants and no path",
+  "fsh_file": "Obeys.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* obeys SomeInvariant and ThisInvariant and ThatInvariant",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.SDRules.test.ts",
+  "name": "should parse an obeys rule with multiple invariants and a path",
+  "fsh_file": "Obeys.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* category obeys SomeInvariant and ThisInvariant and ThatInvariant",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.SDRules.test.ts",
+  "name": "should parse an obeys rule with a numeric invariant name",
+  "fsh_file": "Obeys.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* obeys 123",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.SDRules.test.ts",
+  "name": "should parse an insert rule with a single RuleSet",
+  "fsh_file": "Insert.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n* insert MyRuleSet",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.SDRules.test.ts",
+  "name": "should parse basic addElement rules with defaulted definition",
+  "fsh_file": "Test.fsh",
+  "input": "Resource: TestResource\n* isValid 1..1 boolean \"short boolean\"\n* stuff 0..* string \"short string\"\n* address 1..* Address \"short Address\"\n* person 0..1 Reference(Patient) \"short Reference\"\n* medication 0..1 Canonical(Medication) \"short Canonical\"\n* immunization 0..1 CodeableReference(Immunization) \"short CodeableReference\"",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.SDRules.test.ts",
+  "name": "should parse basic addElement rules with specified definition",
+  "fsh_file": "Test.fsh",
+  "input": "Resource: TestResource\n* isValid 1..1 boolean \"short boolean\" \"definition boolean\"\n* stuff 0..* string \"short string\" \"definition string\"\n* address 1..* Address \"short Address\" \"definition Address\"\n* person 0..1 Reference(Patient) \"short Reference\" \"definition Reference\"\n* medication 0..1 Canonical(Medication|4.0.1) \"short Canonical\" \"definition Canonical\"\n* immunization 0..1 CodeableReference(Immunization) \"short CodeableReference\" \"definition CodeableReference\"",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.SDRules.test.ts",
+  "name": "should parse addElement rules with multiple targetTypes",
+  "fsh_file": "Test.fsh",
+  "input": "Resource: TestResource\n* isValid 1..1 boolean or number \"short boolean\"\n* stuff 0..* string or markdown \"short string\"\n* address 1..* Address \"short Address\"\n* person 0..1 HumanName or Reference(Patient or RelatedPerson) \"short multi-type\"\n* medication 0..1 CodeableConcept or Canonical(Medication or Immunization) \"short multi-type 2\"\n* immunization 0..1 CodeableConcept or CodeableReference(Medication or Immunization) \"short multi-type 3\"",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.SDRules.test.ts",
+  "name": "should parse addElement rules with flags",
+  "fsh_file": "Test.fsh",
+  "input": "Resource: TestResource\n* isValid 1..1 MS ?! boolean \"short boolean\"\n* stuff 0..* MS SU string \"short string\"\n* address 1..* N Address \"short Address\"\n* person 0..1 D TU Reference(Patient) \"short Reference\"",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.SDRules.test.ts",
+  "name": "should parse addElement rules with docs",
+  "fsh_file": "Test.fsh",
+  "input": "Resource: TestResource\n* isValid 1..1 MS boolean \"is it valid?\"\n* stuff 0..* string \"just stuff\" \"a list of some stuff\"\n* address 1..* N Address \"current addresses\" \"at least one address is required\"\n* person 0..1 D TU Reference(Patient) \"an associated patient\" \"added for TRIAL USE\"",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.SDRules.test.ts",
+  "name": "should log an error for missing path",
+  "fsh_file": "BadPath.fsh",
+  "input": "Resource: TestResource\n* 1..1 boolean \"short boolean\"\n* stuff 0..* string \"short string\"\n* address 1..* Address \"short Address\"\n* person 0..1 Reference(Patient) \"short Reference\"",
+  "expects": [
+   {
+    "level": "error",
+    "regex": "no viable alternative at input.*File: BadPath\\.fsh.*Line: 3\\D*"
+   }
+  ],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.SDRules.test.ts",
+  "name": "should log an error for missing cardinality",
+  "fsh_file": "BadCard.fsh",
+  "input": "Resource: TestResource\n* isValid 1..1 boolean \"short boolean\"\n* stuff string \"short string\"\n* address 1..* Address \"short Address\"\n* person 0..1 Reference(Patient) \"short Reference\"",
+  "expects": [
+   {
+    "level": "error",
+    "regex": "extraneous input 'string' expecting {.*}.*File: BadCard\\.fsh.*Line: 4\\D*"
+   }
+  ],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.SDRules.test.ts",
+  "name": "should log an error when min cardinality is not specified",
+  "fsh_file": "Invalid.fsh",
+  "input": "Logical: LogicalModel\n* isInValid ..* string \"short string\"",
+  "expects": [
+   {
+    "level": "error",
+    "regex": "The 'min' cardinality attribute in AddElementRule"
+   }
+  ],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.SDRules.test.ts",
+  "name": "should log an error when max cardinality is not specified",
+  "fsh_file": "Invalid.fsh",
+  "input": "Logical: LogicalModel\n* isInValid 0.. string \"short string\"",
+  "expects": [
+   {
+    "level": "error",
+    "regex": "The 'max' cardinality attribute in AddElementRule"
+   }
+  ],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.SDRules.test.ts",
+  "name": "should log an error for extra docs/strings",
+  "fsh_file": "BadDocs.fsh)",
+  "input": "Resource: TestResource\n* isValid 1..1 MS boolean \"is it valid?\"\n* stuff 0..* string \"just stuff\" \"a list of some stuff\" \"invalid additional string\"\n* address 1..* N Address \"current addresses\" \"at least one address is required\"\n* person 0..1 D TU Reference(Patient) \"an associated patient\" \"added for TRIAL USE\"",
+  "expects": [
+   {
+    "level": "error",
+    "regex": "extraneous input.*File: BadDocs\\.fsh.*Line: 4\\D*"
+   }
+  ],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.SDRules.test.ts",
+  "name": "should log an error for missing short",
+  "fsh_file": "BadDefs.fsh",
+  "input": "Resource: TestResource\n* isValid 1..1 boolean\n* stuff 0..* string \"short string\"\n* address 1..* Address \"short Address\"\n* person 0..1 Reference(Patient) \"short Reference\"",
+  "expects": [
+   {
+    "level": "error",
+    "regex": "The 'short' attribute in AddElementRule for path 'isValid' must be specified.*File: BadDefs\\.fsh.*Line: 3\\D*"
+   }
+  ],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.SDRules.test.ts",
+  "name": "should log an error for missing targetType with docs",
+  "fsh_file": "BadType.fsh",
+  "input": "Resource: TestResource\n* isValid 1..1 boolean \"is it valid?\"\n* stuff 0..* string \"just stuff\" \"a list of some stuff\"\n* address 1..* \"current addresses\" \"at least one address is required\"\n* person 0..1 Reference(Patient) \"an associated patient\" \"added for TRIAL USE\"",
+  "expects": [
+   {
+    "level": "error",
+    "regex": "extraneous input.*File: BadType\\.fsh.*Line: 5\\D*"
+   }
+  ],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.SDRules.test.ts",
+  "name": "should log a warning for missing targetType with flags and docs",
+  "fsh_file": "BadType.fsh",
+  "input": "Resource: TestResource\n* isValid 1..1 MS ?! boolean \"is it valid?\"\n* stuff 0..* MS SU string \"just stuff\" \"a list of some stuff\"\n* address 1..* N TU \"current addresses\" \"at least one address is required\"\n* person 0..1 D TU Reference(Patient) \"an associated patient\" \"added for TRIAL USE\"",
+  "expects": [
+   {
+    "level": "warn",
+    "regex": "appears to be a flag value.*File: BadType\\.fsh.*Line: 5\\D*"
+   }
+  ],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.SDRules.test.ts",
+  "name": "should log a error for missing targetType with modifier flag and docs",
+  "fsh_file": "BadType.fsh",
+  "input": "Resource: TestResource\n* isValid 1..1 MS ?! boolean \"is it valid?\"\n* stuff 0..* MS SU string \"just stuff\" \"a list of some stuff\"\n* address 1..* N ?! \"current addresses\" \"at least one address is required\"\n* person 0..1 D TU Reference(Patient) \"an associated patient\" \"added for TRIAL USE\"",
+  "expects": [
+   {
+    "level": "error",
+    "regex": "extraneous input.*File: BadType\\.fsh.*Line: 5\\D*"
+   }
+  ],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.SDRules.test.ts",
+  "name": "should parse rules according to rule patterns for CardRule and AddElementRule",
+  "fsh_file": "BadType.fsh",
+  "input": "Resource: TestResource\n* isValid 1..1 boolean \"is it valid?\"\n* stuff 0..* string \"just stuff\" \"a list of some stuff\"\n* address 1..* \"current addresses\" \"at least one address is required\"\n* person 0..1 Reference(Patient) \"an associated patient\"",
+  "expects": [
+   {
+    "level": "error",
+    "regex": "extraneous input.*File: BadType\\.fsh.*Line: 5\\D*"
+   }
+  ],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.ValueSet.test.ts",
+  "name": "should parse a value set with additional metadata",
+  "fsh_file": "Simple.fsh",
+  "input": "ValueSet: SimpleVS\nId: SimpleVS_ID\nTitle: \"Simple Value Set\"\nDescription: \"A simple value set for testing metadata\"",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.ValueSet.test.ts",
+  "name": "should parse a value set with numeric name and id",
+  "fsh_file": "Simple.fsh",
+  "input": "ValueSet: 123\nId: 456",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.ValueSet.test.ts",
+  "name": "should only apply each metadata attribute the first time it is declared",
+  "fsh_file": "Dupe.fsh",
+  "input": "ValueSet: SimpleVS\nId: SimpleVS_ID\nTitle: \"Simple Value Set\"\nDescription: \"A simple value set for testing metadata\"\nId: DuplicateVS_ID\nTitle: \"Duplicate Value Set\"\nDescription: \"A duplicate value set for testing metadata\"",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.ValueSet.test.ts",
+  "name": "should log an error when encountering a duplicate metadata attribute",
+  "fsh_file": "Dupe.fsh",
+  "input": "ValueSet: SimpleVS\nId: SimpleVS_ID\nTitle: \"Simple Value Set\"\nDescription: \"A simple value set for testing metadata\"\nId: DuplicateVS_ID\nTitle: \"Duplicate Value Set\"\nDescription: \"A duplicate value set for testing metadata\"",
+  "expects": [
+   {
+    "level": "error",
+    "regex": "File: Dupe\\.fsh.*Line: 8\\D*"
+   }
+  ],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.ValueSet.test.ts",
+  "name": "should log an error and skip the value set when encountering a value set with a name used by another value set",
+  "fsh_file": "SameName.fsh",
+  "input": "ValueSet: SimpleVS\nTitle: \"First Value Set\"\n\nValueSet: SimpleVS\nTitle: \"Second Value Set\"",
+  "expects": [
+   {
+    "level": "error",
+    "regex": "ValueSet named SimpleVS already exists"
+   },
+   {
+    "level": "error",
+    "regex": "File: SameName\\.fsh.*Line: 5 - 6\\D*"
+   }
+  ],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.ValueSet.test.ts",
+  "name": "should parse a value set with a concept specified as SYSTEM#code",
+  "fsh_file": "Simple.fsh",
+  "input": "ValueSet: SimpleVS\n* ZOO#bear",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.ValueSet.test.ts",
+  "name": "should ignore optional include for code components",
+  "fsh_file": "Simple.fsh",
+  "input": "ValueSet: SimpleVS\n* include ZOO#bear",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.ValueSet.test.ts",
+  "name": "should parse a value set with a concept specified as #code from SYSTEM",
+  "fsh_file": "Zoo.fsh",
+  "input": "ValueSet: ZooVS\n* #hippo \"Hippopotamus\" from system ZOO",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.ValueSet.test.ts",
+  "name": "should parse a value set with a concept specified from an aliased system",
+  "fsh_file": "Zoo.fsh",
+  "input": "Alias: AQ = http://aquarium.org\n\nValueSet: ZooVS\n* #octopus \"Octopus\" from system AQ",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.ValueSet.test.ts",
+  "name": "should parse a value set with a concept specified as #code from numeric named SYSTEM",
+  "fsh_file": "Zoo.fsh",
+  "input": "ValueSet: ZooVS\n* #hippo \"Hippopotamus\" from system 123",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.ValueSet.test.ts",
+  "name": "should merge concept rules when possible",
+  "fsh_file": "Zoo.fsh",
+  "input": "ValueSet: ZooVS\n* ZOO#hippo \"Hippopotamus\"\n* #crocodile \"Crocodile\" from system ZOO\n* ZOO#alligator \"Alligator\" from valueset ReptileVS\n* CRYPTID#jackalope \"Jackalope\"\n* exclude ZOO#lion \"Lion\"\n* exclude #cobra \"Cobra\" from system ZOO\n* exclude ZOO#monitor \"Monitor lizard\" from valueset ReptileVS",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.ValueSet.test.ts",
+  "name": "should log an error when a concept component with one concept does not have a system",
+  "fsh_file": "Zoo.fsh",
+  "input": "ValueSet: ZooVS\n* #hippo",
+  "expects": [
+   {
+    "level": "error",
+    "regex": "File: Zoo\\.fsh.*Line: 3\\D*"
+   }
+  ],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.ValueSet.test.ts",
+  "name": "should log an error when a concept component has a system specified more than once",
+  "fsh_file": "Zoo.fsh",
+  "input": "ValueSet: ZooVS\n* ZOO#hippo from system ZOO",
+  "expects": [
+   {
+    "level": "error",
+    "regex": "File: Zoo\\.fsh.*Line: 3\\D*"
+   }
+  ],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.ValueSet.test.ts",
+  "name": "should log an error when both include and exclude are used on the same line",
+  "fsh_file": "Zoo.fsh",
+  "input": "ValueSet: ZooVS\n* include exclude ZOO#bear",
+  "expects": [
+   {
+    "level": "error",
+    "regex": "no viable alternative"
+   },
+   {
+    "level": "error",
+    "regex": "File: Zoo\\.fsh.*Line: 3\\D*"
+   }
+  ],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.ValueSet.test.ts",
+  "name": "should parse a value set that includes all codes from a system",
+  "fsh_file": "Zoo.fsh",
+  "input": "ValueSet: ZooVS\n* codes from system ZOO",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.ValueSet.test.ts",
+  "name": "should ignore optional include for filter components",
+  "fsh_file": "Zoo.fsh",
+  "input": "ValueSet: ZooVS\n* include codes from system ZOO",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.ValueSet.test.ts",
+  "name": "should parse a value set that includes all codes from other value sets",
+  "fsh_file": "Zoo.fsh",
+  "input": "ValueSet: ZooVS\n* codes from valueset FirstZooVS\n* codes from valueset SecondZooVS and ThirdZooVS",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.ValueSet.test.ts",
+  "name": "should parse a value set that includes all codes from an aliased value set",
+  "fsh_file": "Zoo.fsh",
+  "input": "Alias: Z1 = FirstZooVS\n\nValueSet: ZooVS\n* codes from valueset Z1",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.ValueSet.test.ts",
+  "name": "should parse a value set that includes all codes from numeric named value sets",
+  "fsh_file": "Zoo.fsh",
+  "input": "ValueSet: ZooVS\n* codes from valueset 123\n* codes from valueset 456 and 789",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.ValueSet.test.ts",
+  "name": "should parse a value set that includes all codes from a system and other value sets",
+  "fsh_file": "Zoo.fsh",
+  "input": "ValueSet: ZooVS\n* codes from system ZOO and valueset NorthZooVS and SouthZooVS",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.ValueSet.test.ts",
+  "name": "should log an error when valuesets are listed with commas",
+  "fsh_file": "Deprecated.fsh",
+  "input": "ValueSet: ZooVS\n* codes from valueset FirstZooVS, SecondZooVS",
+  "expects": [
+   {
+    "level": "error",
+    "regex": "Using ',' to list items is no longer supported"
+   },
+   {
+    "level": "error",
+    "regex": "File: Deprecated\\.fsh.*Line: 3\\D*"
+   }
+  ],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.ValueSet.test.ts",
+  "name": "should parse a value set that uses filter operator = with string value",
+  "fsh_file": "Zoo.fsh",
+  "input": "ValueSet: ZooVS\n* codes from system ZOO where version = \"2.0\"",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.ValueSet.test.ts",
+  "name": "should parse a value set that uses filter operator = with code value",
+  "fsh_file": "Zoo.fsh",
+  "input": "ValueSet: ZooVS\n* codes from system ZOO where version = #two",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.ValueSet.test.ts",
+  "name": "should parse a value set that uses filter operator with numeric property name",
+  "fsh_file": "Zoo.fsh",
+  "input": "ValueSet: ZooVS\n* codes from system ZOO where 123 = \"2.0\"",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.ValueSet.test.ts",
+  "name": "should log an error when the = filter has a non-string and non-code value",
+  "fsh_file": "Zoo.fsh",
+  "input": "ValueSet: ZooVS\n* codes from system ZOO where version = /[1-9].*/",
+  "expects": [
+   {
+    "level": "error",
+    "regex": "\"=\".*code or string"
+   },
+   {
+    "level": "error",
+    "regex": "File: Zoo\\.fsh.*Line: 3\\D*"
+   }
+  ],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.ValueSet.test.ts",
+  "name": "should parse a value set that uses filter operator is-a with a code value",
+  "fsh_file": "Ursines.fsh",
+  "input": "ValueSet: AllUrsinesVS\n* codes from system ZOO where concept is-a #bear \"Bear\"",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.ValueSet.test.ts",
+  "name": "should parse a value set that uses filter operator is-a with a string value",
+  "fsh_file": "Ursines.fsh",
+  "input": "ValueSet: AllUrsinesVS\n* codes from system ZOO where concept is-a \"Bear\"",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.ValueSet.test.ts",
+  "name": "should log an error when the is-a filter has a non-code and non-string value",
+  "fsh_file": "Ursines.fsh",
+  "input": "ValueSet: AllUrsinesVS\n* codes from system ZOO where concept is-a /([Bb]ear)/",
+  "expects": [
+   {
+    "level": "error",
+    "regex": "\"is-a\".*code or string"
+   },
+   {
+    "level": "error",
+    "regex": "File: Ursines\\.fsh.*Line: 3\\D*"
+   }
+  ],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.ValueSet.test.ts",
+  "name": "should parse a value set that uses filter operator descendent-of with a code value",
+  "fsh_file": "Felines.fsh",
+  "input": "ValueSet: AllFelinesVS\n* codes from system ZOO where concept descendent-of ZOO#cat",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.ValueSet.test.ts",
+  "name": "should parse a value set that uses filter operator descendant-of, which is the same as descendent-of, but spelled correctly",
+  "fsh_file": "Felines.fsh",
+  "input": "ValueSet: AllFelinesVS\n* codes from system ZOO where concept descendant-of ZOO#cat",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.ValueSet.test.ts",
+  "name": "should parse a value set that uses filter operator descendent-of with a string value",
+  "fsh_file": "Felines.fsh",
+  "input": "ValueSet: AllFelinesVS\n* codes from system ZOO where concept descendent-of \"Cat\"",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.ValueSet.test.ts",
+  "name": "should log an error when the descendent-of filter has a non-code and non-string value",
+  "fsh_file": "Felines.fsh",
+  "input": "ValueSet: AllFelinesVS\n* codes from system ZOO where concept descendent-of /([Cc]at)/",
+  "expects": [
+   {
+    "level": "error",
+    "regex": "\"descendent-of\".*code or string"
+   },
+   {
+    "level": "error",
+    "regex": "File: Felines\\.fsh.*Line: 3\\D*"
+   }
+  ],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.ValueSet.test.ts",
+  "name": "should parse a value set that uses filter operator is-not-a with a code value",
+  "fsh_file": "NonCanine.fsh",
+  "input": "ValueSet: NonCanineVS\n* codes from system ZOO where concept is-not-a #dog",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.ValueSet.test.ts",
+  "name": "should parse a value set that uses filter operator is-not-a with a string value",
+  "fsh_file": "NonCanine.fsh",
+  "input": "ValueSet: NonCanineVS\n* codes from system ZOO where concept is-not-a \"dog\"",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.ValueSet.test.ts",
+  "name": "should log an error when the is-not-a filter has a non-code and non-string value",
+  "fsh_file": "NonCanine.fsh",
+  "input": "ValueSet: NonCanineVS\n* codes from system ZOO where concept is-not-a /([Dd]og)/",
+  "expects": [
+   {
+    "level": "error",
+    "regex": "\"is-not-a\".*code or string"
+   },
+   {
+    "level": "error",
+    "regex": "File: NonCanine\\.fsh.*Line: 3\\D*"
+   }
+  ],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.ValueSet.test.ts",
+  "name": "should parse a value set that uses filter operator regex with a regex value",
+  "fsh_file": "MostlyDogs.fsh",
+  "input": "ValueSet: ProbablyDogsVS\n* codes from system ZOO where display regex /([Dd]og)|([Cc]anine)/",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.ValueSet.test.ts",
+  "name": "should parse a value set that uses filter operator regex with a string value",
+  "fsh_file": "MostlyDogs.fsh",
+  "input": "ValueSet: ProbablyDogsVS\n* codes from system ZOO where display regex \"Dog|Canine\"",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.ValueSet.test.ts",
+  "name": "should log an error when the regex filter has a non-regex and non-string value",
+  "fsh_file": "MostlyDogs.fsh",
+  "input": "ValueSet: ProbablyDogsVS\n* codes from system ZOO where display regex #Dog|Canine",
+  "expects": [
+   {
+    "level": "error",
+    "regex": "\"regex\".*regex or string"
+   },
+   {
+    "level": "error",
+    "regex": "File: MostlyDogs\\.fsh.*Line: 3\\D*"
+   }
+  ],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.ValueSet.test.ts",
+  "name": "should parse a value set that uses filter operator in with a string value",
+  "fsh_file": "CatDog.fsh",
+  "input": "ValueSet: CatAndDogVS\n* codes from system ZOO where concept in \"#cat, #dog\"",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.ValueSet.test.ts",
+  "name": "should parse a value set that use filter operator in with a code value",
+  "fsh_file": "CatDog.fsh",
+  "input": "ValueSet: CatAndDogVS\n* codes from system ZOO where concept in ZOO#cat",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.ValueSet.test.ts",
+  "name": "should log an error when the in filter has a non-string or non-code value",
+  "fsh_file": "CatDog.fsh",
+  "input": "ValueSet: CatAndDogVS\n* codes from system ZOO where concept in true",
+  "expects": [
+   {
+    "level": "error",
+    "regex": "\"in\".*code or string"
+   },
+   {
+    "level": "error",
+    "regex": "File: CatDog\\.fsh.*Line: 3\\D*"
+   }
+  ],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.ValueSet.test.ts",
+  "name": "should parse a value set that uses filter operator not-in with a string value",
+  "fsh_file": "NoGoose.fsh",
+  "input": "ValueSet: NoGooseVS\n* codes from system ZOO where concept not-in \"#goose\"",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.ValueSet.test.ts",
+  "name": "should parse a value set that uses filter operator not-in with a code value",
+  "fsh_file": "NoGoose.fsh",
+  "input": "ValueSet: NoGooseVS\n* codes from system ZOO where concept not-in #goose",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.ValueSet.test.ts",
+  "name": "should log an error when the not-in filter has a non-string and non-code value",
+  "fsh_file": "NoGoose.fsh",
+  "input": "ValueSet: NoGooseVS\n* codes from system ZOO where concept not-in /duck|goose/",
+  "expects": [
+   {
+    "level": "error",
+    "regex": "\"not-in\".*code or string"
+   },
+   {
+    "level": "error",
+    "regex": "File: NoGoose\\.fsh.*Line: 3\\D*"
+   }
+  ],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.ValueSet.test.ts",
+  "name": "should parse a value set that uses filter operator generalizes with a code value",
+  "fsh_file": "Mustelids.fsh",
+  "input": "ValueSet: MustelidVS\n* codes from system ZOO where concept generalizes #mustela-nivalis \"least weasel\"",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.ValueSet.test.ts",
+  "name": "should parse a value set that uses filter operator generalizes with a string value",
+  "fsh_file": "Mustelids.fsh",
+  "input": "ValueSet: MustelidVS\n* codes from system ZOO where concept generalizes \"least weasel\"",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.ValueSet.test.ts",
+  "name": "should log an error when the generalizes filter has a non-code value",
+  "fsh_file": "Mustelids.fsh",
+  "input": "ValueSet: MustelidVS\n* codes from system ZOO where concept generalizes /least weasel/",
+  "expects": [
+   {
+    "level": "error",
+    "regex": "\"generalizes\".*code or string"
+   },
+   {
+    "level": "error",
+    "regex": "File: Mustelids\\.fsh.*Line: 3\\D*"
+   }
+  ],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.ValueSet.test.ts",
+  "name": "should parse a value set that uses filter operator exists with a boolean value",
+  "fsh_file": "Zoo.fsh",
+  "input": "ValueSet: ZooVS\n* codes from system ZOO where display exists true\n* codes from system ZOO where version exists",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.ValueSet.test.ts",
+  "name": "should parse a value set that chains filter operators",
+  "fsh_file": "Zoo.fsh",
+  "input": "ValueSet: ZooVS\n* codes from system ZOO where\n  display exists true and\n  variant exists false and\n  extension exists true",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.ValueSet.test.ts",
+  "name": "should parse a value set that uses filter operator exists with a string value that looks like a boolean",
+  "fsh_file": "Zoo.fsh",
+  "input": "ValueSet: ZooVS\n* codes from system ZOO where display exists \"true\"\n* codes from system ZOO where version exists \"false\"",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.ValueSet.test.ts",
+  "name": "should log an error when the exists filter has a string value that does not look like a boolean",
+  "fsh_file": "Zoo.fsh",
+  "input": "ValueSet: ZooVS\n* codes from system ZOO where display exists \"display\"\n* codes from system ZOO where version exists \"True\"\n* codes from system ZOO where variant exists \"FALSE\"",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.ValueSet.test.ts",
+  "name": "should log an error when the exists filter has a non-boolean and non-string value",
+  "fsh_file": "Zoo.fsh",
+  "input": "ValueSet: ZooVS\n* codes from system ZOO where display exists /true/",
+  "expects": [
+   {
+    "level": "error",
+    "regex": "\"exists\".*boolean value or a string value of \"true\" or \"false\""
+   },
+   {
+    "level": "error",
+    "regex": "File: Zoo\\.fsh.*Line: 3\\D*"
+   }
+  ],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.ValueSet.test.ts",
+  "name": "should parse a value set that uses multiple filters on a single component",
+  "fsh_file": "Zoo.fsh",
+  "input": "ValueSet: ZooTwoVS\n* codes from system ZOO where version regex /2\\./ and display exists",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.ValueSet.test.ts",
+  "name": "should parse a value set with an excluded component",
+  "fsh_file": "Available.fsh",
+  "input": "ValueSet: AvailableVS\n* codes from system ZOO\n* exclude codes from valueset UnavailableAnimalVS",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.ValueSet.test.ts",
+  "name": "should log an error when a filter has an invalid operator",
+  "fsh_file": "Zoo.fsh",
+  "input": "ValueSet: ZooVS\n* codes from system ZOO where display resembles \"cat\"",
+  "expects": [
+   {
+    "level": "error",
+    "regex": "File: Zoo\\.fsh.*Line: 3\\D*"
+   }
+  ],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.ValueSet.test.ts",
+  "name": "should log an error when a filter (other than the exists filter) has no value",
+  "fsh_file": "Zoo.fsh",
+  "input": "ValueSet: ZooVS\n* codes from system ZOO where display regex",
+  "expects": [
+   {
+    "level": "error",
+    "regex": "File: Zoo\\.fsh.*Line: 3\\D*"
+   }
+  ],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.ValueSet.test.ts",
+  "name": "should log an error when a filter component has at least one filter, but no system",
+  "fsh_file": "Zoo.fsh",
+  "input": "ValueSet: ZooVS\n* codes from valueset OtherZooVS where version = \"2.0\"",
+  "expects": [
+   {
+    "level": "error",
+    "regex": "File: Zoo\\.fsh.*Line: 3\\D*"
+   }
+  ],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.ValueSet.test.ts",
+  "name": "should parse a value set that uses a CaretValueRule",
+  "fsh_file": "Test.fsh",
+  "input": "ValueSet: ZooVS\n* ^publisher = \"foo\"",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.ValueSet.test.ts",
+  "name": "should parse a value set that uses CaretValueRules alongside rules",
+  "fsh_file": "Simple.fsh",
+  "input": "ValueSet: SimpleVS\n* ZOO#bear\n* ^publisher = \"foo\"",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.ValueSet.test.ts",
+  "name": "should log an error when a CaretValueRule contains a path before ^",
+  "fsh_file": "Simple.fsh",
+  "input": "ValueSet: SimpleVS\n* mypath ^publisher = \"foo\"",
+  "expects": [
+   {
+    "level": "error",
+    "regex": "File: Simple\\.fsh.*Line: 3\\D*"
+   }
+  ],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.ValueSet.test.ts",
+  "name": "should parse a value set with a code caret rule",
+  "fsh_file": "Zoo.fsh",
+  "input": "ValueSet: ZooVS\n* ZOO#hippo \"Hippopotamus\"\n* ZOO#hippo ^designation.value = \"hipop\u00f3tamo\"",
+  "expects": [],
+  "no_messages": true
+ },
+ {
+  "file": "FSHImporter.ValueSet.test.ts",
+  "name": "should log an error when a caret rule has more than one concept",
+  "fsh_file": "Zoo.fsh",
+  "input": "ValueSet: ZooVS\n* ZOO#hippo \"Hippopotamus\"\n* ZOO#rhino \"Rhinoceros\"\n* ZOO#hippo ZOO#rhino ^designation.value = \"hipop\u00f3tamo\"",
+  "expects": [
+   {
+    "level": "error",
+    "regex": "Only one concept may be listed before a caret rule on a ValueSet\\..*File: Zoo\\.fsh.*Line: 5\\D*"
+   }
+  ],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.ValueSet.test.ts",
+  "name": "should parse an insert rule with a single RuleSet",
+  "fsh_file": "Insert.fsh",
+  "input": "ValueSet: MyVS\n* insert MyRuleSet",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.ValueSet.test.ts",
+  "name": "should parse an insert rule at a concept",
+  "fsh_file": "Insert.fsh",
+  "input": "ValueSet: ZooVS\n* ZOO#hippo\n* ZOO#hippo insert DesignationRules",
+  "expects": [],
+  "no_messages": true
+ },
+ {
+  "file": "FSHImporter.ValueSet.test.ts",
+  "name": "should log an error when an insert rule has more than one concept",
+  "fsh_file": "Insert.fsh",
+  "input": "ValueSet: ZooVS\n* ZOO#hippo ZOO#big-hippo insert DesignationRules",
+  "expects": [
+   {
+    "level": "error",
+    "regex": "Only one concept may be listed before an insert rule on a ValueSet\\..*File: Insert\\.fsh.*Line: 3\\D*"
+   }
+  ],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.context.test.ts",
+  "name": "should parse non-indented rules",
+  "fsh_file": "Context.fsh",
+  "input": "Instance: Foo\nInstanceOf: Patient\n* name.family = \"foo\"\n* name.given = \"bar\"",
+  "expects": [],
+  "no_messages": true
+ },
+ {
+  "file": "FSHImporter.context.test.ts",
+  "name": "should parse a rule that has context while ignoring whitespace lines",
+  "fsh_file": "Context.fsh",
+  "input": "Instance: Foo\nInstanceOf: Patient\n* name.family = \"foo\"\n\n  * id = \"foo-id\"",
+  "expects": [],
+  "no_messages": true
+ },
+ {
+  "file": "FSHImporter.context.test.ts",
+  "name": "should parse a rule that has context",
+  "fsh_file": "Context.fsh",
+  "input": "Instance: Foo\nInstanceOf: Patient\n* name.family = \"foo\"\n  * id = \"foo-id\"",
+  "expects": [],
+  "no_messages": true
+ },
+ {
+  "file": "FSHImporter.context.test.ts",
+  "name": "should parse multiple rules at the same level of context",
+  "fsh_file": "Context.fsh",
+  "input": "Profile: Foo\nParent: Patient\n* name 1..1\n  * family 1..1\n  * given 1..1",
+  "expects": [],
+  "no_messages": true
+ },
+ {
+  "file": "FSHImporter.context.test.ts",
+  "name": "should preserve higher level context when decreasing indent",
+  "fsh_file": "Context.fsh",
+  "input": "Profile: Foo\nParent: Patient\n* name 1..1\n  * family 1..1\n    * id 1..1\n      * id 1..1\n  * given 1..1",
+  "expects": [],
+  "no_messages": true
+ },
+ {
+  "file": "FSHImporter.context.test.ts",
+  "name": "should parse a rule that only sets a path context on a StructureDefinition",
+  "fsh_file": "Context.fsh",
+  "input": "Profile: Foo\nParent: Patient\n* name",
+  "expects": [],
+  "no_messages": true
+ },
+ {
+  "file": "FSHImporter.context.test.ts",
+  "name": "should parse a rule that only sets a path context on an Instance",
+  "fsh_file": "Context.fsh",
+  "input": "Instance: Foo\nInstanceOf: Patient\n* name",
+  "expects": [],
+  "no_messages": true
+ },
+ {
+  "file": "FSHImporter.context.test.ts",
+  "name": "should use context from rules that only set context on StructureDefinitions",
+  "fsh_file": "Context.fsh",
+  "input": "Profile: Foo\nParent: Patient\n* name\n  * family 1..1",
+  "expects": [],
+  "no_messages": true
+ },
+ {
+  "file": "FSHImporter.context.test.ts",
+  "name": "should use context from rules that only set context on Instances",
+  "fsh_file": "Context.fsh",
+  "input": "Instance: Foo\nInstanceOf: Patient\n* name\n  * family = \"Foo\"",
+  "expects": [],
+  "no_messages": true
+ },
+ {
+  "file": "FSHImporter.context.test.ts",
+  "name": "should change + to = when setting context on children of soft indexed rules on StructureDefs",
+  "fsh_file": "Context.fsh",
+  "input": "Profile: Foo\nParent: Questionnaire\n* item[+]\n  * linkId = \"foo\"\n  * item[+]\n    * linkId = \"bar\"",
+  "expects": [],
+  "no_messages": true
+ },
+ {
+  "file": "FSHImporter.context.test.ts",
+  "name": "should change + to = when setting context on children of soft indexed rules on Instances",
+  "fsh_file": "Context.fsh",
+  "input": "Instance: Foo\nInstanceOf: Questionnaire\n* item[+]\n  * linkId = \"foo\"\n  * item[+]\n    * linkId = \"bar\"",
+  "expects": [],
+  "no_messages": true
+ },
+ {
+  "file": "FSHImporter.context.test.ts",
+  "name": "should keep + on consecutive path rules when setting context on first child of soft indexed rules on StructureDefinitions",
+  "fsh_file": "Context.fsh",
+  "input": "Profile: Foo\nParent: Questionnaire\n* item[+]\n  * item[+]\n    * linkId = \"bar\"",
+  "expects": [],
+  "no_messages": true
+ },
+ {
+  "file": "FSHImporter.context.test.ts",
+  "name": "should change + to = on consecutive path rules when setting context on first child of soft indexed rules on Instances",
+  "fsh_file": "Context.fsh",
+  "input": "Instance: Foo\nInstanceOf: Questionnaire\n* item[+]\n  * item[+]\n    * linkId = \"bar\"",
+  "expects": [],
+  "no_messages": true
+ },
+ {
+  "file": "FSHImporter.context.test.ts",
+  "name": "should log a warning for path rules that increment the index but then do not use it on StructureDefinitions",
+  "fsh_file": "Context.fsh",
+  "input": "Profile: Foo\nParent: Questionnaire\n* item[+]\n* item[+]\n  * linkId = \"bar\"",
+  "expects": [
+   {
+    "level": "warn",
+    "regex": "the previous path context will be ignored(.|\\s)*Line: 5$"
+   }
+  ],
+  "no_messages": true
+ },
+ {
+  "file": "FSHImporter.context.test.ts",
+  "name": "should parse path rules that increment the index but then do not use it on Instances",
+  "fsh_file": "Context.fsh",
+  "input": "Instance: Foo\nInstanceOf: Questionnaire\n* item[+]\n* item[+]\n  * linkId = \"bar\"",
+  "expects": [],
+  "no_messages": true
+ },
+ {
+  "file": "FSHImporter.context.test.ts",
+  "name": "should not log a warning for non-path rules that increment the index",
+  "fsh_file": "Context.fsh",
+  "input": "Instance: Foo\nInstanceOf: Questionnaire\n* item[+].linkId = \"foo\"\n* item[+].linkId = \"bar\"",
+  "expects": [],
+  "no_messages": true
+ },
+ {
+  "file": "FSHImporter.context.test.ts",
+  "name": "should change + to = when setting context on children of soft indexed rules which are not path rules on StructureDefinitions",
+  "fsh_file": "Context.fsh",
+  "input": "Profile: Foo\nParent: Questionnaire\n* item[+]\n  * linkId = \"foo\"\n  * item[+].linkId = \"bar\"",
+  "expects": [],
+  "no_messages": true
+ },
+ {
+  "file": "FSHImporter.context.test.ts",
+  "name": "should change + to = when setting context on children of soft indexed rules which are not path rules on Instances",
+  "fsh_file": "Context.fsh",
+  "input": "Instance: Foo\nInstanceOf: Questionnaire\n* item[+]\n  * linkId = \"foo\"\n  * item[+].linkId = \"bar\"",
+  "expects": [],
+  "no_messages": true
+ },
+ {
+  "file": "FSHImporter.context.test.ts",
+  "name": "should change + to = when setting context on grandchildren of soft indexed rules which are not path rules on StructureDefinitions",
+  "fsh_file": "Context.fsh",
+  "input": "Profile: Foo\nParent: Questionnaire\n* item[+]\n  * code = #foo\n    * display = \"Foo\"",
+  "expects": [],
+  "no_messages": true
+ },
+ {
+  "file": "FSHImporter.context.test.ts",
+  "name": "should change + to = when setting context on grandchildren of soft indexed rules which are not path rules on Instances",
+  "fsh_file": "Context.fsh",
+  "input": "Instance: Foo\nInstanceOf: Questionnaire\n* item[+]\n  * code = #foo\n    * display = \"Foo\"",
+  "expects": [],
+  "no_messages": true
+ },
+ {
+  "file": "FSHImporter.context.test.ts",
+  "name": "should change nested + to = when setting context on children of soft indexed rules on StructureDefinitions",
+  "fsh_file": "Context.fsh",
+  "input": "Profile: Foo\nParent: Questionnaire\n* item[+].item[+]\n  * linkId = \"foo\"\n  * item[+]\n    * linkId = \"bar\"",
+  "expects": [],
+  "no_messages": true
+ },
+ {
+  "file": "FSHImporter.context.test.ts",
+  "name": "should change nested + to = when setting context on children of soft indexed rules on Instances",
+  "fsh_file": "Context.fsh",
+  "input": "Instance: Foo\nInstanceOf: Questionnaire\n* item[+].item[+]\n  * linkId = \"foo\"\n  * item[+]\n    * linkId = \"bar\"",
+  "expects": [],
+  "no_messages": true
+ },
+ {
+  "file": "FSHImporter.context.test.ts",
+  "name": "should parse child rules that have a blank path",
+  "fsh_file": "Context.fsh",
+  "input": "Profile: Foo\nParent: Patient\n* name 1..1\n  * ^short = \"foo\"\n  * obeys inv1",
+  "expects": [],
+  "no_messages": true
+ },
+ {
+  "file": "FSHImporter.context.test.ts",
+  "name": "should apply context to multiple paths",
+  "fsh_file": "Context.fsh",
+  "input": "Profile: Foo\nParent: Patient\n* name\n  * family and given MS",
+  "expects": [],
+  "no_messages": true
+ },
+ {
+  "file": "FSHImporter.context.test.ts",
+  "name": "should apply the last path in a list when multiple paths are used to set context",
+  "fsh_file": "Context.fsh",
+  "input": "Profile: Foo\nParent: Patient\n* name and birthDate MS\n  * ^short = \"foo\"",
+  "expects": [],
+  "no_messages": true
+ },
+ {
+  "file": "FSHImporter.context.test.ts",
+  "name": "should apply context to AddElement rules",
+  "fsh_file": "Context.fsh",
+  "input": "Logical: Human\n* family 0..1 BackboneElement \"Family\"\n  * mother 0..2 string \"Mother\"\n  * father 0..2 string \"Father\"",
+  "expects": [],
+  "no_messages": true
+ },
+ {
+  "file": "FSHImporter.context.test.ts",
+  "name": "should set the context correctly when a rule with . path is followed by a caret rule with no path",
+  "fsh_file": "Context.fsh",
+  "input": "Extension: TestExtension\n* value[x] only boolean\n* . 0..1\n  * ^short = \"A test extension.\"\n  * ^definition = \"Yep.  It is a test extension.\"\n* ^context.expression = \"Patient\"",
+  "expects": [],
+  "no_messages": true
+ },
+ {
+  "file": "FSHImporter.context.test.ts",
+  "name": "should log an error when a . rule is indented",
+  "fsh_file": "Context.fsh",
+  "input": "Profile: Foo\nParent: Patient\n* name 1..1\n  * . ^short = \"foo\"",
+  "expects": [
+   {
+    "level": "error",
+    "regex": "The special '\\.' path"
+   }
+  ],
+  "no_messages": true
+ },
+ {
+  "file": "FSHImporter.context.test.ts",
+  "name": "should log an error when a rule is indented below a rule without a path",
+  "fsh_file": "Context.fsh",
+  "input": "Profile: Foo\nParent: Patient\n* ^url = \"http://example.org\"\n  * name 1..1",
+  "expects": [
+   {
+    "level": "error",
+    "regex": "Rule cannot be indented"
+   }
+  ],
+  "no_messages": true
+ },
+ {
+  "file": "FSHImporter.context.test.ts",
+  "name": "should log an error when a rule is indented an invalid amount of spaces",
+  "fsh_file": "Context.fsh",
+  "input": "Instance: Foo\nInstanceOf: Patient\n* name.family = \"foo\"\n * id = \"bar\"",
+  "expects": [
+   {
+    "level": "error",
+    "regex": "Unable to determine path context.*1 space"
+   }
+  ],
+  "no_messages": true
+ },
+ {
+  "file": "FSHImporter.context.test.ts",
+  "name": "should log an error when the first rule of a definition is indented",
+  "fsh_file": "Context.fsh",
+  "input": "Instance: Foo\nInstanceOf: Patient\n  * name.family = \"foo\"\n* id = \"bar\"",
+  "expects": [
+   {
+    "level": "error",
+    "regex": "first rule of a definition must be left-aligned"
+   }
+  ],
+  "no_messages": true
+ },
+ {
+  "file": "FSHImporter.context.test.ts",
+  "name": "should log an error when a rule is indented too deeply",
+  "fsh_file": "Context.fsh",
+  "input": "Instance: Foo\nInstanceOf: Patient\n* name.family = \"foo\"\n    * id = \"bar\"",
+  "expects": [
+   {
+    "level": "error",
+    "regex": "indented too deeply"
+   }
+  ],
+  "no_messages": true
+ },
+ {
+  "file": "FSHImporter.context.test.ts",
+  "name": "should log an error when a ValueSetFilterComponentRule is indented",
+  "fsh_file": "Context.fsh",
+  "input": "ValueSet: Foo\n* include codes from system http://example.org\n  * include codes from system http://indent.org",
+  "expects": [
+   {
+    "level": "error",
+    "regex": "rule that does not use a path cannot be indented"
+   }
+  ],
+  "no_messages": true
+ },
+ {
+  "file": "FSHImporter.context.test.ts",
+  "name": "should log an error when a ValueSetConceptComponentRule is indented",
+  "fsh_file": "Context.fsh",
+  "input": "ValueSet: Foo\n* http://example.org#foo\n  * http://example.org#bar",
+  "expects": [
+   {
+    "level": "error",
+    "regex": "rule that does not use a path cannot be indented"
+   }
+  ],
+  "no_messages": true
+ },
+ {
+  "file": "FSHImporter.context.test.ts",
+  "name": "should parse a code system with indented hierarchical rules",
+  "fsh_file": "Zoo.fsh",
+  "input": "CodeSystem: ZOO\n* #bear \"Bear\" \"A member of family Ursidae.\"\n  * #sunbear \"Sun bear\" \"Helarctos malayanus\"\n    * #ursula \"Ursula the sun bear\"",
+  "expects": [],
+  "no_messages": true
+ },
+ {
+  "file": "FSHImporter.context.test.ts",
+  "name": "should parse a code system that uses an indented CaretValueRule on a top-level concept",
+  "fsh_file": "Zoo.fsh",
+  "input": "CodeSystem: ZOO\n* #anteater \"Anteater\"\n  * ^property[0].valueString = \"Their threat pose is really cute.\"",
+  "expects": [],
+  "no_messages": true
+ },
+ {
+  "file": "FSHImporter.context.test.ts",
+  "name": "should parse a code system that uses an indented CaretValueRule on a nested concept",
+  "fsh_file": "Zoo.fsh",
+  "input": "CodeSystem: ZOO\n* #anteater \"Anteater\"\n  * #northern \"Northern tamandua\"\n    * ^property[0].valueString = \"They are strong climbers.\"",
+  "expects": [],
+  "no_messages": true
+ },
+ {
+  "file": "FSHImporter.context.test.ts",
+  "name": "should parse a code system that uses an indented InsertRule on a top-level concept",
+  "fsh_file": "Zoo.fsh",
+  "input": "CodeSystem: ZOO\n* #anteater \"Anteater\"\n  * insert MyRuleSet",
+  "expects": [],
+  "no_messages": true
+ },
+ {
+  "file": "FSHImporter.context.test.ts",
+  "name": "should allow code path context to be set by referencing an existing top-level code",
+  "fsh_file": "Zoo.fsh",
+  "input": "CodeSystem: ZOO\n* #anteater \"Anteater\"\n  * #northern \"Northern tamandua\"\n    * ^property[0].valueString = \"They are strong climbers.\"\n* #anteater\n  * ^property[0].valueString = \"Their threat pose is really cute.\"",
+  "expects": [],
+  "no_messages": true
+ },
+ {
+  "file": "FSHImporter.context.test.ts",
+  "name": "should allow code path context to be set by referencing an existing nested code",
+  "fsh_file": "Zoo.fsh",
+  "input": "CodeSystem: ZOO\n* #anteater \"Anteater\"\n  * #northern \"Northern tamandua\"\n  * #southern \"Southern tamandua\"\n* #anteater #northern\n  * ^property[0].valueString = \"They are strong climbers.\"",
+  "expects": [],
+  "no_messages": true
+ },
+ {
+  "file": "FSHImporter.context.test.ts",
+  "name": "should parse a rule set that uses an indented CaretValueRule on a top-level concept",
+  "fsh_file": "Zoo.fsh",
+  "input": "RuleSet: ZOO\n* #anteater \"Anteater\"\n  * ^property[0].valueString = \"Their threat pose is really cute.\"",
+  "expects": [],
+  "no_messages": true
+ },
+ {
+  "file": "FSHImporter.context.test.ts",
+  "name": "should parse a value set that uses an indented CaretValueRule after a ValueSetConceptComponentRule",
+  "fsh_file": "Zoo.fsh",
+  "input": "ValueSet: ZooVS\n* ZOO#hippo \"Hippopotamus\"\n  * ^designation.value = \"hipop\u00f3tamo\"\n  * ^designation.language = \"es\"\n* include ZOO#anteater \"Anteater\"\n  * ^designation.value = \"fourmilier\"\n  * ^designation.language = \"fr\"\n* exclude ZOO#bear \"Bear\"\n  * ^designation.value = \"oso\"\n  * ^designation.language = \"es\"",
+  "expects": [],
+  "no_messages": true
+ },
+ {
+  "file": "FSHImporter.context.test.ts",
+  "name": "should parse a value set that uses an indented CaretValueRule after a ValueSetConceptComponentRule with the from keyword",
+  "fsh_file": "Zoo.fsh",
+  "input": "ValueSet: ZooVS\n* #hippo \"Hippopotamus\" from system ZOO\n  * ^designation.value = \"hipop\u00f3tamo\"\n  * ^designation.language = \"es\"\n* include #anteater \"Anteater\" from system ZOO\n  * ^designation.value = \"fourmilier\"\n  * ^designation.language = \"fr\"\n* exclude #bear \"Bear\" from system ZOO\n  * ^designation.value = \"oso\"\n  * ^designation.language = \"es\"",
+  "expects": [],
+  "no_messages": true
+ },
+ {
+  "file": "FSHImporter.context.test.ts",
+  "name": "should parse a value set that uses an indented InsertRule after a ValueSetConceptComponentRule",
+  "fsh_file": "Zoo.fsh",
+  "input": "ValueSet: ZooVS\n* ZOO#hippo \"Hippopotamus\"\n  * insert MyRuleSet\n* include ZOO#anteater \"Anteater\"\n  * insert OtherRuleSet\n* exclude ZOO#bear \"Bear\"\n  * insert ThirdRuleSet",
+  "expects": [],
+  "no_messages": true
+ },
+ {
+  "file": "FSHImporter.context.test.ts",
+  "name": "should parse a value set that uses a root-level CaretValueRule after a ValueSetConceptComponentRule",
+  "fsh_file": "Zoo.fsh",
+  "input": "ValueSet: ZooVS\n* ZOO#hippo \"Hippopotamus\"\n* ^publisher = \"foo\"\n* include ZOO#anteater \"Anteater\"\n* ^immutable = false\n* exclude ZOO#bear \"Bear\"\n* ^purpose = \"We like animals.\"",
+  "expects": [],
+  "no_messages": true
+ },
+ {
+  "file": "FSHImporter.context.test.ts",
+  "name": "should parse a value set that uses a root-level CaretValueRule after a concept-level CaretValueRule",
+  "fsh_file": "Zoo.fsh",
+  "input": "ValueSet: ZooVS\n* ZOO#hippo \"Hippopotamus\"\n* ZOO#hippo ^designation.value = \"hipop\u00f3tamo\"\n* ^publisher = \"foo\"\n* include ZOO#anteater \"Anteater\"\n* ZOO#anteater ^designation.value = \"fourmilier\"\n* ^immutable = false\n* exclude ZOO#bear \"Bear\"\n  * ^designation.value = \"oso\"\n* ^purpose = \"We like animals.\"",
+  "expects": [],
+  "no_messages": true
+ },
+ {
+  "file": "FSHImporter.context.test.ts",
+  "name": "should log an error when parsing a value set that uses an indented CaretValueRule after a ValueSetFilterComponentRule",
+  "fsh_file": "Zoo.fsh",
+  "input": "ValueSet: ZooVS\n* include codes from system ZOO\n  * ^inactive = true",
+  "expects": [
+   {
+    "level": "error",
+    "regex": "Rule cannot be indented below rule which has no path.*File: Zoo\\.fsh.*Line: 4\\D*"
+   }
+  ],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.context.test.ts",
+  "name": "should log an error when parsing a value set that uses an indented InsertRule after a ValueSetFilterComponentRule",
+  "fsh_file": "Zoo.fsh",
+  "input": "ValueSet: ZooVS\n* include codes from system ZOO\n  * insert MyRuleSet",
+  "expects": [
+   {
+    "level": "error",
+    "regex": "Rule cannot be indented below rule which has no path.*File: Zoo\\.fsh.*Line: 4\\D*"
+   }
+  ],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.context.test.ts",
+  "name": "should log an error when parsing a value set that uses an indented InsertRule with a concept after a ValueSetConceptComponentRule",
+  "fsh_file": "Zoo.fsh",
+  "input": "ValueSet: ZooVS\n* ZOO#hippo \"Hippopotamus\"\n  * ZOO#big-hippo insert MyRuleSet",
+  "expects": [
+   {
+    "level": "error",
+    "regex": "Only one concept may be listed before an insert rule on a ValueSet\\..*File: Zoo\\.fsh.*Line: 4\\D*"
+   }
+  ],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.test.ts",
+  "name": "should recover from extraneous input errors from antlr",
+  "fsh_file": "Extra.fsh",
+  "input": "OOPS!\n\nProfile: Foo\nParent: FooDad",
+  "expects": [
+   {
+    "level": "error",
+    "regex": "File: Extra\\.fsh.*Line: 2\\D*"
+   }
+  ],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.test.ts",
+  "name": "should parse escaped double-quote and backslash characters in strings",
+  "fsh_file": "Escape.fsh",
+  "input": "Profile: Escape\nParent: Observation\nTitle: \"Can \\\"you\\\" escape \\\\ this \\\\ string?\"\n* code = #\"This \\\\ code \\\"is quite\\\" challenging \\\\to escape\"",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.test.ts",
+  "name": "should parse escaped hash and backslash characters in system identifiers in codings",
+  "fsh_file": "HashBrowns.fsh",
+  "input": "Profile: HashBrowns\nParent: Observation\n* code = https://breakfast.com/good\\\\food\\#potatoes#hash#browns\n* extraCode = https://lastly.com/backslash\\\\#last\n* bonusCode = \\\\\\\\#just_backslash \"Just Backslash\"",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.test.ts",
+  "name": "should parse escaped unicode characters in strings and multiline strings",
+  "fsh_file": "Escape.fsh",
+  "input": "Profile: Escape\nParent: Observation\nTitle: \"Just going to \\u270E in some unicode\"\n* valueString = \"This cool \\u2603 can read music in \\uD834\\uDD1E!\"\n* category.text = \"\"\"\n  When there is a sign of \\u2744, often school is canceled.\n  Kids can stay home and play with \\uD83C\\uDC31 or do anything!\n\"\"\"",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.test.ts",
+  "name": "should parse unescaped unicode characters in strings and multiline strings",
+  "fsh_file": "Escape.fsh",
+  "input": "Profile: Escape\nParent: Observation\nTitle: \"Just going to \u270e in some unicode\"\n* valueString = \"This cool \u2603 can read music in \ud834\udd1e!\"\n* category.text = \"\"\"\n  When there is a sign of \u2744, often school is canceled.\n  Kids can stay home and play with \ud83c\udc31 or do anything!\n\"\"\"",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.test.ts",
+  "name": "should parse a code that has an unmatched quote (\") at the start of the code",
+  "fsh_file": "MismatchedQuote.fsh",
+  "input": "\n    Profile: MismatchedQuote\n    Parent: Observation\n    * code = https://breakfast.com/goodfood#\"potatoes\n    ",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.test.ts",
+  "name": "should parse a rule that uses non-breaking spaces in a concept string",
+  "fsh_file": "NonBreaking.fsh",
+  "input": "Profile: NonBreakingObservation\nParent: Observation\n* code = #\"These\\u0020are\\u0020non-breaking.\"",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.test.ts",
+  "name": "should log an error when a concept string starts with whitespace",
+  "fsh_file": "NonBreaking.fsh",
+  "input": "Profile: NonBreakingObservation\nParent: Observation\n* code = #\"\\u0020Leading whitespace prohibited.\"",
+  "expects": [
+   {
+    "level": "error",
+    "regex": "extraneous input.*File: NonBreaking\\.fsh.*Line: 4\\D*"
+   }
+  ],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.test.ts",
+  "name": "should parse a rule on an element named system",
+  "fsh_file": "MyOperation.fsh",
+  "input": "Profile: MyOperation\nParent: OperationDefinition\n* system = true",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.test.ts",
+  "name": "should parse rules on a list of paths that includes system",
+  "fsh_file": "TrialOperationDefinition.fsh",
+  "input": "Profile: TrialOperationDefinition\nParent: OperationDefinition\n* system and type TU\n* instance and system and type SU\n* instance and system MS",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.test.ts",
+  "name": "should parse a rule on an element named exclude",
+  "fsh_file": "MyGroup.fsh",
+  "input": "Profile: MyGroup\nParent: Group\n* characteristic\n  * exclude MS",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.test.ts",
+  "name": "should parse entity names that look like dates or times",
+  "fsh_file": "Test.fsh",
+  "input": "Alias: 1950-04-01 = http://aprilfools.com\n\nProfile: 2000-01\nParent: Observation\n* obeys 2000-10-31T00:01:02.000+00:00\n\nProfile: 2001\nParent: 2000-01\n\nExtension: 2000-10\n* value[x] from 2000-10-31\n\nValueSet: 2000-10-31\n* 2000-10-31T00#2001-01\n* 1950-04-01#2001-01-01\n\nCodeSystem: 2000-10-31T00\n* #2001-01 \"Jan 2001\" \"January 2001\"\n\nLogical: 2000-10-31T00:01\n* 1999-12-31 0..1 dateTime \"Party\" \"Party like it's 1999\"\n\nResource: 2000-10-31T00:01:02\nParent: DomainResource\n* contained only 2000\n\nInstance: 2000-10-31T00:01:02.000\nInstanceOf: Observation\n* insert 12:30\n* code = #123\n\nInstance: 1800-02-28\nInstanceOf: 2000-10-31T00:01\n* 1999-12-31 = 2000-01-01\n\nInvariant: 2000-10-31T00:01:02.000+00:00\nDescription: \"It shall not defy the laws of physics nor the laws of men\"\nSeverity: #error\n\nMapping: 12\nSource: 2000-10-31T00:01\nTarget: \"http://unknown.org/mystery\"\n* 1999-12-31 -> \"Patient\"\n\nRuleSet: 12:30\n* status = #final",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.test.ts",
+  "name": "should allow a FSH document with a line comment at EOF without newline",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n//Comment",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.test.ts",
+  "name": "should allow a FSH document with a block comment at EOF without newline",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n/*\nComment\nComment\n*/",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.test.ts",
+  "name": "should allow a FSH document with a single-line block comment",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n/* This comment is just one line */\nTitle: \"Single line comment test\"",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.test.ts",
+  "name": "should allow a FSH document with a block comment containing no whitespace",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\n/******comment*****/\nTitle: \"Single line comment test\"",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.test.ts",
+  "name": "should adjust indentation of multi-line strings that include blank lines",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\nDescription: \"\"\"\nSUSHI stands for:\n  SUSHI\n  Unshortens\n  Short\n  Hand\n  Inputs\n\nRecursive acronyms are very popular these days.\n\"\"\"",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.test.ts",
+  "name": "should not change indentation of multi-line strings when there is at least one unindented non-blank line",
+  "fsh_file": "Test.fsh",
+  "input": "\n    Profile: ObservationProfile\n    Parent: Observation\n    Description: \"\"\"A long statement follows this.\n\nLong statement:\n\n This statement is much longer than the previous statement.\"\"\"",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.test.ts",
+  "name": "should truncate whitespace lines in multi-line strings",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: StaircaseObservation\nParent: Observation\nDescription: \"\"\"\nThis\n  Description\n\n    Looks\n      Like\n\n        A\n          Staircase\n            \"\"\"",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.test.ts",
+  "name": "should parse multi-line strings that only occupy one line",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\nDescription: \"\"\"Descriptions come in only one size.\"\"\"",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.test.ts",
+  "name": "should parse non-breaking space characters as whitespace",
+  "fsh_file": "Test.fsh",
+  "input": "Profile:\\u00A0NonBreakingObservation\nParent: Observation\\u00A0",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.test.ts",
+  "name": "should properly parse a string with newline, return, and tab characters",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\nDescription: \"Here is a \\n new line with some \\t tabbed information. \\r The end.\"",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.test.ts",
+  "name": "should properly parse a string with an escaped newline",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\nDescription: \"Here is an escaped \\\\n newline character.\"",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.test.ts",
+  "name": "should properly parse a multiline string with newline, return, and tab characters",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: ObservationProfile\nParent: Observation\nDescription:\n  \"\"\"\n  This is a multi-string description\n  with a couple of special characters.\n\n  This special paragraph has info on a \\n new line. And it has some \\t tabbed information. \\r The end.\n  \"\"\"",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.test.ts",
+  "name": "should parse numbers using exponential notation",
+  "fsh_file": "Exponential.fsh",
+  "input": "Instance: MyObservation\nInstanceOf: Observation\n* component[0].valueQuantity = 2.3E11 'kg'\n* component[1].valueQuantity = 6.453E+25 's'\n* component[2].valueInteger = 4.50e3\n* component[3].valueSampledData.period = 1.5e-3\n* component[3].valueSampledData.dimensions = 0.88e+6\n* component[3].valueSampledData.origin = 155e-8 'm'\n* component[4].valueInteger = 300.0e-1\n* extension[0].valueDecimal = 48000e-5",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.test.ts",
+  "name": "should log info messages during import",
+  "fsh_file": "Test.fsh",
+  "input": "Profile: OneProfile\nParent: Observation\n\nExtension: OneExtension\n\nValueSet: OneValueSet\n\nCodeSystem: OneCodeSystem\n\nLogical: OneLogicalModel\nParent: Base\n\nResource: OneResource\nParent: DomainResource\n\nInstance: OneInstance\nInstanceOf: Observation\n* status = #final\n* code = #123",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.test.ts",
+  "name": "should avoid crashing and log error messages because of mismatched input",
+  "fsh_file": "Mismatch.fsh",
+  "input": "Profile: \"BadProfile\"\n\nProfile: BetterProfile\nId: \"BadId\"\nDescription: BadDescription",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHImporter.test.ts",
+  "name": "should log no error when two entities of different types have the same name",
+  "fsh_file": "RepeatedName.fsh",
+  "input": "\n      CodeSystem: Foo\n      Title: \"This\"\n\n      ValueSet: Foo\n      Title: \"That\"\n    ",
+  "expects": [],
+  "no_messages": true
+ },
+ {
+  "file": "FSHErrorListener.test.ts",
+  "name": "should not log any errors for valid FSH",
+  "fsh_file": "MyPatient.fsh",
+  "input": "Profile: MyPatient\nParent: Patient\n* active = true",
+  "expects": [],
+  "no_messages": false
+ },
+ {
+  "file": "FSHErrorListener.test.ts",
+  "name": "should report mismatched input errors from antlr",
+  "fsh_file": "Pizza.fsh",
+  "input": "Profile: MismatchedPizza\nPizza: Large",
+  "expects": [
+   {
+    "level": "error",
+    "regex": "File: Pizza\\.fsh.*Line: 3\\D*"
+   }
+  ],
+  "no_messages": false
+ },
+ {
+  "file": "FSHErrorListener.test.ts",
+  "name": "should report extraneous input errors from antlr",
+  "fsh_file": "Space.fsh",
+  "input": "Profile: Something Spaced\nParent: Spacious",
+  "expects": [
+   {
+    "level": "error",
+    "regex": "File: Space\\.fsh.*Line: 2\\D*"
+   }
+  ],
+  "no_messages": false
+ },
+ {
+  "file": "FSHErrorListener.test.ts",
+  "name": "should make sense of errors due to no space before = in an Alias definition",
+  "fsh_file": "Invalid.fsh",
+  "input": "Alias: $OrgType= http://terminology.hl7.org/CodeSystem/organization-type",
+  "expects": [
+   {
+    "level": "error",
+    "regex": "Alias declarations must include at least one space both before and after the '=' sign.*File: Invalid\\.fsh.*Line: 2\\D*"
+   },
+   {
+    "level": "warn",
+    "regex": "Alias \\$OrgType= includes unsupported characters"
+   }
+  ],
+  "no_messages": false
+ },
+ {
+  "file": "FSHErrorListener.test.ts",
+  "name": "should make sense of errors due to no space after = in an Alias definition",
+  "fsh_file": "Invalid.fsh",
+  "input": "Alias: $OrgType =http://terminology.hl7.org/CodeSystem/organization-type",
+  "expects": [
+   {
+    "level": "error",
+    "regex": "Alias declarations must include at least one space both before and after the '=' sign.*File: Invalid\\.fsh.*Line: 2\\D*"
+   }
+  ],
+  "no_messages": false
+ },
+ {
+  "file": "FSHErrorListener.test.ts",
+  "name": "should make sense of errors due to no space around = in an Alias definition",
+  "fsh_file": "Invalid.fsh",
+  "input": "Alias: $OrgType=http://terminology.hl7.org/CodeSystem/organization-type",
+  "expects": [
+   {
+    "level": "error",
+    "regex": "Alias declarations must include at least one space both before and after the '=' sign.*File: Invalid\\.fsh.*Line: 2\\D*"
+   },
+   {
+    "level": "warn",
+    "regex": "Alias \\$OrgType=http:\\/\\/terminology\\.hl7\\.org\\/CodeSystem\\/organization-type includes unsupported characters"
+   }
+  ],
+  "no_messages": false
+ },
+ {
+  "file": "FSHErrorListener.test.ts",
+  "name": "should make sense of errors due to no space before = in an assignment rule",
+  "fsh_file": "Invalid.fsh",
+  "input": "Profile: SampleObservation\nParent: Observation\n* component= FOO#bar",
+  "expects": [
+   {
+    "level": "error",
+    "regex": "Assignment rules must include at least one space both before and after the '=' sign.*File: Invalid\\.fsh.*Line: 4\\D*"
+   },
+   {
+    "level": "error",
+    "regex": "Assignment rules must include at least one space both before and after the '=' sign.*File: Invalid\\.fsh.*Line: 4\\D*"
+   }
+  ],
+  "no_messages": false
+ },
+ {
+  "file": "FSHErrorListener.test.ts",
+  "name": "should make sense of errors due to no space after = in an assignment rule",
+  "fsh_file": "Invalid.fsh",
+  "input": "Profile: SampleObservation\nParent: Observation\n* component =FOO#bar",
+  "expects": [
+   {
+    "level": "error",
+    "regex": "Assignment rules must include at least one space both before and after the '=' sign.*File: Invalid\\.fsh.*Line: 4\\D*"
+   },
+   {
+    "level": "error",
+    "regex": "Assignment rules must include at least one space both before and after the '=' sign.*File: Invalid\\.fsh.*Line: 4\\D*"
+   }
+  ],
+  "no_messages": false
+ },
+ {
+  "file": "FSHErrorListener.test.ts",
+  "name": "should make sense of errors due to no space around = in an assignment rule",
+  "fsh_file": "Invalid.fsh",
+  "input": "Profile: SampleObservation\nParent: Observation\n* component=FOO#bar",
+  "expects": [
+   {
+    "level": "error",
+    "regex": "Assignment rules must include at least one space both before and after the '=' sign.*File: Invalid\\.fsh.*Line: 4\\D*"
+   },
+   {
+    "level": "error",
+    "regex": "Assignment rules must include at least one space both before and after the '=' sign.*File: Invalid\\.fsh.*Line: 4\\D*"
+   }
+  ],
+  "no_messages": false
+ },
+ {
+  "file": "FSHErrorListener.test.ts",
+  "name": "should make sense of errors due to no space before = in a caret rule",
+  "fsh_file": "Invalid.fsh",
+  "input": "Profile: SampleObservation\nParent: Observation\n* component ^short= \"Component1\"",
+  "expects": [
+   {
+    "level": "error",
+    "regex": "Assignment rules must include at least one space both before and after the '=' sign.*File: Invalid\\.fsh.*Line: 4\\D*"
+   },
+   {
+    "level": "error",
+    "regex": "Assignment rules must include at least one space both before and after the '=' sign.*File: Invalid\\.fsh.*Line: 4\\D*"
+   }
+  ],
+  "no_messages": false
+ },
+ {
+  "file": "FSHErrorListener.test.ts",
+  "name": "should make sense of errors due to no space after = in a caret rule",
+  "fsh_file": "Invalid.fsh",
+  "input": "Profile: SampleObservation\nParent: Observation\n* component ^short =\"Component1\"",
+  "expects": [
+   {
+    "level": "error",
+    "regex": "Assignment rules must include at least one space both before and after the '=' sign.*File: Invalid\\.fsh.*Line: 4\\D*"
+   },
+   {
+    "level": "error",
+    "regex": "Assignment rules must include at least one space both before and after the '=' sign.*File: Invalid\\.fsh.*Line: 4\\D*"
+   }
+  ],
+  "no_messages": false
+ },
+ {
+  "file": "FSHErrorListener.test.ts",
+  "name": "should make sense of errors due to no space around = in a caret rule",
+  "fsh_file": "Invalid.fsh",
+  "input": "Profile: SampleObservation\nParent: Observation\n* component ^short=\"Component1\"",
+  "expects": [
+   {
+    "level": "error",
+    "regex": "Assignment rules must include at least one space both before and after the '=' sign.*File: Invalid\\.fsh.*Line: 4\\D*"
+   },
+   {
+    "level": "error",
+    "regex": "Assignment rules must include at least one space both before and after the '=' sign.*File: Invalid\\.fsh.*Line: 4\\D*"
+   }
+  ],
+  "no_messages": false
+ },
+ {
+  "file": "FSHErrorListener.test.ts",
+  "name": "should make sense of errors due to no space after -> in a mapping rule",
+  "fsh_file": "Invalid.fsh",
+  "input": "Mapping:  USCorePatientToArgonaut\nSource:   USCorePatient\nTarget:   \"http://unknown.org/Argonaut-DQ-DSTU2\"\nTitle:    \"Argonaut DSTU2\"\nId:       argonaut-dq-dstu2\n* identifier ->\"Patient.identifier\"",
+  "expects": [
+   {
+    "level": "error",
+    "regex": "Mapping rules must include at least one space both before and after the '->' operator.*File: Invalid\\.fsh.*Line: 7\\D*"
+   },
+   {
+    "level": "error",
+    "regex": "Mapping rules must include at least one space both before and after the '->' operator.*File: Invalid\\.fsh.*Line: 7\\D*"
+   }
+  ],
+  "no_messages": false
+ },
+ {
+  "file": "FSHErrorListener.test.ts",
+  "name": "should make sense of errors due to no space before -> in a mapping rule",
+  "fsh_file": "Invalid.fsh",
+  "input": "Mapping:  USCorePatientToArgonaut\nSource:   USCorePatient\nTarget:   \"http://unknown.org/Argonaut-DQ-DSTU2\"\nTitle:    \"Argonaut DSTU2\"\nId:       argonaut-dq-dstu2\n* identifier-> \"Patient.identifier\"",
+  "expects": [
+   {
+    "level": "error",
+    "regex": "Mapping rules must include at least one space both before and after the '->' operator.*File: Invalid\\.fsh.*Line: 7\\D*"
+   },
+   {
+    "level": "error",
+    "regex": "Mapping rules must include at least one space both before and after the '->' operator.*File: Invalid\\.fsh.*Line: 7\\D*"
+   }
+  ],
+  "no_messages": false
+ },
+ {
+  "file": "FSHErrorListener.test.ts",
+  "name": "should make sense of errors due to no space around -> in a mapping rule",
+  "fsh_file": "Invalid.fsh",
+  "input": "Mapping:  USCorePatientToArgonaut\nSource:   USCorePatient\nTarget:   \"http://unknown.org/Argonaut-DQ-DSTU2\"\nTitle:    \"Argonaut DSTU2\"\nId:       argonaut-dq-dstu2\n* identifier->\"Patient.identifier\"",
+  "expects": [
+   {
+    "level": "error",
+    "regex": "Mapping rules must include at least one space both before and after the '->' operator.*File: Invalid\\.fsh.*Line: 7\\D*"
+   },
+   {
+    "level": "error",
+    "regex": "Mapping rules must include at least one space both before and after the '->' operator.*File: Invalid\\.fsh.*Line: 7\\D*"
+   }
+  ],
+  "no_messages": false
+ },
+ {
+  "file": "FSHErrorListener.test.ts",
+  "name": "should make sense of errors due to no space after * in a rule",
+  "fsh_file": "Invalid.fsh",
+  "input": "Profile: SampleObservation\nParent: Observation\n*component = FOO#bar",
+  "expects": [
+   {
+    "level": "error",
+    "regex": "Rules must start with a '\\*' symbol followed by at least one space.*File: Invalid\\.fsh.*Line: 4\\D*"
+   }
+  ],
+  "no_messages": false
+ },
+ {
+  "file": "FSHErrorListener.test.ts",
+  "name": "should make sense of errors due to using | to list references",
+  "fsh_file": "Pipes.fsh",
+  "input": "Profile: MyObservation\nParent: Observation\n* subject only Reference(Patient | Practitioner)",
+  "expects": [
+   {
+    "level": "error",
+    "regex": "Using '\\|' to list references is no longer supported\\. Use 'or' to list multiple references\\..*File: Pipes\\.fsh.*Line: 4\\D*"
+   }
+  ],
+  "no_messages": false
+ },
+ {
+  "file": "FSHErrorListener.test.ts",
+  "name": "should make sense of errors due to using | to list references with spaces inside the parentheses",
+  "fsh_file": "Pipes.fsh",
+  "input": "Profile: MyObservation\nParent: Observation\n* subject only Reference( Patient | Practitioner )",
+  "expects": [
+   {
+    "level": "error",
+    "regex": "Using '\\|' to list references is no longer supported\\. Use 'or' to list multiple references\\..*File: Pipes\\.fsh.*Line: 4\\D*"
+   }
+  ],
+  "no_messages": false
+ },
+ {
+  "file": "FSHErrorListener.test.ts",
+  "name": "should make sense of errors due to using | to list references with a space before the parentheses",
+  "fsh_file": "Pipes.fsh",
+  "input": "Profile: MyObservation\nParent: Observation\n* subject only Reference ( Patient | Practitioner )",
+  "expects": [
+   {
+    "level": "error",
+    "regex": "Using '\\|' to list references is no longer supported\\. Use 'or' to list multiple references\\..*File: Pipes\\.fsh.*Line: 4\\D*"
+   }
+  ],
+  "no_messages": false
+ },
+ {
+  "file": "FSHErrorListener.test.ts",
+  "name": "should make sense of errors due to a flag on an only rule with a reference",
+  "fsh_file": "OnlyFlag.fsh",
+  "input": "Profile: MyObservation\nParent: Observation\n* subject only Reference(Patient) MS",
+  "expects": [
+   {
+    "level": "error",
+    "regex": "Flags are not allowed on 'only' rules\\. Apply the flags in a separate rule.*File: OnlyFlag\\.fsh.*Line: 4\\D*"
+   }
+  ],
+  "no_messages": false
+ },
+ {
+  "file": "FSHErrorListener.test.ts",
+  "name": "should make sense of errors due to a flag on an only rule with a data type",
+  "fsh_file": "OnlyFlag.fsh",
+  "input": "Profile: MyObservation\nParent: Observation\n* value[x] only string MS",
+  "expects": [
+   {
+    "level": "error",
+    "regex": "Flags are not allowed on 'only' rules\\. Apply the flags in a separate rule.*File: OnlyFlag\\.fsh.*Line: 4\\D*"
+   }
+  ],
+  "no_messages": false
+ },
+ {
+  "file": "FSHErrorListener.test.ts",
+  "name": "should make sense of errors due to a modifier flag on an only rule",
+  "fsh_file": "OnlyFlag.fsh",
+  "input": "Profile: MyObservation\nParent: Observation\n* subject only Reference(Patient) ?!",
+  "expects": [
+   {
+    "level": "error",
+    "regex": "Flags are not allowed on 'only' rules\\. Apply the flags in a separate rule.*File: OnlyFlag\\.fsh.*Line: 4\\D*"
+   }
+  ],
+  "no_messages": false
+ },
+ {
+  "file": "FSHErrorListener.test.ts",
+  "name": "should not report a flag error when flags are used on rules that support them",
+  "fsh_file": "ValidFlags.fsh",
+  "input": "Profile: MyObservation\nParent: Observation\n* subject MS\n* category 1..1 SU\n* extension contains myExtension 0..1 MS",
+  "expects": [],
+  "no_messages": false
+ }
+]

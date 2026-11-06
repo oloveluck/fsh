@@ -136,6 +136,7 @@
 ;; ours; lists of elements with ids pair BY ID (snapshot order is SUSHI's business, the content ours)
 ;; A Diff is (list 'missing path value) | (list 'differs path published ours) | (list 'short-list path n m)
 ;;         | (list 'order path id-before id-after)   two ids published in that order, ours the other way
+;;         | (list 'extra path element)   an element ours has and the published does not
 (define (all-diffs a b path)
   (cond
     [(and (hash? a) (hash? b))
@@ -153,7 +154,12 @@
        (for/first ([x (in-list shared)] [y (in-list (if (pair? shared) (cdr shared) '()))]
                    #:when (> (hash-ref pos x) (hash-ref pos y)))
          (list 'order (reverse path) x y)))
-     (append (if out-of-order (list out-of-order) '())
+     ;; elements ours has and the published does not (SUSHI did not write them): `subset?` pairs
+     ;; by position, so an extra element in the middle fails it without a missing/differs class
+     (define published-ids (for/hash ([e (in-list a)]) (values (hash-ref e 'id) #t)))
+     (define extras (for/list ([e (in-list b)] #:unless (hash-ref published-ids (hash-ref e 'id) #f))
+                      (list 'extra (reverse (cons (hash-ref e 'id) path)) e)))
+     (append (if out-of-order (list out-of-order) '()) extras
              (append* (for/list ([e (in-list a)])
                         (define o (hash-ref ours (hash-ref e 'id) #f))
                         (if o (all-diffs e o (cons (hash-ref e 'id) path))

@@ -1,0 +1,14 @@
+SUSHI's FSH importer tests as a parse/diagnostics corpus
+Source: https://github.com/FHIR/sushi (Apache-2.0), test/import/FSHImporter*.test.ts and
+FSHErrorListener.test.ts, at commit 96590601d545044bf45cd3b33c16e4557deac64e (SUSHI 3.21.0). Retrieved 2026-11-06.
+cases.json is derived by extract.py (run: python3 extract.py <sushi>/test/import cases.json): every
+`it(...)` test whose input is a template literal passed to importSingleText, as {file, name,
+fsh_file, input, expects: [{level, regex}], no_messages}. `expects` are the loggerSpy
+getLastMessage(...).toMatch(...) assertions (SUSHI's messages carry "File: X.fsh Line: N");
+no_messages is a getAllMessages(...).toHaveLength(0) assertion. SUSHI's exporter tests build
+their fixtures programmatically and are not extractable as text.
+515 cases; 89 tests skipped (inputs built from variables or interpolation, multi-file imports).
+What the harness holds us to is the parse verdict and the error line, not SUSHI's wording.
+
+SUSHI is licensed under the Apache License, Version 2.0; the extracted inputs are its test
+fixtures, reproduced here under that license.
