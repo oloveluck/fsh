@@ -2,13 +2,20 @@ import re,glob,json,sys,os
 src=sys.argv[1]; out=sys.argv[2]
 cases=[]; skipped=0
 def unescape_tpl(t):
-    # template literal: handle \` and \\ and ${...} (skip cases with interpolation)
+    # a JS template literal: ${...} interpolation is not extractable; the escapes are JS's
     if '${' in t: return None
-    return t.replace('\\`','`').replace('\\\\','\\')
+    def esc(m):
+        e=m.group(1)
+        if e=='n': return '\n'
+        if e=='t': return '\t'
+        if e=='r': return '\r'
+        if e.startswith('u'): return chr(int(e[1:],16))
+        return e   # \\ \` \" \' and others stand for themselves
+    return re.sub(r'\\(u[0-9A-Fa-f]{4}|.)', esc, t)
 def left_align(t):
+    # SUSHI's leftAlign only dedents: the template literal's leading newline stays, so SUSHI's
+    # line numbers count it
     lines=t.split('\n')
-    while lines and lines[0].strip()=='': lines.pop(0)
-    while lines and lines[-1].strip()=='': lines.pop()
     ind=min((len(l)-len(l.lstrip()) for l in lines if l.strip()), default=0)
     return '\n'.join(l[ind:] for l in lines)
 for f in sorted(glob.glob(os.path.join(src,'FSHImporter*.test.ts')))+[os.path.join(src,'FSHErrorListener.test.ts')]:
@@ -34,6 +41,9 @@ for f in sorted(glob.glob(os.path.join(src,'FSHImporter*.test.ts')))+[os.path.jo
         for em in re.finditer(r"getLastMessage\('(error|warn|info)'\)\)\.toMatch\(\s*(/(.*?)/([a-z]*)|'((?:[^'\\]|\\.)*)')\s*\)", body, re.S):
             lvl=em.group(1); rx=em.group(3) if em.group(3) is not None else re.escape(em.group(5))
             expects.append({'level':lvl,'regex':rx})
+        # a count of logged errors/warnings is an expectation too
+        for cm in re.finditer(r"getAllMessages\('(error|warn)'\)\)\.toHaveLength\((\d+)\)", body):
+            if int(cm.group(2))>0: expects.append({'level':cm.group(1),'regex':'.*','count':int(cm.group(2))})
         none_expected=bool(re.search(r"getAllMessages\('(error|warn)'\)\)\.toHaveLength\(0\)|getAllLogs\('(error|warn)'\)\)\.toHaveLength\(0\)|getAllMessages\(\)\)\.toHaveLength\(0\)", body))
         cases.append({'file':os.path.basename(f),'name':name,'fsh_file':fname,'input':txt,'expects':expects,'no_messages':none_expected})
 json.dump(cases, open(out,'w'), indent=1)

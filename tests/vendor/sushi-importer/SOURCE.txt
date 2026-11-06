@@ -7,7 +7,7 @@ fsh_file, input, expects: [{level, regex}], no_messages}. `expects` are the logg
 getLastMessage(...).toMatch(...) assertions (SUSHI's messages carry "File: X.fsh Line: N");
 no_messages is a getAllMessages(...).toHaveLength(0) assertion. SUSHI's exporter tests build
 their fixtures programmatically and are not extractable as text.
-515 cases; 89 tests skipped (inputs built from variables or interpolation, multi-file imports).
+515 cases (112 with expected messages, 69 asserting none); 89 tests skipped (inputs built from variables or interpolation, multi-file imports).
 What the harness holds us to is the parse verdict and the error line, not SUSHI's wording.
 
 SUSHI is licensed under the Apache License, Version 2.0; the extracted inputs are its test

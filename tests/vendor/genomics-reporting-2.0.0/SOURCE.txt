@@ -1,8 +1,9 @@
 HL7 Genomics Reporting IG — the FSH sources of the published 2.0.0 package
 Repository: https://github.com/HL7/genomics-reporting (CC0-1.0, see sushi-config.yaml)
-Commit: 5382663 (2022-04-28, "Modify output representation") — the last commit on master before the
-package was built (package.json date 20220509165218); the repository carries no 2.0.0 tag, and
-sushi-config.yaml still reads `version: 1.1.0` there (the publisher's publication-request set the
-version). Retrieved 2026-11-06. Vendored verbatim: input/fsh/*.fsh and sushi-config.yaml (fsh.ini
-dropped). The published package is fhir-spec's hl7.fhir.uv.genomics-reporting-2.0.0.tgz.
-Dependencies: none beyond hl7.fhir.r4.core 4.0.1.
+Commit: c2cf861 (2022-05-11, "Merge pull request #62 from HL7/operations") — the master state right
+after the package was built (package.json date 20220509165218; the repository carries no 2.0.0 tag):
+every StructureDefinition, ValueSet and CodeSystem id of the package is defined there (46/46), while
+the commit of 2022-04-28 still has the pre-rename terminology ids (hgnc, not hgnc-vs). sushi-config.yaml
+reads `version: 2.1.0-SNAPSHOT` there (the publication request set 2.0.0). Retrieved 2026-11-06.
+Vendored verbatim: input/fsh/*.fsh and sushi-config.yaml (fsh.ini dropped). The published package is
+fhir-spec's hl7.fhir.uv.genomics-reporting-2.0.0.tgz. Dependencies: none beyond hl7.fhir.r4.core 4.0.1.

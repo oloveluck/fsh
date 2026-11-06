@@ -57,7 +57,7 @@ severity:           /KW_SEVERITY CODE
 instanceOf:         /KW_INSTANCEOF name
 usage:              /KW_USAGE CODE
 source:             /KW_SOURCE name
-target:             /KW_TARGET STRING
+target:             /KW_TARGET (STRING | SEQUENCE)
 context:            /KW_CONTEXT contextItem* lastContextItem
 contextItem:        QUOTED_CONTEXT | UNQUOTED_CONTEXT
 lastContextItem:    LAST_QUOTED_CONTEXT | LAST_UNQUOTED_CONTEXT
@@ -76,8 +76,8 @@ codeCaretValueRule: /STAR CODE* caretPath /EQUAL value
 mappingRule:        /STAR path? /ARROW STRING (STRING | MULTILINE_STRING)? CODE?
 insertRule:         /STAR path? /KW_INSERT (RULESET_REFERENCE | paramRuleSetRef)
 codeInsertRule:     /STAR CODE* /KW_INSERT (RULESET_REFERENCE | paramRuleSetRef)
-addCRElementRule:   /STAR path CARD flag* KW_CONTENTREFERENCE (SEQUENCE | CODE) STRING (STRING | MULTILINE_STRING)?
-addElementRule:     /STAR path CARD flag* targetType (KW_OR targetType)* STRING (STRING | MULTILINE_STRING)?
+addCRElementRule:   /STAR path CARD flag* KW_CONTENTREFERENCE (SEQUENCE | CODE) (STRING (STRING | MULTILINE_STRING)?)?
+addElementRule:     /STAR path CARD flag* targetType (KW_OR targetType)* (STRING (STRING | MULTILINE_STRING)?)?
 pathRule:           /STAR path
 
 paramRuleSetRef:    PARAM_RULESET_REFERENCE parameter* lastParameter

@@ -294,7 +294,17 @@
          (if (and m (> (card-lo card) 0) (hash-has-key? e (cadr m)) (not (hash-has-key? (hash-ref e (cadr m)) 'min)))
              (values (hash-update e (cadr m) (lambda (h) (hash-set h 'min (card-lo card)))) o)
              (values e o)))]
-      [(rule-flag p _ flags)    (upd elems order rid rpath rslice (lambda (h) (apply-flags h flags)))]
+      ;; a flag the Parent's element already carries changes nothing, and SUSHI writes only what
+      ;; changes: `* status MS` under US Core's observation (status MS there) adds no element
+      [(rule-flag p _ flags)
+       (define pe (parent-element rid))
+       (define already (and (hash? pe) (not (hash-has-key? elems rid))
+                            (for/and ([f (in-list flags)])
+                              (cond [(eq? f 'MS) (eq? (hash-ref pe 'mustSupport #f) #t)]
+                                    [(eq? f 'SU) (eq? (hash-ref pe 'isSummary #f) #t)]
+                                    [(eq? f mod-flag) (eq? (hash-ref pe 'isModifier #f) #t)]
+                                    [else #t]))))
+       (if already (values elems order) (upd elems order rid rpath rslice (lambda (h) (apply-flags h flags))))]
       ;; `from VS` without a strength is a required binding (FSH's default)
       [(rule-binding p vs str)  (upd elems order rid rpath rslice (lambda (h) (hash-set h 'binding (drop-false (hasheq 'strength (if str (symbol->string str) "required") 'valueSet (and vs (valueset-url vs)))))))]
       [(rule-only p types)
