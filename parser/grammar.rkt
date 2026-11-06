@@ -76,8 +76,8 @@ codeCaretValueRule: /STAR CODE* caretPath /EQUAL value
 mappingRule:        /STAR path? /ARROW STRING (STRING | MULTILINE_STRING)? CODE?
 insertRule:         /STAR path? /KW_INSERT (RULESET_REFERENCE | paramRuleSetRef)
 codeInsertRule:     /STAR CODE* /KW_INSERT (RULESET_REFERENCE | paramRuleSetRef)
-addCRElementRule:   /STAR path CARD flag* KW_CONTENTREFERENCE (SEQUENCE | CODE) (STRING (STRING | MULTILINE_STRING)?)?
-addElementRule:     /STAR path CARD flag* targetType (KW_OR targetType)* (STRING (STRING | MULTILINE_STRING)?)?
+addCRElementRule:   /STAR path CARD flag* KW_CONTENTREFERENCE (SEQUENCE | CODE) STRING (STRING | MULTILINE_STRING)?
+addElementRule:     /STAR path CARD flag* targetType (KW_OR targetType)* STRING (STRING | MULTILINE_STRING)?
 pathRule:           /STAR path
 
 paramRuleSetRef:    PARAM_RULESET_REFERENCE parameter* lastParameter
