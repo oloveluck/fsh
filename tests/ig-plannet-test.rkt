@@ -55,5 +55,5 @@
                  '("CapabilityStatement" "ImplementationGuide" "SearchParameter"))
    (check-true (>= (ig-fsh-report-pairs r) 109))
    (check-true (>= (ig-fsh-report-exact r) 78) "fewer exact resources than the floor")
-   (check-true (>= (ig-fsh-report-contained r) 94) "fewer fully-matching resources than the floor")
+   (check-true (>= (ig-fsh-report-contained r) 99) "fewer fully-matching resources than the floor")
    (check-true (>= (ig-fsh-report-elements-ok r) 321) "fewer matching differential elements than the floor")])

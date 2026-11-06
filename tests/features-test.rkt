@@ -24,7 +24,7 @@
   (define name-el (by-path sd "Patient.name"))
   (define gender-el (by-path sd "Patient.gender"))
   (check-equal? (hash-ref name-el 'min) 1)
-  (check-equal? (hash-ref name-el 'max) "*")
+  (check-false (hash-has-key? name-el 'max))     ; SUSHI writes what changes: Patient.name is 0..* already
   (check-equal? (hash-ref name-el 'mustSupport) #t)
   (check-equal? (hash-ref gender-el 'min) 1)
   (check-false (hash-has-key? gender-el 'max))   ; SUSHI writes what changes: Patient.gender is 0..1 already

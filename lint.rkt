@@ -73,7 +73,7 @@
   (define src (and l (loc-source l)))
   (append (duplicate-metadata toks src)
           (operator-spacing e toks src)
-          (instance-checks e l)
+          (instance-checks e (or (keyword-loc toks 'KW_USAGE src) l))
           (append* (for/list ([r (in-list (or (entity-rules e) '()))])
                      (lint-rule e r (or (attached-loc r) l))))))
 
@@ -106,11 +106,15 @@
                [(fsh-alias? e) "Alias declarations must include at least one space both before and after the '=' sign"]
                [else "Assignment rules must include at least one space both before and after the '=' sign"]))))
 
+;; keyword-loc : tokens symbol source -> loc|#f   where a metadata keyword is written
+(define (keyword-loc toks type src)
+  (for/first ([t (in-list toks)] #:when (eq? (token-struct-type t) type)) (token-loc t src)))
 ;; instance-checks : entity loc -> (listof diagnostic)   InstanceOf present; Usage one of the three
+;; (a system on the usage code, `badsystem#example`, is SUSHI's warning, not an error: ignored here)
 (define (instance-checks e l)
   (match e
     [(fsh-instance name meta _)
-     (define usage (let ([u (assq 'usage meta)]) (and u (regexp-replace #rx"^#" (cdr u) ""))))
+     (define usage (let ([u (assq 'usage meta)]) (and u (regexp-replace #rx"^[^#]*#" (cdr u) ""))))
      (append
       (if (assq 'instanceOf meta) '() (list (err l (format "Instance ~a is missing its InstanceOf declaration" name))))
       (if (or (not usage) (member usage '("example" "definition" "inline"))) '()
@@ -126,11 +130,49 @@
 
 ;; lint-rule : entity rule loc -> (listof diagnostic)
 (define (lint-rule e r l)
+  (append (path-checks e r l) (code-checks r l) (rule-checks e r l)))
+;; path-checks : entity rule loc -> (listof diagnostic)   an operator glued to the path (`a->"b"`,
+;; `a=b` lex as one word) — SUSHI's spacing rule again
+(define (path-checks e r l)
+  (define p (rule-path* r))
+  (define bare (and p (regexp-replace* #px"\\[[^\\]]*\\]" p "")))
+  (cond [(not bare) '()]
+        [(regexp-match? #rx"->" bare)
+         (list (err l "Mapping rules must include at least one space both before and after the '->' operator"))]
+        [(regexp-match? #rx"=" bare)
+         (list (err l "Assignment rules must include at least one space both before and after the '=' sign"))]
+        [else '()]))
+;; code-checks : rule loc -> (listof diagnostic)   a concept string may not start with whitespace
+(define (code-checks r l)
+  (define codes
+    (match r
+      [(concept-rule cs _ _) cs] [(rule-code-caret cs _ _) cs] [(rule-code-insert cs _) cs]
+      [(rule-assign _ (fsh-code c _) _) (list c)]
+      [(vs-component _ body) (component-codes body)]
+      [_ '()]))
+  (for/list ([c (in-list codes)] #:when (regexp-match? #px"#\"\\s" c))
+    (err l (format "A concept string cannot start with whitespace (~a)" c))))
+;; component-codes : vs-component body -> (listof string)
+(define (component-codes body)
+  (for/list ([n (in-list (find-nodes body 'code))]) (code-text (cadr n))))
+(define (code-text c) (if (code-tok? c) (code-tok-text c) (format "~a" c)))
+(define pipes-message "Using '|' to list references is no longer supported. Use 'or' to list multiple references")
+;; rule-checks : entity rule loc -> (listof diagnostic)
+(define (rule-checks e r l)
   (match r
     [(rule-card p card _)
      (if (equal? (string-trim card) "..")
          (list (err l (format "Neither side of the cardinality was specified on path \"~a\". A min, max, or both need to be specified" p)))
          '())]
+    [(rule-only _ types)
+     (for/list ([t (in-list types)] #:when (and (string? t) (regexp-match? #rx"[|]" t))) (err l pipes-message))]
+    [(rule-assign _ (fsh-reference target _) _)
+     #:when (regexp-match? #rx"[|]" target)
+     (list (err l pipes-message))]
+    [(rule-caret p _ _)
+     #:when (and p (not (equal? p ".")) (or (fsh-valueset? e) (fsh-codesystem? e)))
+     (list (err l (format "A caret rule on a ~a takes no path (~a): write `* ^…` or `* <code> ^…`"
+                          (if (fsh-valueset? e) "ValueSet" "CodeSystem") p)))]
     [(or (rule-add-element p card _ _ short _) (rule-add-cr-element p card _ _ short _))
      (append
       (if (regexp-match? #px"^\\s*\\.\\." card)
@@ -152,9 +194,31 @@
     [(rule-code-insert codes _)
      #:when (and (fsh-valueset? e) (> (length codes) 1))
      (list (err l "Only one concept may be listed before an insert rule on a ValueSet."))]
-    [(vs-component _ body) (filter-value-checks body l)]
+    [(vs-component _ body) (append (component-checks body l) (filter-value-checks body l))]
     [_ '()]))
 
+;; component-checks : vs-component body loc -> (listof diagnostic)   a concept component names its
+;; system once (`SYS#code` or `from system`, not neither, not both); a filter component has a system
+(define (component-checks body l)
+  (define systems (find-nodes body 'vsFromSystem))
+  (define codes (component-codes body))
+  (define with-system (filter (lambda (c) (regexp-match? #px"^[^#]+#" c)) codes))
+  (define filters (find-nodes body 'vsFilterDefinition))
+  (append
+   (if (and (pair? codes) (null? systems) (null? with-system))
+       (list (err l "A concept component must name its system: `SYS#code` or `from system SYS`")) '())
+   (if (and (pair? with-system) (pair? systems))
+       (list (err l "A concept component names its system more than once (in the code and after `from system`)")) '())
+   (if (and (pair? filters) (null? systems))
+       (list (err l "A filter component must name a system (`codes from system SYS where …`)")) '())))
+
+;; rule-path* : rule -> string|#f
+(define (rule-path* r)
+  (match r
+    [(rule-card p _ _) p] [(rule-flag p _ _) p] [(rule-binding p _ _) p] [(rule-assign p _ _) p]
+    [(rule-contains p _) p] [(rule-only p _) p] [(rule-obeys p _) p] [(rule-caret p _ _) p]
+    [(rule-mapping p _ _ _) p] [(rule-insert p _) p] [(rule-add-element p _ _ _ _ _) p]
+    [(rule-add-cr-element p _ _ _ _ _) p] [(rule-path p) p] [_ #f]))
 ;; choice? : string -> boolean   `Reference(A or B)` — a choice of targets inside the parentheses
 (define (choice? target) (regexp-match? #px"\\((?:[^)]*\\s)?or\\s[^)]*\\)" target))
 
@@ -174,12 +238,19 @@
   (for*/list ([d (in-list (find-nodes body 'vsFilterDefinition))]
               [msg (in-value (filter-definition-problem d))] #:when msg)
     (err l msg)))
+(define filter-operators
+  '("=" "is-a" "descendent-of" "descendant-of" "is-not-a" "regex" "in" "not-in" "generalizes" "child-of" "descendent-leaf" "exists"))
 ;; filter-definition-problem : vsFilterDefinition datum -> string|#f
 (define (filter-definition-problem d)
   (match d
+    [(list 'vsFilterDefinition _ (list 'vsFilterOperator op))
+     (cond [(not (member op filter-operators)) (format "\"~a\" is not a filter operator" op)]
+           [(equal? op "exists") #f]
+           [else (format "The \"~a\" filter needs a value" op)])]
     [(list 'vsFilterDefinition _ (list 'vsFilterOperator op) v)
      (define kind (filter-value-kind v))
      (cond
+       [(not (member op filter-operators)) (format "\"~a\" is not a filter operator" op)]
        [(member op '("=" "is-a" "descendent-of" "descendant-of" "is-not-a" "in" "not-in" "generalizes" "child-of" "descendent-leaf"))
         (and (not (memq kind '(code string))) (format "The \"~a\" filter value must be a code or string" op))]
        [(equal? op "regex")
@@ -269,4 +340,34 @@
   (check-equal? (rule-msgs (fsh-valueset "VS" '() (list (vs-component #t (list (filt "exists" (list 'bool "true")))))))
                 '())
   (check-equal? (rule-msgs (fsh-valueset "VS" '() (list (vs-component #t (list (filt "in" (list 'bool "true")))))))
-                '("The \"in\" filter value must be a code or string")))
+                '("The \"in\" filter value must be a code or string"))
+  ;; components: a system once; filters with a system, a known operator, a value
+  (define (sys name) (list 'vsComponentFrom "from" (list 'vsFromSystem "system" (list 'name name))))
+  (check-equal? (rule-msgs (fsh-valueset "VS" '() (list (vs-component #t (list (list 'vsConceptComponent (list 'code (code-tok "#hippo"))))))))
+                '("A concept component must name its system: `SYS#code` or `from system SYS`"))
+  (check-equal? (rule-msgs (fsh-valueset "VS" '() (list (vs-component #t (list (list 'vsConceptComponent (list 'code (code-tok "ZOO#hippo")) (sys "ZOO")))))))
+                '("A concept component names its system more than once (in the code and after `from system`)"))
+  (check-equal? (rule-msgs (fsh-valueset "VS" '() (list (vs-component #t (list (list 'vsConceptComponent (list 'code (code-tok "#hippo")) (sys "ZOO")))))))
+                '())
+  (check-equal? (rule-msgs (fsh-valueset "VS" '() (list (vs-component #t (list (list 'vsFilterComponent "codes" (sys "ZOO") (list 'vsFilterList (list 'vsFilterDefinition (list 'name "display") (list 'vsFilterOperator "resembles") (list 'vsFilterValue "cat")))))))))
+                '("\"resembles\" is not a filter operator"))
+  (check-equal? (rule-msgs (fsh-valueset "VS" '() (list (vs-component #t (list (list 'vsFilterComponent "codes" (sys "ZOO") (list 'vsFilterList (list 'vsFilterDefinition (list 'name "display") (list 'vsFilterOperator "regex")))))))))
+                '("The \"regex\" filter needs a value"))
+  (check-equal? (rule-msgs (fsh-valueset "VS" '() (list (vs-component #t (list (list 'vsFilterComponent "codes" (list 'vsFilterList (list 'vsFilterDefinition (list 'name "version") (list 'vsFilterOperator "=") (list 'vsFilterValue "2.0")))))))))
+                '("A filter component must name a system (`codes from system SYS where …`)"))
+  ;; pipes in references; a caret rule with a path on a ValueSet; a concept string starting with whitespace; a glued operator
+  (check-equal? (rule-msgs (fsh-profile "P" '() (list (rule-only "performer" '("Reference(Organization | CareTeam)")))))
+                (list pipes-message))
+  (check-equal? (rule-msgs (fsh-profile "P" '() (list (rule-assign "subject" (fsh-reference "Reference(A|B)" #f) #f))))
+                (list pipes-message))
+  (check-equal? (rule-msgs (fsh-valueset "VS" '() (list (rule-caret "mypath" "^publisher" "foo"))))
+                '("A caret rule on a ValueSet takes no path (mypath): write `* ^…` or `* <code> ^…`"))
+  (check-equal? (rule-msgs (fsh-valueset "VS" '() (list (rule-caret #f "^publisher" "foo")))) '())
+  (check-equal? (rule-msgs (fsh-profile "P" '() (list (rule-assign "code" (fsh-code "#\" Leading\"" #f) #f))))
+                '("A concept string cannot start with whitespace (#\" Leading\")"))
+  (check-equal? (rule-msgs (fsh-mapping "M" '() (list (rule-path "identifier->\"Patient.identifier\""))))
+                '("Mapping rules must include at least one space both before and after the '->' operator"))
+  (check-equal? (rule-msgs (fsh-instance "I" '((instanceOf . "Patient")) (list (rule-assign "name[=].given" "x" #f)))) '())
+  ;; a usage with a system is not an error; the usage error sits on the Usage line
+  (check-equal? (msgs (lint-document (list (list (fsh-instance "I" '((instanceOf . "Patient") (usage . "badsystem#example")) '()) (loc #f 1 1 0 9) '()))))
+                '()))

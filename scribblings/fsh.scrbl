@@ -1,6 +1,7 @@
 #lang scribble/manual
 @(require (for-label racket/base racket/contract
-                     fsh/parser/parse fsh/compile fsh/decompile fsh/print fsh/project fsh/pack fsh/check fsh/ig-config))
+                     fsh/parser/parse fsh/lint fsh/compile fsh/decompile fsh/print fsh/project fsh/pack fsh/check fsh/ig-config
+                     (only-in fhir/diagnostic diagnostic?)))
 
 @title{fsh: FHIR Shorthand for Racket}
 
@@ -166,22 +167,27 @@ invariants, the base type's elements at a path, flags), and the tools @tt{fsh_ch
 
 @section{Limits}
 
-Measured against the IGs' published packages: IPS 2.0.1 pairs 114 resources, 85 identical, 108 with
-all published content, 437 of 438 differential elements; mCODE 4.0.0 pairs 349, 226 identical, 330
+Measured against the IGs' published packages: IPS 2.0.1 pairs 114 resources, 94 identical, 108 with
+all published content, all 438 differential elements; mCODE 4.0.0 pairs 349, 227 identical, 339
 complete, 472 of 473 differential elements; Plan-Net 1.2.0 (its package and US Core 3.1.1 fetched from
-the registry when the tests run) pairs 109, 78 identical, 94 complete, all 321 differential
-elements; HRex 1.1.0 (three US Core versions in context) pairs 46, 25 identical, 45 complete, all 138
-differential elements. The decompiler is measured the same way: the published IPS package decompiled
-to FSH, compiled back and compared (@filepath{tests/gofsh-ips-test.rkt}) — all 117 resources come
-back identical. The tests print every remaining difference, classified, largest first. The differences:
+the registry when the tests run) pairs 109, 78 identical, 99 complete, all 321 differential
+elements; HRex 1.1.0 (three US Core versions in context) pairs 46, 31 identical, all 46 complete, all
+138 differential elements; Genomics Reporting 2.0.0 pairs 141, 105 identical, 118 complete, 250 of 259
+differential elements. The decompiler is measured the same way: the published IPS and mCODE packages
+decompiled to FSH, compiled back and compared (@filepath{tests/gofsh-ips-test.rkt},
+@filepath{tests/gofsh-mcode-test.rkt}) — all 117 IPS resources come back identical, 341 of 349 mCODE
+resources. The parser and the linter are measured against SUSHI's own importer test suite
+(@filepath{tests/sushi-importer-test.rkt}: 515 texts; IMPORTER_SHORT). The tests print every
+remaining difference, classified, largest first. The differences:
 
 @itemlist[
 @item{A few caret extensions on one IPS profile land in a different order (a url-keyed extension
 among @tt{[+]}-indexed ones); a few mCODE examples whose published JSON differs from the tagged FSH
-sources; one element's @tt{min}; a UCUM unit with an annotation; in Plan-Net, a core extension named as
-SUSHI's implicit extensions package knows it; in HRex, the required values a profile fixes inside an
-embedded resource or a type slice are not filled into examples yet, and the OIDs the publisher gives
-concept maps.}
+sources; one element's @tt{min}; a UCUM unit with an annotation; in Plan-Net, instance details the
+test names. In Genomics Reporting, what the published package carries that its FSH does not: a
+SUSHI 2 representation of type-specific choice paths (@tt{Observation.valueQuantity} as an element
+of its own), OperationDefinitions and examples that drifted after publication, coding versions the
+FSH never writes.}
 @item{No ImplementationGuide resource, no narratives, no ActorDefinition conversion: these are
 publisher output.}
 @item{@tt{Characteristics:} and @tt{Context:} metadata are parsed but not read (an extension's
@@ -228,7 +234,22 @@ path whose first step the base type does not have. Compilation continues past th
 A document's entity ASTs. A failure raises @racket[exn:fail:diagnostic] positioned in @racket[source]:
 @tt{t.fsh:3:18: fsh parse error: unexpected caret sequence `^short`}.}
 @defproc[(parse-fsh-doc/located [src string?] [#:source source (or/c string? path? #f) #f]) (listof pair?)]{Each entity paired with the location of its first token.}
+@defproc[(parse-fsh-doc/diagnostics [src string?] [#:source source (or/c string? path? #f) #f])
+         (values (listof pair?) (listof diagnostic?))]{
+Every entity that parses (each with its location) and every diagnostic: an entity's parse error leaves
+the other entities parsing, and the document is then checked as SUSHI's importer checks it
+(@racketmodname[fsh/lint]: duplicate names and metadata, an alias redefined, an Instance without
+@tt{InstanceOf}, a cardinality with neither side, an added element missing its min, max or short, a
+choice of references as a value, filter values of the wrong kind, operators without their spaces).
+Indentation that SUSHI rejects is a parse error at the rule. Projects parse through this.}
 @defproc[(parse-fsh-entity [src string?]) any/c]{One entity.}
+
+@subsection[#:style 'unnumbered]{@tt{fsh/lint}}
+@defmodule[fsh/lint]
+@defproc[(lint-document [items (listof (list/c any/c any/c list?))]) (listof diagnostic?)]{
+The import-level checks over a parsed document: each item is an entity, its location and its tokens
+(as @racket[parse-fsh-doc/diagnostics] builds them). Every finding is an error positioned where it is
+written.}
 
 @subsection[#:style 'unnumbered]{@tt{fsh/print}}
 @defmodule[fsh/print]

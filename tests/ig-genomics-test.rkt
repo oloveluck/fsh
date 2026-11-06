@@ -25,8 +25,7 @@
    (printf "  Genomics Reporting IG corpus: skipped (needs the fhir-spec package)\n")]
   [else
    (define r (parameterize ([current-sd-packages (list r4-core)])
-               (check-fsh-ig (build-path genomics "fsh") published (ig-config-canonical cfg)
-                             #:dump '("Observation/TxImp06"))))
+               (check-fsh-ig (build-path genomics "fsh") published (ig-config-canonical cfg))))
    (printf "  Genomics Reporting 2.0.0 from FSH: ~a resources paired; ~a exact, ~a with all published content; SD differential ~a/~a elements\n"
            (ig-fsh-report-pairs r) (ig-fsh-report-exact r) (ig-fsh-report-contained r)
            (ig-fsh-report-elements-ok r) (ig-fsh-report-elements-total r))
@@ -35,8 +34,8 @@
            (remove-duplicates (map car (ig-fsh-report-published-unmatched r))))
    (printf "  difference classes (published vs ours), largest first:\n")
    (print-classes r)
-   ;; floors from the first run
-   (check-true (>= (ig-fsh-report-pairs r) 0))
-   (check-true (>= (ig-fsh-report-exact r) 0) "fewer exact resources than the floor")
-   (check-true (>= (ig-fsh-report-contained r) 0) "fewer fully-matching resources than the floor")
-   (check-true (>= (ig-fsh-report-elements-ok r) 0) "fewer matching differential elements than the floor")])
+   ;; RATCHETED floors
+   (check-true (>= (ig-fsh-report-pairs r) 141))
+   (check-true (>= (ig-fsh-report-exact r) 113) "fewer exact resources than the floor")
+   (check-true (>= (ig-fsh-report-contained r) 129) "fewer fully-matching resources than the floor")
+   (check-true (>= (ig-fsh-report-elements-ok r) 254) "fewer matching differential elements than the floor")])

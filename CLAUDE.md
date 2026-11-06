@@ -271,6 +271,52 @@ instance (`definition-types`), an Invariant carries its `XPath:`, and a logical 
 extensions are indexed after its characteristics as PUBLISHED (the compiler writes a local Parent's
 again).
 
+## The decompiler's oracle 2: mCODE (`tests/gofsh-mcode-test.rkt`)
+The published mCODE 4.0.0 package (349 resources, with US Core and Genomics Reporting in context)
+decompiled, recompiled and compared the same way. Current: **349 paired; 341 exact, 345 with all
+published content; 472/473 differential elements** — ratcheted. The residue is named in the CI output
+(a handful of examples and the one differential element the forward corpus also misses).
+
+## Real-IG corpus 5: Genomics Reporting 2.0.0 (`tests/ig-genomics-test.rkt`)
+HL7 Genomics Reporting's own FSH (`tests/vendor/genomics-reporting-2.0.0`, HL7/genomics-reporting at
+commit c2cf861 — the commit whose resource ids match the published package 46/46; the 2.0.0 tag's do
+not) against fhir-spec's `hl7.fhir.uv.genomics-reporting-2.0.0.tgz`. What it adds: OperationDefinitions
+and ConceptMaps as instances, deep component slicing through RuleSets, large code systems, examples
+authored as Bundles. Current: **0 compile errors; 141 paired; 105 exact, 118 with all published
+content; 250/259 differential elements** — ratcheted. It drove: `drop-unchanged` (SUSHI writes what
+changes — a property equal to the Parent's element's leaves the differential), `extension[<Extension
+name>]` resolved to the slice typed with it in the profile's OWN `contains` (`extension contains
+GenomicReportNote named coded-note`, then `extension[GenomicReportNote] ^requirements`), quoted
+concept codes (`$PHARMVAR#"CYP2C9 *2/*5"`) unquoted, the harness dropping the Publisher's
+`structuredefinition-category`/`-security-category` extensions. Named residue, not chased: the
+package was built by SUSHI 2.x, which wrote a type-specific choice path as an element of its own
+(`Observation.valueQuantity`) where SUSHI 3 and we write the type slice (`value[x]:valueQuantity`,
+9 differential elements); its OperationDefinitions and several examples drifted after publication
+(parameter names, types, cardinalities; coding versions the FSH never writes; the examples it kept
+in XML/JSON).
+
+## SUSHI's importer tests as an oracle (`tests/sushi-importer-test.rkt`, `fsh/lint.rkt`)
+SUSHI's own importer test suite (`tests/vendor/sushi-importer/cases.json`, 515 FSH texts extracted
+from SUSHI 3.21.0's `FSHImporter*.test.ts` by `extract.py` — Apache-2.0; 111 of them with the error
+or warning SUSHI logs, file and line) as a parse-and-diagnostics corpus: a text SUSHI rejects with an
+error must produce an error here, on the same line when SUSHI names one; a text SUSHI accepts must
+parse. Our side is `parse-fsh-doc/diagnostics` (parse.rkt): every entity's parse error (the other
+entities still parse) plus the import-level checks SUSHI makes after parsing, in `lint.rkt` — a
+second entity of a kind with one name, an alias redefined to another value, a metadata keyword
+declared twice, an Instance without InstanceOf or with an unknown Usage, a cardinality with neither
+side, an added element missing its min, max or short (the grammar makes the short optional, as
+SUSHI's recovery does, so the lint can say which is missing), a choice of references or canonicals as
+a value, a concept with a system in a CodeSystem, several concepts before a caret or insert rule in
+a ValueSet, filter values of the wrong kind (`true`/`false` stay `(bool …)` in the datum so they are
+told from strings), and `=`/`->` without their spaces. The parser enforces SUSHI's indentation rules
+as positioned errors (two spaces per level, the first rule left-aligned, at most one level deeper
+than the rule above, nothing indented under a path-less rule, `.` only at the top level).
+`compile-project` parses through the same entry point, so a project reports every file's findings.
+Current: **IMPORTER_NUMBERS** — ratcheted (agreements up, over-reports and crashes down). The
+over-reports are read against SUSHI's source: a shape-asserting test (no message assertion) can
+hide an error SUSHI did log — `* address 1..* Address` without a short does (BadDefs.fsh asserts
+that very error). Remaining misses are named in the CI output.
+
 ## Editor and agent support (`fsh/support.rkt`)
 What FSH offers the family's hubs through `fhir/lang/support` (the contract in the foundation): the
 LSP server (fhir-lsp) and the MCP server (fhir-mcp) load `fsh/support` by its collection name. It
