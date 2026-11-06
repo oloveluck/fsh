@@ -26,7 +26,8 @@
   (check-equal? (hash-ref name-el 'min) 1)
   (check-equal? (hash-ref name-el 'max) "*")
   (check-equal? (hash-ref name-el 'mustSupport) #t)
-  (check-equal? (hash-ref gender-el 'max) "1")
+  (check-equal? (hash-ref gender-el 'min) 1)
+  (check-false (hash-has-key? gender-el 'max))   ; SUSHI writes what changes: Patient.gender is 0..1 already
   (check-equal? (hash-ref gender-el 'mustSupport) #t))
 
 ;; ---- Mapping: injects StructureDefinition.mapping + ElementDefinition.mapping into the Source ----

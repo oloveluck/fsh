@@ -95,6 +95,7 @@
 (define (filter-value v)
   (match v
     [(list 'vsFilterValue (list 'code c _ ...)) (let-values ([(_s code) (split-code (code-text* c))]) code)]
+    [(list 'vsFilterValue (list 'bool b)) b]
     [(list 'vsFilterValue (? string? s))
      (cond [(regexp-match #px"^/(.*)/$" s) => cadr] [else s])]
     [(list 'vsFilterValue x) (format "~a" x)]

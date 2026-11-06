@@ -18,7 +18,7 @@
          (only-in fhir/spec-package spec-package-path)
          (only-in fhir/diagnostic diagnostic loc exn:fail:diagnostic? exn:fail:diagnostic-diagnostic)
          (only-in "compile.rkt" compile-doc/diagnostics entity-label emit-snapshot? canonical-base fsh-fhir-version)
-         (only-in "parser/parse.rkt" parse-fsh-doc/located)
+         (only-in "parser/parse.rkt" parse-fsh-doc/diagnostics)
          (only-in "parser/ast.rkt" fsh-instance? fsh-instance-metadata fsh-instance-name)
          "ig-config.rkt" "pack.rkt")
 
@@ -102,14 +102,14 @@
                   (values (path->string f) (regexp-replace #px"^#lang[^\n]*" text ""))))
   (define-values (maps map-diags) (parse-maps mfiles))
   (define structuremaps (let ([to-sm (fml-entry 'map-structuremap)]) (if to-sm (map (lambda (p) (to-sm (cdr p))) maps) '())))
-  (define parse-errors '())
-  (define located
-    (append*
-     (for/list ([f (in-list files)])
-       (with-handlers ([exn:fail:diagnostic? (lambda (e) (set! parse-errors (cons (exn:fail:diagnostic-diagnostic e) parse-errors)) '())])
-         (parse-fsh-doc/located (hash-ref texts (path->string f)) #:source (path->string f))))))
+  ;; every file's entities that parse, with every parse error and import-level check (fsh/lint)
+  (define-values (located parse-errors)
+    (for/fold ([located '()] [errors '()] #:result (values located errors))
+              ([f (in-list files)])
+      (define-values (es ds) (parse-fsh-doc/diagnostics (hash-ref texts (path->string f)) #:source (path->string f)))
+      (values (append located es) (append errors ds))))
   (cond
-    [(pair? parse-errors) (project cfg fhir-version files texts located '() (append (reverse parse-errors) map-diags) missing sd-packages maps)]
+    [(pair? parse-errors) (project cfg fhir-version files texts located '() (append parse-errors map-diags) missing sd-packages maps)]
     [else
      (define-values (out errors rule-diags)
        (parameterize ([emit-snapshot? snapshot?]

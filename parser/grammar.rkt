@@ -76,8 +76,12 @@ codeCaretValueRule: /STAR CODE* caretPath /EQUAL value
 mappingRule:        /STAR path? /ARROW STRING (STRING | MULTILINE_STRING)? CODE?
 insertRule:         /STAR path? /KW_INSERT (RULESET_REFERENCE | paramRuleSetRef)
 codeInsertRule:     /STAR CODE* /KW_INSERT (RULESET_REFERENCE | paramRuleSetRef)
-addCRElementRule:   /STAR path CARD flag* KW_CONTENTREFERENCE (SEQUENCE | CODE) STRING (STRING | MULTILINE_STRING)?
-addElementRule:     /STAR path CARD flag* targetType (KW_OR targetType)* STRING (STRING | MULTILINE_STRING)?
+; SUSHI's grammar requires the short; its parser recovers from a missing one and reports it, so the
+; short is optional here and fsh/lint reports it (an elementType is never a flag keyword, so a
+; RuleSet's `* name 1..1 MS` stays a cardRule)
+addCRElementRule:   /STAR path CARD flag* KW_CONTENTREFERENCE (SEQUENCE | CODE) (STRING (STRING | MULTILINE_STRING)?)?
+addElementRule:     /STAR path CARD flag* elementType (KW_OR elementType)* (STRING (STRING | MULTILINE_STRING)?)?
+elementType:        SEQUENCE | NUMBER | referenceType | canonical | codeableReferenceType
 pathRule:           /STAR path
 
 paramRuleSetRef:    PARAM_RULESET_REFERENCE parameter* lastParameter
@@ -94,7 +98,7 @@ vsFromValueset:     KW_VSREFERENCE name (KW_AND name)*
 vsFilterList:       vsFilterDefinition (KW_AND vsFilterDefinition)*
 vsFilterDefinition: name vsFilterOperator vsFilterValue?
 vsFilterOperator:   EQUAL | SEQUENCE
-vsFilterValue:      code | KW_TRUE | KW_FALSE | REGEX | STRING
+vsFilterValue:      code | bool | REGEX | STRING
 
 ; MISC
 name:               SEQUENCE | NUMBER | DATETIME | TIME | mostAlphaKeywords

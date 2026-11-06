@@ -7,6 +7,11 @@
 ;;; the VERDICT: a text SUSHI rejects with an error raises a diagnostic here, at the same line
 ;;; when SUSHI's message names one; a text SUSHI accepts parses. An error where SUSHI accepts is an
 ;;; over-report (ratcheted DOWN); a missed error or a line elsewhere is a gap (ratcheted up).
+;;; Our side is `parse-fsh-doc/diagnostics`: every entity's parse error (indentation included) and the
+;;; import-level checks of fsh/lint (duplicates, spacing, missing parts, filter value kinds).
+;;; A case asserting only the parsed shape (no_messages false, no expectation) may still have made SUSHI
+;;; log an error its test does not look at — `* address 1..* Address` with no short does (SUSHI's grammar
+;;; requires it; BadDefs.fsh asserts the error) — so an over-report there is read against SUSHI's source.
 ;;;
 ;;; Outcome of a case: 'agree | 'agree-line | 'missed-error | 'line-elsewhere | 'over-error | 'crash
 ;;;   agree       — SUSHI accepts and we parse, or SUSHI errs and we raise (no line to compare)
@@ -17,8 +22,8 @@
 ;;;   crash       — a non-diagnostic exception
 
 (require rackunit racket/runtime-path racket/list racket/string json
-         (only-in fhir/diagnostic exn:fail:diagnostic? exn:fail:diagnostic-diagnostic diagnostic-loc loc-line)
-         (only-in fsh/parser/parse parse-fsh-doc))
+         (only-in fhir/diagnostic diagnostic-severity diagnostic-loc diagnostic->string loc-line)
+         (only-in fsh/parser/parse parse-fsh-doc/diagnostics))
 
 (define-runtime-path cases-file "vendor/sushi-importer/cases.json")
 (define cases (call-with-input-file cases-file read-json))
@@ -30,22 +35,24 @@
     (and m (string->number (cadr m)))))
 (define (expects-error? c) (for/or ([e (in-list (hash-ref c 'expects))]) (equal? (hash-ref e 'level) "error")))
 
-;; verdict : case -> (values outcome detail)
+;; verdict : case -> (values outcome detail)   our errors: each entity's parse error and fsh/lint's
 (define (verdict c)
-  (define-values (kind line msg)
-    (with-handlers ([exn:fail:diagnostic? (lambda (e) (let ([d (exn:fail:diagnostic-diagnostic e)])
-                                                        (values 'error (let ([l (diagnostic-loc d)]) (and l (loc-line l))) (exn-message e))))]
-                    [exn:fail? (lambda (e) (values 'crash #f (exn-message e)))])
-      (parse-fsh-doc (hash-ref c 'input) #:source (hash-ref c 'fsh_file))
-      (values 'ok #f #f)))
+  (define-values (kind lines msg)
+    (with-handlers ([exn:fail? (lambda (e) (values 'crash '() (exn-message e)))])
+      (define-values (_entities ds) (parse-fsh-doc/diagnostics (hash-ref c 'input) #:source (hash-ref c 'fsh_file)))
+      (define errors (filter (lambda (d) (eq? (diagnostic-severity d) 'error)) ds))
+      (if (null? errors)
+          (values 'ok '() #f)
+          (values 'error (for/list ([d (in-list errors)]) (let ([l (diagnostic-loc d)]) (and l (loc-line l))))
+                  (string-join (map diagnostic->string errors) " | ")))))
   (define want-error? (expects-error? c))
   (define want-line (expected-line c))
   (cond
     [(eq? kind 'crash) (values 'crash msg)]
     [(and want-error? (eq? kind 'error))
      (cond [(not want-line) (values 'agree #f)]
-           [(eqv? want-line line) (values 'agree-line #f)]
-           [else (values 'line-elsewhere (format "SUSHI line ~a, ours ~a: ~a" want-line line msg))])]
+           [(memv want-line lines) (values 'agree-line #f)]
+           [else (values 'line-elsewhere (format "SUSHI line ~a, ours ~a: ~a" want-line lines msg))])]
     [(and want-error? (eq? kind 'ok)) (values 'missed-error (format "SUSHI: ~a" (hash-ref (car (hash-ref c 'expects)) 'regex)))]
     [(eq? kind 'error) (values 'over-error msg)]
     [else (values 'agree #f)]))
@@ -58,10 +65,10 @@
   (define rs (filter (lambda (r) (eq? (cadr r) o)) results))
   (unless (null? rs)
     (printf "  ~a:\n" o)
-    (for ([r (in-list (take rs (min 12 (length rs))))])
+    (for ([r (in-list (take rs (min 80 (length rs))))])
       (define c (car r))
       (printf "    ~a / ~a~a\n" (hash-ref c 'file) (hash-ref c 'name)
-              (if (caddr r) (format ": ~a" (let ([s (caddr r)]) (if (> (string-length s) 140) (substring s 0 140) s))) "")))))
+              (if (caddr r) (format ": ~a" (let ([s (caddr r)]) (if (> (string-length s) 200) (substring s 0 200) s))) "")))))
 ;; RATCHETED — floors from the first run
 (check-true (>= (+ (n 'agree) (n 'agree-line)) 0) "fewer agreements than the floor")
 (check-true (<= (n 'over-error) 515) "more over-reports than the ceiling")

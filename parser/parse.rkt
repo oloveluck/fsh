@@ -8,7 +8,9 @@
 ;;; parser backs both the embedded API and the `#lang fsh` reader.
 
 (require brag/support
-         (only-in fhir/diagnostic raise-diagnostic exn->diagnostic exn:fail:diagnostic? error-position loc attach-loc!)
+         (only-in fhir/diagnostic raise-diagnostic exn->diagnostic exn:fail:diagnostic? exn:fail:diagnostic-diagnostic
+                  error-position loc diagnostic diagnostic? attach-loc!)
+         "../lint.rkt"
          racket/contract
          racket/match
          (only-in racket/list append* take last)
@@ -24,6 +26,9 @@
   [parse-fsh-doc    (->* (string?) (#:source (or/c string? path? #f)) list?)]
   ;; the same, each entity paired with the location of its first token (for compile diagnostics)
   [parse-fsh-doc/located (->* (string?) (#:source (or/c string? path? #f)) (listof pair?))]
+  ;; every entity that parses, with its location, and every diagnostic: each entity's parse error
+  ;; (the others still parse) and the import-level checks of fsh/lint over the document
+  [parse-fsh-doc/diagnostics (->* (string?) (#:source (or/c string? path? #f)) (values (listof pair?) list?))]
   [parse-fsh-entity (-> string? any/c)]))  ; one entity's source -> its AST
 
 (define entity-start-types
@@ -67,21 +72,44 @@
 
 (define (parse-fsh-doc str #:source [source #f]) (map car (parse-fsh-doc/located str #:source source)))
 (define (parse-fsh-doc/located str #:source [source #f])
-  (with-handlers ([exn:fail? (lambda (e) (raise-diagnostic (exn->diagnostic e 'fsh #:source source)))])
-    (for/list ([ch (in-list (chunk-entities (collect-tokens str)))]
-               #:when (ormap real-tok? ch))
-      ;; a parse that runs out of the entity's tokens reads "the entity ends after `X`"
-      (define last-pos (for/last ([t (in-list ch)] #:when (real-tok? t)) (token-struct-offset t)))
-      (with-handlers ([(lambda (e) (and (exn:fail? e) (not (exn:fail:diagnostic? e))))
-                       (lambda (e) (raise-diagnostic (exn->diagnostic e 'fsh #:source source #:last-position last-pos
-                                                                      #:unit "entity"
-                                                                      #:ran-out? (ran-out-probe (filter real-tok? ch) last-pos))))])
-        (define first-real (for/first ([t (in-list ch)] #:when (real-tok? t)) t))
-        (cons (parse-chunk ch #:source source)
-              (loc (and source (if (path? source) (path->string source) source))
-                   (token-struct-line first-real)
-                   (let ([c (token-struct-column first-real)]) (and c (add1 c)))
-                   (token-struct-offset first-real) (token-struct-span first-real)))))))
+  (for/list ([ch (in-list (real-chunks str source))])
+    (parse-located-chunk ch source)))
+(define (parse-fsh-doc/diagnostics str #:source [source #f])
+  (define chunks (with-handlers ([exn:fail:diagnostic? exn:fail:diagnostic-diagnostic]) (real-chunks str source)))
+  (cond
+    [(diagnostic? chunks) (values '() (list chunks))]    ; the lexer refused the text
+    [else
+     (define parsed      ; (listof (list entity loc tokens)) | a diagnostic per chunk
+       (for/list ([ch (in-list chunks)])
+         (with-handlers ([exn:fail:diagnostic? exn:fail:diagnostic-diagnostic])
+           (define p (parse-located-chunk ch source))
+           (list (car p) (cdr p) (filter real-tok? ch)))))
+     (define items (filter list? parsed))
+     (values (for/list ([it (in-list items)]) (cons (car it) (cadr it)))
+             (append (filter diagnostic? parsed) (lint-document items)))]))
+;; real-chunks : string source -> (listof tokens)   the entity chunks that hold a real token
+(define (real-chunks str source)
+  (with-handlers ([(lambda (e) (and (exn:fail? e) (not (exn:fail:diagnostic? e))))
+                   (lambda (e) (raise-diagnostic (exn->diagnostic e 'fsh #:source source)))])
+    (filter (lambda (ch) (ormap real-tok? ch)) (chunk-entities (collect-tokens str)))))
+;; parse-located-chunk : tokens source -> (cons entity loc)   raises exn:fail:diagnostic
+(define (parse-located-chunk ch source)
+  (with-handlers ([(lambda (e) (and (exn:fail? e) (not (exn:fail:diagnostic? e))))
+                   (lambda (e) (raise-diagnostic (exn->diagnostic e 'fsh #:source source)))])
+    ;; a parse that runs out of the entity's tokens reads "the entity ends after `X`"
+    (define last-pos (for/last ([t (in-list ch)] #:when (real-tok? t)) (token-struct-offset t)))
+    (with-handlers ([(lambda (e) (and (exn:fail? e) (not (exn:fail:diagnostic? e))))
+                     (lambda (e) (raise-diagnostic (exn->diagnostic e 'fsh #:source source #:last-position last-pos
+                                                                    #:unit "entity"
+                                                                    #:ran-out? (ran-out-probe (filter real-tok? ch) last-pos))))])
+      (define first-real (for/first ([t (in-list ch)] #:when (real-tok? t)) t))
+      (cons (parse-chunk ch #:source source) (token-loc first-real source)))))
+;; token-loc : token source -> loc
+(define (token-loc t source)
+  (loc (and source (if (path? source) (path->string source) source))
+       (token-struct-line t)
+       (let ([c (token-struct-column t)]) (and c (add1 c)))
+       (token-struct-offset t) (token-struct-span t)))
 
 ;; parse one entity's token chunk
 (define (parse-chunk toks #:source [source #f])
@@ -89,18 +117,20 @@
   (cond
     [(param-ruleset? reals) (capture-param-ruleset reals)]
     [else
-     (define e (apply-indentation (lower-entity (parse-reals reals))
-                                  (for/list ([t (in-list reals)] #:when (eq? (ttype t) 'STAR)) (star-indent t))))
-     ;; each rule remembers where it is written (the token after its `*`), for compile diagnostics
+     ;; each rule's `*` with the token after it: the indentation, and where the rule is written
      (define starts (for/list ([t (in-list reals)] [nxt (in-list (append (cdr reals) (list #f)))]
                                #:when (eq? (ttype t) 'STAR))
-                      nxt))
+                      (cons t nxt)))
+     (define locs (for/list ([st (in-list starts)])
+                    (define t (or (cdr st) (car st)))
+                    (and (token-struct-line t) (token-loc t source))))
+     (define e (apply-indentation (lower-entity (parse-reals reals))
+                                  (for/list ([st (in-list starts)] [l (in-list locs)]) (cons (star-indent (car st)) l))))
+     ;; each rule remembers where it is written (the token after its `*`), for compile diagnostics
      (define rules (entity-rules e))
-     (when (and rules (= (length rules) (length starts)))
-       (for ([r (in-list rules)] [t (in-list starts)] #:when (and t (token-struct-line t)))
-         (attach-loc! r (loc (and source (if (path? source) (path->string source) source))
-                             (token-struct-line t) (let ([c (token-struct-column t)]) (and c (add1 c)))
-                             (token-struct-offset t) (token-struct-span t)))))
+     (when (and rules (= (length rules) (length locs)))
+       (for ([r (in-list rules)] [l (in-list locs)] #:when l)
+         (attach-loc! r l)))
      e]))
 ;; entity-rules : entity -> (listof rule) | #f
 (define (entity-rules e)
@@ -120,10 +150,12 @@
   (define line (last (string-split (string-append (tval t) "|") "\n")))
   (string-length (car (regexp-match #px"^[ \t]*" line))))
 
-;; apply-indentation : entity (listof indent) -> entity   one indent per rule, in order
+;; apply-indentation : entity (listof (cons indent loc)) -> entity   one indent per rule, in order
 (define (apply-indentation e indents)
   (define (fix rules)
-    (if (or (andmap zero? indents) (not (= (length rules) (length indents)))) rules (contextualize rules indents)))
+    (if (or (andmap (lambda (i) (zero? (car i))) indents) (not (= (length rules) (length indents))))
+        rules
+        (contextualize rules indents)))
   (match e
     [(fsh-profile n m r) (fsh-profile n m (fix r))]
     [(fsh-extension n m r) (fsh-extension n m (fix r))]
@@ -136,17 +168,35 @@
     [(fsh-ruleset n r) (fsh-ruleset n (fix r))]
     [_ e]))
 
-;; contextualize : rules indents -> rules   stack entries are (list level path codes)
+;; contextualize : rules (listof (cons indent loc)) -> rules   stack entries are (list level path codes)
+;; The indentation rules SUSHI's importer enforces (FSHImporter.getPathWithContext), each a parse
+;; error positioned at the rule: two spaces per level; the first rule left-aligned; at most one level
+;; deeper than the rule above; a rule without a path (a value set component) is never indented, and
+;; nothing is indented under one — except a code rule under a single-concept component, which takes
+;; its code (and then names two concepts, which fsh/lint reports); `.` only at the top level.
 (define (contextualize rules indents)
-  (let loop ([rs rules] [is indents] [stack '()] [acc '()])
+  (define (fail l msg) (raise-diagnostic (diagnostic 'fsh 'parse 'error msg l)))
+  (let loop ([rs rules] [is indents] [stack '()] [acc '()] [prev-level 0])
     (cond
       [(null? rs) (reverse acc)]
       [else
-       (define level (quotient (car is) 2))
+       (define r0 (car rs))
+       (define spaces (car (car is)))
+       (define l (cdr (car is)))
+       (when (odd? spaces)
+         (fail l (format "Unable to determine path context for the rule: it is indented ~a space~a; rules are indented in increments of two spaces"
+                         spaces (if (= spaces 1) "" "s"))))
+       (define level (quotient spaces 2))
+       (when (and (null? acc) (> level 0)) (fail l "The first rule of a definition must be left-aligned"))
+       (when (> level (add1 prev-level)) (fail l "The rule is indented too deeply: a rule is indented at most one level (two spaces) below the rule above it"))
+       (when (and (> level 0) (vs-component? r0)) (fail l "A rule that does not use a path cannot be indented"))
+       (when (and (> level 0) (equal? (rule-path* r0) ".")) (fail l "The special '.' path is only allowed in top-level rules"))
        (define live (filter (lambda (s) (< (car s) level)) stack))
        (define ctx (for/first ([s (in-list live)] #:when (= (car s) (sub1 level))) s))
-       (define r (if ctx (in-context (car rs) (cadr ctx) (caddr ctx)) (car rs)))
-       (loop (cdr rs) (cdr is) (cons (list level (context-path r) (rule-codes r)) live) (cons r acc))])))
+       (when (and ctx (not (cadr ctx)) (not (caddr ctx)))
+         (fail l "Rule cannot be indented below rule which has no path"))
+       (define r (if ctx (in-context r0 (cadr ctx) (caddr ctx)) r0))
+       (loop (cdr rs) (cdr is) (cons (list level (context-path r) (rule-codes r)) live) (cons r acc) level)])))
 
 (define (join-path ctx0 p)
   (define ctx (and ctx0 (regexp-replace #rx"[.]$" ctx0 "")))   ; `* product.` is a context too
@@ -165,7 +215,18 @@
     [(rule-mapping p _ _ _) p] [(rule-insert p _) p] [(rule-add-element p _ _ _ _ _) p]
     [(rule-add-cr-element p _ _ _ _ _) p] [(rule-path p) p] [_ #f]))
 (define (rule-codes r)
-  (match r [(concept-rule cs _ _) cs] [(rule-code-caret cs _ _) cs] [(rule-code-insert cs _) cs] [_ #f]))
+  (match r
+    [(concept-rule cs _ _) cs] [(rule-code-caret cs _ _) cs] [(rule-code-insert cs _) cs]
+    [(vs-component _ body) (let ([cs (component-codes body)]) (and (= (length cs) 1) cs))]
+    [_ #f]))
+;; component-codes : vs-component body -> (listof string)   the concept codes a component names
+(define (component-codes body)
+  (let walk ([x body])
+    (match x
+      [(list 'code c _ ...) (list (code-text c))]
+      [(? pair?) (append (walk (car x)) (walk (cdr x)))]
+      [_ '()])))
+(define (code-text c) (if (code-tok? c) (code-tok-text c) c))
 (define (in-context r ctx codes)
   (define (j p) (join-path ctx p))
   (define (jc cs) (if codes (append codes cs) cs))
@@ -261,4 +322,22 @@
   (check-equal? (diag "Profile: P\nParent: Patient\n* name ^short =\n") "t.fsh:3:15: fsh parse error: the entity ends after `=`")
   (check-equal? (diag "Profile: P\nParent: Patient\n* name ^short = = 3\n") "t.fsh:3:17: fsh parse error: unexpected equal `=`")
   (check-equal? (cdr (car (parse-fsh-doc/located "Alias: A = http://x\n\nProfile: P\nParent: Patient\n" #:source "t.fsh")))
-                (loc "t.fsh" 1 1 1 6)))
+                (loc "t.fsh" 1 1 1 6))
+  ;; indentation: SUSHI's rules, each a parse error at the rule
+  (check-equal? (diag "Profile: P\nParent: Patient\n  * name 1..1\n")
+                "t.fsh:3:5: fsh parse error: The first rule of a definition must be left-aligned")
+  (check-equal? (diag "Profile: P\nParent: Patient\n* ^url = \"http://x\"\n  * name 1..1\n")
+                "t.fsh:4:5: fsh parse error: Rule cannot be indented below rule which has no path")
+  (check-equal? (diag "Instance: I\nInstanceOf: Patient\n* name.family = \"f\"\n    * id = \"b\"\n")
+                "t.fsh:4:7: fsh parse error: The rule is indented too deeply: a rule is indented at most one level (two spaces) below the rule above it")
+  (check-equal? (diag "ValueSet: V\n* include codes from system ZOO\n  * include codes from system X\n")
+                "t.fsh:3:5: fsh parse error: A rule that does not use a path cannot be indented")
+  (check-equal? (diag "Profile: P\nParent: Patient\n* name 1..1\n  * given 1..1\n") #f)
+  ;; every entity that parses, every entity's parse error, and the lint's findings
+  (let-values ([(es ds) (parse-fsh-doc/diagnostics
+                         "Profile: P\nParent: Patient\n\nProfile: P\nParent: Observation\n\nProfile: Q\nParent: Patient\n* name ^short =\n"
+                         #:source "t.fsh")])
+    (check-equal? (length es) 2)
+    (check-equal? (map diagnostic->string ds)
+                  '("t.fsh:9:15: fsh parse error: the entity ends after `=`"
+                    "t.fsh:4:1: fsh lint error: Profile named P already exists"))))

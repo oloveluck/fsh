@@ -200,7 +200,7 @@
       [(list-rest _ more) (loop more paths flags)])))
 
 (define (filter-map-targettypes types)
-  (for/list ([t (in-list types)] #:when (and (pair? t) (eq? (car t) 'targetType)))
+  (for/list ([t (in-list types)] #:when (and (pair? t) (memq (car t) '(targetType elementType))))
     (lower-targettype (cadr t))))
 
 (define (lower-targettype t)
@@ -210,6 +210,7 @@
     [(list 'canonical s) s]
     [(list 'codeableReferenceType s) s]
     [(? string? s) s]
+    [(? number? n) (number->string n)]
     [_ t]))
 
 (define (lower-items items)
@@ -275,7 +276,7 @@
                        (and (pair? strs) (car strs))
                        (and (pair? strs) (pair? (cdr strs)) (cadr strs))))
 (define (filter-non-target rest)
-  (filter (lambda (x) (not (and (pair? x) (memq (car x) '(targetType flag))))) rest))
+  (filter (lambda (x) (not (and (pair? x) (memq (car x) '(targetType elementType flag))))) rest))
 (define (collect-flags rest)
   (for/list ([x (in-list rest)] #:when (and (pair? x) (eq? (car x) 'flag))) (flag-sym x)))
 

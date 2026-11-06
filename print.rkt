@@ -140,6 +140,7 @@
      (sp p op (and (pair? v) (print-vs-node (car v))))]
     [(list 'vsFilterValue (list 'code c d ...)) (code-text* c)]
     [(list 'vsFilterValue (list 'regex s)) (format "/~a/" s)]
+    [(list 'vsFilterValue (list 'bool b)) b]
     [(list 'vsFilterValue (? string? s)) (if (regexp-match? #px"^/.*/$" s) s (qstr s))]
     [(list 'vsFilterValue (? boolean? b)) (if b "true" "false")]
     [(list 'vsFilterValue x) (format "~a" x)]
