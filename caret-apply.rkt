@@ -22,7 +22,11 @@
          (only-in fhir/sd/logical register-structure-definition!)
          "context.rkt"
          "instance.rkt")
-(provide apply-carets inherited-mappings snapshot-order typed-caret-set)
+(provide apply-carets inherited-mappings snapshot-order typed-caret-set current-slice-declarations)
+;; current-slice-declarations : (parameter (or #f (hash (cons path slice) -> index)))   the order in
+;; which the rules' `contains` DECLARE each slice of a path; the differential follows it (SUSHI's
+;; order), not the first rule that happens to mention a slice
+(define current-slice-declarations (make-parameter #f))
 ;; ---- caret application (SD/VS/CS root-level, path #f) ---------------------------------------
 ;; root-level carets (`* ^status = #active`), set by the RESOURCE's schema (caret.rkt typed mode):
 ;; repeating elements, soft indices, extension[url], and values shaped for their target type
@@ -57,6 +61,17 @@
     [else
      (define pos (for/hash ([e (in-list snap)] [i (in-naturals)] #:when (hash-ref e 'path #f))
                    (values (hash-ref e 'path) i)))
+     ;; a nested extension's children (`Extension.extension.url`) are not in the base snapshot:
+     ;; they take the Extension datatype's order (url before value[x])
+     (define (position path)
+       (hash-ref pos (regexp-replace #rx"\\[x\\]$" path "[x]")
+                 (lambda () (hash-ref pos path
+                                      (lambda () (match (regexp-match #px"[.](?:modifierE|e)xtension[.]([^.]+)$" path)
+                                                   [(list _ last) (+ 500000 (hash-ref pos (string-append "Extension." last) 1000000))]
+                                                   [_ 1000000]))))))
+     ;; slices rank by their `contains` declaration order (current-slice-declarations), then by
+     ;; first appearance
+     (define declared (or (current-slice-declarations) (hash)))
      (define slice-rank (make-hash))                       ; (path-prefix . slice) -> first appearance
      (define (segments id)                                  ; "A.b:s.c" -> '(("A" #f) ("b" "s") ("c" #f))
        (for/list ([seg (in-list (string-split id "."))])
@@ -68,8 +83,11 @@
            [else
             (match-define (list n sl) (car segs))
             (define path (if (string=? prefix "") n (string-append prefix "." n)))
-            (define p (hash-ref pos (regexp-replace #rx"\\[x\\]$" path "[x]") (lambda () (hash-ref pos path 1000000))))
-            (define r (if sl (hash-ref! slice-rank (cons path sl) (lambda () (hash-count slice-rank))) -1))
+            (define p (position path))
+            (define r (if sl
+                          (hash-ref declared (cons path sl)
+                                    (lambda () (+ 100000 (hash-ref! slice-rank (cons path sl) (lambda () (hash-count slice-rank))))))
+                          -1))
             (loop (cdr segs) path (list* r p acc))])))
      (define keyed (for/list ([e (in-list elements)] [i (in-naturals)]) (list (key (hash-ref e 'id "")) i e)))
      (map caddr (sort keyed (lambda (a b) (key<? (car a) (car b) (cadr a) (cadr b)))))]))

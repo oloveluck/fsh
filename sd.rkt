@@ -71,13 +71,16 @@
   ;; `extension[us-core-birthsex]` names the slice typed with that extension; a caret into an
   ;; element's `binding`/`extension` edits what the Parent's element already carries
   (define parent-elements (profile-elements parent))
+  (define slice-declarations (make-hash))
   (define-values (elems00 order00)
-    (fold-sd-rules base-type (rewrite-extension-slices rules parent-elements base-type) invariants self-url
-                   #:parent-types parent-types #:parent-element (lambda (id) (hash-ref parent-elements id #f))))
+    (parameterize ([current-slice-declarations slice-declarations])
+      (fold-sd-rules base-type (rewrite-extension-slices rules parent-elements base-type) invariants self-url
+                     #:parent-types parent-types #:parent-element (lambda (id) (hash-ref parent-elements id #f)))))
   (define-values (elems0 order0) (let-values ([(e o) (add-slice-parents elems00 order00)]) (copy-slice-children e o)))
   (define-values (elems order)
     (if ext? (add-extension-scaffold elems0 order0 self-url meta) (values elems0 order0)))
-  (define diff (snapshot-order base-type (for/list ([k (in-list (reverse order))]) (hash-ref elems k))))
+  (define diff (parameterize ([current-slice-declarations slice-declarations])
+                 (snapshot-order base-type (for/list ([k (in-list (reverse order))]) (hash-ref elems k)))))
   (define base (drop-false
                 (hasheq 'resourceType "StructureDefinition"
                         'id id
@@ -355,6 +358,10 @@
                                        h))))
        (for/fold ([elems e1] [order o1]) ([it (in-list items)])
          (define sn (or (contains-item-named-as it) (contains-item-name it)))
+         ;; the declaration order of the slices of this path, for the differential's order
+         (let ([decl (current-slice-declarations)])
+           (when (and decl (not (hash-has-key? decl (cons rid sn))))
+             (hash-set! decl (cons rid sn) (hash-count decl))))
          ;; reslicing: when the contains target is itself a slice, sub-slice ids join with "/"
          (define sub-id (if rslice (string-append rid "/" sn) (string-append rid ":" sn)))
          (define sub-name (if rslice (string-append rslice "/" sn) sn))
