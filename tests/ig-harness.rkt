@@ -135,6 +135,7 @@
 ;; all-diffs : published ours path -> (listof Diff)   every published value absent or different in
 ;; ours; lists of elements with ids pair BY ID (snapshot order is SUSHI's business, the content ours)
 ;; A Diff is (list 'missing path value) | (list 'differs path published ours) | (list 'short-list path n m)
+;;         | (list 'order path id-before id-after)   two ids published in that order, ours the other way
 (define (all-diffs a b path)
   (cond
     [(and (hash? a) (hash? b))
@@ -144,10 +145,19 @@
                     (list (list 'missing (reverse (cons k path)) v)))))]
     [(and (list? a) (list? b) (ids? a) (ids? b))
      (define ours (for/hash ([e (in-list b)]) (values (hash-ref e 'id) e)))
-     (append* (for/list ([e (in-list a)])
-                (define o (hash-ref ours (hash-ref e 'id) #f))
-                (if o (all-diffs e o (cons (hash-ref e 'id) path))
-                    (list (list 'missing (reverse (cons (hash-ref e 'id) path)) e)))))]
+     ;; the ORDER of the shared elements is SUSHI's business too (`subset?` pairs lists by
+     ;; position): the first published id that comes earlier in ours than its predecessor does
+     (define shared (for/list ([e (in-list a)] #:when (hash-ref ours (hash-ref e 'id) #f)) (hash-ref e 'id)))
+     (define pos (for/hash ([e (in-list b)] [i (in-naturals)]) (values (hash-ref e 'id) i)))
+     (define out-of-order
+       (for/first ([x (in-list shared)] [y (in-list (if (pair? shared) (cdr shared) '()))]
+                   #:when (> (hash-ref pos x) (hash-ref pos y)))
+         (list 'order (reverse path) x y)))
+     (append (if out-of-order (list out-of-order) '())
+             (append* (for/list ([e (in-list a)])
+                        (define o (hash-ref ours (hash-ref e 'id) #f))
+                        (if o (all-diffs e o (cons (hash-ref e 'id) path))
+                            (list (list 'missing (reverse (cons (hash-ref e 'id) path)) e))))))]
     [(and (list? a) (list? b))
      (append (if (> (length a) (length b)) (list (list 'short-list (reverse path) (length a) (length b))) '())
              (append* (for/list ([x a] [y b] [i (in-naturals)]) (all-diffs x y (cons i path)))))]
