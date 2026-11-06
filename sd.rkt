@@ -77,8 +77,12 @@
       (fold-sd-rules base-type (rewrite-extension-slices rules parent-elements base-type) invariants self-url
                      #:parent-types parent-types #:parent-element (lambda (id) (hash-ref parent-elements id #f)))))
   (define-values (elems0 order0) (let-values ([(e o) (add-slice-parents elems00 order00)]) (copy-slice-children e o)))
+  ;; SUSHI writes what CHANGES: a property equal to the Parent's element's is not in the
+  ;; differential, and an element left with nothing but its id and path is not either (a slice
+  ;; stays, bare, so its children have a home)
+  (define-values (elems1 order1) (drop-unchanged elems0 order0 (lambda (id) (hash-ref parent-elements id #f))))
   (define-values (elems order)
-    (if ext? (add-extension-scaffold elems0 order0 self-url meta) (values elems0 order0)))
+    (if ext? (add-extension-scaffold elems1 order1 self-url meta) (values elems1 order1)))
   (define diff (parameterize ([current-slice-declarations slice-declarations])
                  (snapshot-order base-type (for/list ([k (in-list (reverse order))]) (hash-ref elems k)))))
   (define base (drop-false
@@ -110,6 +114,23 @@
   (define base* (let ([b (if ext? (add-extension-header base (not own-context?)) base)])
                   (if (hash-ref b 'context #f) b (hash-remove b 'context))))
   (maybe-snapshot (apply-carets (hash-set base* 'abstract #f) rules)))
+;; drop-unchanged : elems order (id -> element|#f) -> (values elems order)   each element minus the
+;; properties its Parent's element already has with the same value; an element reduced to id/path
+;; (no sliceName) is dropped with its place in `order`
+(define (drop-unchanged elems order parent-element)
+  (define trimmed
+    (for/hash ([(id e) (in-hash elems)])
+      (define pe (parent-element id))
+      (values id
+              (if (hash? pe)
+                  (for/hash ([(k v) (in-hash e)]
+                             #:unless (and (not (memq k '(id path sliceName))) (equal? v (hash-ref pe k 'none))))
+                    (values k v))
+                  e))))
+  (define (bare? e) (and (not (hash-ref e 'sliceName #f))
+                         (for/and ([k (in-hash-keys e)]) (memq k '(id path)))))
+  (define kept (for/hash ([(id e) (in-hash trimmed)] #:unless (bare? e)) (values id e)))
+  (values kept (filter (lambda (id) (hash-has-key? kept id)) order)))
 ;; strip-core-version : string -> string   a core type pinned to its version (`Parent:
 ;; Observation|4.0.1`, as a published IG's baseDefinition reads) is the type itself
 (define (strip-core-version p)
