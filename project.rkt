@@ -18,6 +18,8 @@
          (only-in fhir/spec-package spec-package-path)
          (only-in fhir/diagnostic diagnostic loc exn:fail:diagnostic? exn:fail:diagnostic-diagnostic)
          (only-in "compile.rkt" compile-doc/diagnostics entity-label emit-snapshot? canonical-base fsh-fhir-version)
+         (only-in "context.rkt" fsh-config-status fsh-config-version)
+         (only-in "yaml.rkt" yref yaml-boolean)
          (only-in "parser/parse.rkt" parse-fsh-doc/diagnostics)
          (only-in "parser/ast.rkt" fsh-instance? fsh-instance-metadata fsh-instance-name)
          "ig-config.rkt" "pack.rkt")
@@ -115,6 +117,9 @@
        (parameterize ([emit-snapshot? snapshot?]
                       [canonical-base (or canonical (canonical-base))]
                       [fsh-fhir-version fhir-version]
+                      [fsh-config-status (and cfg (ig-config-status cfg))]
+                      [fsh-config-version (and cfg (eq? (yaml-boolean (yref (ig-config-yaml cfg) "FSHOnly")) #t)
+                                               (ig-config-version cfg))]
                       [current-sd-packages sd-packages])
          (compile-doc/diagnostics (map car located))))
      (define at (for/hash ([p (in-list located)]) (values (entity-label (car p)) (cdr p))))

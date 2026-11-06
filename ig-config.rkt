@@ -17,7 +17,8 @@
 
 (require racket/contract racket/string racket/list racket/file racket/match
          json file/gunzip file/untar
-         (only-in fhir/spec-package spec-package-path current-package-directories))
+         (only-in fhir/spec-package spec-package-path current-package-directories)
+         "yaml.rkt")
 
 (provide
  (struct-out ig-config)
@@ -32,61 +33,33 @@
 ;; ig-config : what compiling and packaging read — any may be #f / '()
 ;;   canonical fhir-version dependencies   (compile)
 ;;   id name title version status license description publisher   (package.json; publisher = its name)
-(struct ig-config (canonical fhir-version dependencies id name title version status license description publisher)
+;;   yaml   the whole file (a YamlValue, yaml.rkt), for what the ImplementationGuide needs
+(struct ig-config (canonical fhir-version dependencies id name title version status license description publisher yaml)
   #:transparent)
 
-;; read-ig-config : path -> ig-config
+;; read-ig-config : path -> ig-config   the file read as YAML (yaml.rkt); fhirVersion may be a list
 (define (read-ig-config file)
-  (define lines (file->lines file))
-  (define (top key)
-    (for/or ([l (in-list lines)])
-      (define m (regexp-match (pregexp (string-append "^" (regexp-quote key) ":\\s*(.*?)\\s*$")) l))
-      (and m (not (string=? (unquote* (cadr m)) "")) (unquote* (cadr m)))))
-  (define publisher
-    (or (top "publisher")
-        (let loop ([ls lines])
-          (cond [(null? ls) #f]
-                [(regexp-match? #px"^publisher:\\s*$" (car ls))
-                 (for/or ([l (in-list (cdr ls))] #:break (and (not (blank-or-comment? l)) (= (indent l) 0)))
-                   (define m (regexp-match #px"^\\s+-?\\s*name:\\s*(.*?)\\s*$" l))
-                   (and m (unquote* (cadr m))))]
-                [else (loop (cdr ls))]))))
-  (ig-config (top "canonical") (top "fhirVersion") (read-dependencies lines)
-             (or (top "packageId") (top "id")) (top "name") (top "title") (top "version") (top "status")
-             (top "license") (top "description") publisher))
+  (define y (read-yaml-file file))
+  (define (str key) (let ([v (yref y key)]) (and (string? v) (not (string=? v "")) v)))
+  (define fhir-version (match (yref y "fhirVersion") [(? string? v) v] [(cons (? string? v) _) v] [_ #f]))
+  (define publisher (match (yref y "publisher")
+                      [(? string? v) v]
+                      [(? ymap? m) (let ([n (yref m "name")]) (and (string? n) n))]
+                      [(cons (? ymap? m) _) (let ([n (yref m "name")]) (and (string? n) n))]
+                      [_ #f]))
+  (ig-config (str "canonical") fhir-version (read-dependencies (yref y "dependencies"))
+             (or (str "packageId") (str "id")) (str "name") (str "title") (str "version") (str "status")
+             (str "license") (str "description") publisher y))
 
-(define (unquote* s) (string-trim (regexp-replace #rx"[ \t]+#.*$" s "") #px"[\"' ]"))
-(define (indent l) (string-length (car (regexp-match #px"^ *" l))))
-(define (blank-or-comment? l) (regexp-match? #px"^\\s*(#.*)?$" l))
-
-;; read-dependencies : (listof string) -> (listof Dependency)
-(define (read-dependencies lines)
-  (define body
-    (let loop ([ls lines])
-      (cond [(null? ls) '()]
-            [(regexp-match? #px"^dependencies:\\s*$" (car ls))
-             (for/list ([l (in-list (cdr ls))]
-                        #:break (and (not (blank-or-comment? l)) (= (indent l) 0))
-                        #:unless (blank-or-comment? l))
-               l)]
-            [else (loop (cdr ls))])))
-  (define base (if (null? body) 0 (indent (car body))))
-  (let loop ([ls body] [acc '()])
-    (match ls
-      ['() (reverse acc)]
-      [(cons l rest)
-       (match (regexp-match #px"^\\s*([^:\\s]+):\\s*(.*?)\\s*$" l)
-         [(list _ id v) #:when (= (indent l) base)
-          (define inline (unquote* v))
-          (define nested (for/list ([n (in-list rest)] #:break (<= (indent n) base)) n))
-          (define version
-            (if (string=? inline "")
-                (for/or ([n (in-list nested)])
-                  (define m (regexp-match #px"^\\s*version:\\s*(.*?)\\s*$" n))
-                  (and m (unquote* (cadr m))))
-                inline))
-          (loop (list-tail rest (length nested)) (if version (cons (cons id version) acc) acc))]
-         [_ (loop rest acc)])])))
+;; read-dependencies : YamlValue -> (listof Dependency)   `id: version` or `id: {version: …}`
+(define (read-dependencies deps)
+  (match deps
+    [(ymap es)
+     (for*/list ([e es]
+                 [v (in-value (match (cdr e) [(? string? v) v] [(? ymap? m) (yref m "version")] [_ #f]))]
+                 #:when (string? v))
+       (cons (car e) v))]
+    [_ '()]))
 
 ;; dependency-packages : (listof Dependency) -> (values (listof tgz-path) (listof missing Dependency))
 (define (dependency-packages deps)
@@ -151,6 +124,14 @@
   (check-equal? (ig-config-canonical c) "http://hl7.org/fhir/us/mcode")
   (check-equal? (ig-config-fhir-version c) "4.0.1")
   (check-equal? (ig-config-dependencies c) '(("hl7.fhir.uv.genomics-reporting" . "2.0.0") ("hl7.fhir.us.core" . "6.1.0")))
+  ;; fhirVersion as a list; the whole file is kept for the ImplementationGuide
+  (let ([h (make-temporary-file)])
+    (with-output-to-file h #:exists 'truncate
+      (lambda () (display "fhirVersion:\n  - 6.0.0-ballot5\nstatus: draft\npages:\n  index.md:\n    title: Home\n")))
+    (define hc (read-ig-config h))
+    (check-equal? (ig-config-fhir-version hc) "6.0.0-ballot5")
+    (check-equal? (ig-config-status hc) "draft")
+    (check-equal? (yref (yref (ig-config-yaml hc) "pages") "index.md") (ymap '(("title" . "Home")))))
   ;; the implicit packages: the newest copy of each, none for an unknown version
   (check-false (version>? "5.2.0" "5.10.0"))
   (check-true (version>? "5.10.0" "5.2.0"))

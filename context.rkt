@@ -21,10 +21,16 @@
          (only-in fhir/sd/snapshot generate-snapshot)
          (only-in fhir/sd/sd-index resolve-sd-raw resolve-canonical-raw sd-index-available?)
          (only-in fhir/sd/logical register-structure-definition!))
-(provide assoc-ref canonical-base capitalize code-text* current-aliases current-contained current-instance-ref current-instance-resolver current-local-canonical current-logicals current-profile-sd current-profiles current-rule-diagnostics current-slice-orders emit-snapshot? external-canonical fsh-fhir-version last-url-seg resolve resolve-alias sd-url split-code strip#)
+(provide assoc-ref canonical-base fsh-config-status fsh-config-version capitalize code-text* current-aliases current-contained current-instance-ref current-instance-resolver current-local-canonical current-logicals current-profile-sd current-profiles current-rule-diagnostics current-slice-orders emit-snapshot? external-canonical fsh-fhir-version last-url-seg resolve resolve-alias sd-url split-code strip#)
 ;; the IG canonical URL base (SUSHI default in the golden corpus is http://example.org)
 (define canonical-base (make-parameter "http://example.org"))
 (define fsh-fhir-version (make-parameter "5.0.0"))
+;; fsh-config-status : (parameter (or String #f))   sushi-config.yaml's `status`, which SUSHI gives every
+;; StructureDefinition, ValueSet and CodeSystem that sets none itself; #f (no config) means "active"
+(define fsh-config-status (make-parameter #f))
+;; fsh-config-version : (parameter (or String #f))   the `version` SUSHI stamps on the same resources —
+;; only when the config says `FSHOnly: true` (otherwise the IG Publisher sets it); #f writes none
+(define fsh-config-version (make-parameter #f))
 ;; opt-in: also emit a full snapshot (differential merged onto the base's snapshot). Off by default
 ;; (the golden corpus is differential-only); loads the R5 core package on first use.
 (define emit-snapshot? (make-parameter #f))

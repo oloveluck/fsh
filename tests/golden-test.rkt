@@ -15,7 +15,8 @@
          json
          (only-in racket/port port->string)
          (only-in fhir/r5/schemas)                 ; register the R5 tower (resolve.rkt reads it)
-         (only-in fsh/compile fsh->fhir canonical-base))
+         (only-in fsh/compile fsh->fhir canonical-base)
+         (only-in fsh/context fsh-config-version))
 
 (define-runtime-path golden-dir "vendor/golden")
 
@@ -42,7 +43,8 @@
         string<? #:key path->string))
 
 (define (run)
-  (parameterize ([canonical-base "http://example.org"])
+  ;; the corpus is SUSHI output for a config of canonical http://example.org, version 0.1.0, FSHOnly
+  (parameterize ([canonical-base "http://example.org"] [fsh-config-version "0.1.0"])
     (define pass 0) (define fail 0)
     (for ([f (in-list (fsh-cases))])
       (define name (regexp-replace #rx"[.]fsh$" (path->string f) ""))

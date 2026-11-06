@@ -41,8 +41,17 @@
 ;; typed-caret-set : jsexpr caret-path fsh-value type counters -> jsexpr
 (define (typed-caret-set js cp0 v type counters)
   ;; `^extension[$alias]`: the url in a bracket may be an alias
-  (define cp (regexp-replace* #px"\\[(\\$[^\\]]+)\\]" cp0
-                              (lambda (all a) (string-append "[" (resolve-alias a (current-aliases)) "]"))))
+  (define cp1 (regexp-replace* #px"\\[(\\$[^\\]]+)\\]" cp0
+                               (lambda (all a) (string-append "[" (resolve-alias a (current-aliases)) "]"))))
+  ;; `^extension[FMM]`: the resource's (or element's) own extension may be named by the Extension's
+  ;; name, id or alias, which SUSHI resolves to its canonical; a nested `.extension[code]` stays a
+  ;; relative url
+  (define cp (match (regexp-match #px"^(\\^?)(extension|modifierExtension)\\[([^\\]]+)\\](.*)$" cp1)
+               [(list _ caret field name rest)
+                #:when (not (regexp-match? #px"^[0-9+=]+$|[:/]" name))
+                (define url (extension-url-of name))
+                (if url (string-append caret field "[" url "]" rest) cp1)]
+               [_ cp1]))
   (if (and type (type-registered? type))
       (caret-set js cp v #:type type #:counters counters
                  #:coerce (lambda (val ftype) (coerce (resolve val (current-aliases)) ftype)))

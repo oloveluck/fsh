@@ -40,7 +40,7 @@
    (drop-false
     (hasheq 'resourceType "ValueSet" 'id id
             'url (string-append (canonical-base) "/ValueSet/" id)
-            'version "0.1.0" 'name (fsh-valueset-name e) 'status "active"
+            'version (fsh-config-version) 'name (fsh-valueset-name e) 'status (or (fsh-config-status) "active")
             'title (assoc-ref meta 'title) 'description (assoc-ref meta 'description)
             'compose (drop-false (hasheq 'include (and (pair? incl) (merge-concept-components (reverse incl)))
                                          'exclude (and (pair? excl) (merge-concept-components (reverse excl)))))))
@@ -118,7 +118,7 @@
    (drop-false
     (hasheq 'resourceType "CodeSystem" 'id id
             'url (string-append (canonical-base) "/CodeSystem/" id)
-            'version "0.1.0" 'name (fsh-codesystem-name e) 'status "active"
+            'version (fsh-config-version) 'name (fsh-codesystem-name e) 'status (or (fsh-config-status) "active")
             'title (assoc-ref meta 'title) 'description (assoc-ref meta 'description)
             'content "complete" 'concept (and (pair? concepts) (apply-concept-carets concepts (fsh-codesystem-rules e)))
             'count (and (pair? concepts) (count-concepts concepts))))

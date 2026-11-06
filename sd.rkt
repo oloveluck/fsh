@@ -89,11 +89,11 @@
                 (hasheq 'resourceType "StructureDefinition"
                         'id id
                         'url self-url
-                        'version "0.1.0"
+                        'version (fsh-config-version)
                         'name name
                         'title (assoc-ref meta 'title)
                         'description (assoc-ref meta 'description)
-                        'status "active"
+                        'status (or (fsh-config-status) "active")
                         'fhirVersion (fsh-fhir-version)
                         ;; a profile shares its base's kind: Coding/CodeableConcept profiles are complex-type
                         'kind (cond [ext? "complex-type"]
@@ -105,13 +105,17 @@
                         'type base-type
                         'baseDefinition parent-url
                         'derivation "constraint"
-                        ;; SUSHI carries the base definition's mapping declarations into the profile
-                        'mapping (inherited-mappings base-type)
+                        ;; no `mapping`: SUSHI writes none (the IG Publisher adds the base's)
                         'differential (and (pair? diff) (hasheq 'element diff)))))
   (define own-context? (for/or ([r (in-list rules)])
                          (and (rule-caret? r) (member (rule-caret-path r) '(#f "" "."))
                               (regexp-match? #rx"^\\^?context" (rule-caret-caret-path r)))))
-  (define base* (let ([b (if ext? (add-extension-header base (not own-context?)) base)])
+  ;; `Context:` names the contexts outright; `^context` carets (applied after) may add to them
+  (define declared-context (let ([items (assoc-ref meta 'context)]) (and (pair? items) (context-entries items))))
+  (define base* (let ([b (if ext?
+                             (add-extension-header (if declared-context (hash-set base 'context declared-context) base)
+                                                   (not (or own-context? declared-context)))
+                             base)])
                   (if (hash-ref b 'context #f) b (hash-remove b 'context))))
   (maybe-snapshot (apply-carets (hash-set base* 'abstract #f) rules)))
 ;; drop-unchanged : elems order (id -> element|#f) -> (values elems order)   each element minus the
@@ -169,9 +173,9 @@
    (apply-carets
     (hash-set
      (drop-false
-      (hasheq 'resourceType "StructureDefinition" 'id id 'url self-url 'version "0.1.0" 'name name
+      (hasheq 'resourceType "StructureDefinition" 'id id 'url self-url 'version (fsh-config-version) 'name name
               'title (assoc-ref meta 'title) 'description (assoc-ref meta 'description)
-              'status "active" 'fhirVersion (fsh-fhir-version)
+              'status (or (fsh-config-status) "active") 'fhirVersion (fsh-fhir-version)
               'kind (if logical? "logical" "resource")
               'type (if logical? self-url id)
               ;; a Parent that is a logical model of this document is named by its url
@@ -625,13 +629,39 @@
   (define r (resolve-alias n (current-aliases)))
   (or ((current-local-canonical) r) (external-canonical "ValueSet" r) r))
 ;; ---- Extension auto-scaffolding (SUSHI-style) ----------------------------------------------
-;; a top-level `extension` (type-characteristics can-bind) + a `context` of Element
+;; a `context` of Element, and for R5+ a top-level `extension` (type-characteristics can-bind)
 (define (add-extension-header sd [default-context? #t])
-  (hash-set* sd
-             ;; the default context (Element) only when the Extension sets none itself (`^context[+]…`)
-             'context (if default-context? (list (hasheq 'type "element" 'expression "Element")) (hash-ref sd 'context #f))
-             'extension (list (hasheq 'url "http://hl7.org/fhir/StructureDefinition/structuredefinition-type-characteristics"
-                                      'valueCode "can-bind"))))
+  (define with-context
+    ;; the default context (Element) only when the Extension sets none itself (`^context[+]…`)
+    (hash-set sd 'context (if default-context? (list (hasheq 'type "element" 'expression "Element")) (hash-ref sd 'context #f))))
+  ;; SUSHI marks an R5+ Extension bindable; it writes no type-characteristics on an R4 one
+  (if (regexp-match? #rx"^4[.]" (fsh-fhir-version))
+      with-context
+      (hash-set with-context 'extension (list (hasheq 'url "http://hl7.org/fhir/StructureDefinition/structuredefinition-type-characteristics"
+                                                       'valueCode "can-bind")))))
+
+;; context-entries : (listof ContextItem) -> (listof jsexpr)   `Context:` as SUSHI writes it: a quoted
+;; item is a FHIRPath expression; an unquoted one is an extension when it names one (this
+;; document's or a dependency's, by name, id or url: its canonical), else an element path
+(define (context-entries items)
+  (for/list ([it (in-list items)])
+    (define raw (string-trim (regexp-replace #px"\\s*,\\s*$" (cadr it) "")))
+    (match (regexp-match #px"^\"(.*)\"$" raw)
+      [(list _ expr) (hasheq 'type "fhirpath" 'expression (regexp-replace* #px"\\\\(.)" expr "\\1"))]
+      [_ (define n (resolve-alias raw (current-aliases)))
+         (define url (context-extension-url n))
+         (if url
+             (hasheq 'type "extension" 'expression url)
+             (hasheq 'type "element" 'expression n))])))
+
+;; context-extension-url : String -> (or String #f)   the canonical of an Extension named by name, id or url
+(define (context-extension-url n)
+  (cond
+    [(hash-ref (current-profiles) n #f)
+     => (lambda (p) (and (equal? (instance-base n (current-profiles)) "Extension") (local-profile-url p)))]
+    [(and (sd-index-available?) (not (type-registered? (string->symbol n))) (resolve-canonical-raw "StructureDefinition" n))
+     => (lambda (sd) (and (equal? (hash-ref sd 'type #f) "Extension") (hash-ref sd 'url #f)))]
+    [else #f]))
 ;; add the scaffold elements SUSHI generates for an Extension around the user's folded rules
 (define (add-extension-scaffold elems order self-url meta)
   (define keys (hash-keys elems))

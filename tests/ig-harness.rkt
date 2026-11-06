@@ -64,7 +64,9 @@
 ;; … and the category / security-category of a profile, which the Publisher derives from the IG's
 ;; own metadata (Genomics Reporting's "Clinical.Diagnostics" / "patient")
 (define publisher-ext #rx"structuredefinition-(wg|fmm|standards-status|normative-version|category|security-category)")
-(define drop-top '(text snapshot date version publisher contact jurisdiction))
+(define drop-top '(text snapshot date version publisher contact jurisdiction
+                   ;; the IG Publisher writes the base definition's mapping declarations; SUSHI does not
+                   mapping))
 (define (publisher-ext? e) (and (hash? e) (regexp-match? publisher-ext (hash-ref e 'url ""))))
 
 ;; the IG Publisher assigns conformance resources an OID identifier (urn:ietf:rfc:3986 urn:oid:…)

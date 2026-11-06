@@ -38,10 +38,9 @@
                           "* identifier -> \"PID-3\"\n* name -> \"PID-5\" \"the name\"\n")))
   (define sd (only sds))                                ; the Mapping does not produce its own artifact
   (check-equal? (length sds) 1)
-  ;; SUSHI: the parent's mapping declarations are inherited, the Mapping entity's is appended
-  (check-equal? (last (hash-ref sd 'mapping)) (hasheq 'identity "m" 'name "V2 Map" 'uri "HL7 V2"))
-  (when (sd-index-available?)
-    (check-true (and (member "rim" (map (lambda (m) (hash-ref m 'identity)) (hash-ref sd 'mapping))) #t)))
+  ;; SUSHI 3.21 writes only the Mapping entity's declaration — no inherited ones (the IG Publisher
+  ;; adds the base's)
+  (check-equal? (hash-ref sd 'mapping) (list (hasheq 'identity "m" 'name "V2 Map" 'uri "HL7 V2")))
   (define name-el (by-path sd "Patient.name"))
   (check-equal? (hash-ref name-el 'mapping) (list (hasheq 'identity "m" 'map "PID-5" 'comment "the name")))
   ;; a mapped element not otherwise constrained is added

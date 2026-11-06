@@ -37,8 +37,8 @@ The International Patient Summary IG's own FSH sources (`tests/vendor/ips-2.0.1`
 2.0.1, 123 files / 274 entities) are compiled for R4 and compared with the PUBLISHED package
 (fhir-spec's `hl7.fhir.uv.ips.tgz` — SUSHI + IG Publisher output for the same sources), paired by
 (resourceType, id) after normalising publisher-only content (narrative, snapshots, dates, config
-metadata, version pins). Current: **0 compile errors; 114 resources paired; 85 exact; 108 with all
-published content; 437/438 differential elements** — ratcheted. This is the honest conformance
+metadata, version pins). Current: **0 compile errors; 114 resources paired; 94 exact; 108 with all
+published content; 438/438 differential elements** — ratcheted. This is the honest conformance
 number; the 22 golden pairs below are hand-authored and far easier.
 It drove these fixes: STAR lexing after trailing whitespace / blank lines; `40` lexed as TIME;
 keyword names in paths (`system`); triple-quoted strings (trim + dedent); unknown string escapes
@@ -78,7 +78,7 @@ published `hl7.fhir.us.mcode-4.0.0.tgz`. mCODE builds on US Core 6.1.0 and Genom
 each dependency in fhir-spec (`<id>-<version>.tgz`); the packages go ahead of core in
 `current-sd-packages`. `raco fsh <dir>` does the same when it finds a sushi-config.yaml (next to the
 sources or up to two levels up); flags override it, missing dependencies are reported.
-Current: **0 compile errors; 349 paired; 226 exact; 330 with all published content; 472/473 differential
+Current: **0 compile errors; 349 paired; 311 exact; 339 with all published content; 472/473 differential
 elements** — ratcheted. It drove: profiles of DEPENDENCY packages for Parent and InstanceOf (`external-sd`:
 base type, canonical, `meta.profile`), aliases on InstanceOf and along Parent chains; SUSHI's required
 values (`assign-required`: an element the InstanceOf profile requires with fixed[x]/pattern[x] is
@@ -115,7 +115,7 @@ pin it), and returns #f offline (the test skips with a note; CI has the network)
 on `hl7.fhir.us.core 3.1.1` and nothing else — which the fetcher follows (`stub-dependency`) to the real
 package; the test pins the real one. US Core 7.0.0, 6.1.0 and HRex are declared too but no rule reaches
 them. Current: **0 compile errors; 109 paired (the CapabilityStatement, SearchParameters and IG are not
-FSH-authored); 78 exact, 94 with all published content; 321/321 differential elements** — ratcheted.
+FSH-authored); 84 exact, 99 with all published content; 321/321 differential elements** — ratcheted.
 It drove: a code's system part as a CodeSystem NAME (`LanguageProficiencyCS#30`, this document's or a
 dependency's — `resolve-system`); `[slice][k]` as the k-th slot of a slice (base+k while no other slice
 holds it, else the next unused position — `daysOfWeek[5]` written after `allDay` lands after it);
@@ -140,7 +140,7 @@ versions (7.0.0, and 6.1.0 / 3.1.1 as `.v610`/`.v311` aliases; 6.1.0 from fhir-s
 fetched) and pins Parents and Reference targets to one (`Parent: USCoreProvenance|7.0.0`,
 `Reference(USCorePatientProfile|7.0.0)`); the packages go into the SD context in the declared order.
 Current: **0 compile errors; 46 paired (a Basic, a Binary, the IG and one JSON-kept SD are not
-FSH-authored); 25 exact, 45 with all published content; 138/138 differential elements** — ratcheted.
+FSH-authored); 31 exact, 46 with all published content; 138/138 differential elements** — ratcheted.
 It drove: a Reference target by package NAME with its `|version` kept on the canonical
 (`target-urls`); a parameterized RuleSet inserting another parameterized RuleSet (the nested
 reference re-texts with its paren — HRex's concept maps, 500 `insert map…` rows); a failing
@@ -316,6 +316,28 @@ Current: **514/515 — 408 agree, 95 of them on SUSHI's own line, 11 where SUSHI
 over-reports are read against SUSHI's source: a shape-asserting test (no message assertion) can
 hide an error SUSHI did log — `* address 1..* Address` without a short does (BadDefs.fsh asserts
 that very error). Remaining misses are named in the CI output.
+
+## Raw SUSHI as an oracle (SUSHI 3.21.0, 2026-11-06)
+The published packages are SUSHI output after the IG Publisher has run, so matching them can hide
+what SUSHI itself writes. Running SUSHI 3.21.0 on the vendored IGs, the golden `.fsh` files and a
+probe project showed what it really does, and fsh now does the same:
+- `sushi-config.yaml` is read as YAML (`yaml.rkt`: block and flow collections, quoted and block
+  scalars, comments; anchors, tags and multi-document streams are errors). `ig-config` keeps the
+  whole tree for what the ImplementationGuide will need, and `fhirVersion` may be a list.
+- `status` comes from the config (`fsh-config-status`) unless `^status` sets it. `version` is
+  written only when the config says `FSHOnly: true` (`fsh-config-version`); otherwise the IG
+  Publisher sets it. There is no more hard-coded `0.1.0`. The golden test runs with version 0.1.0,
+  as the config SUSHI built it with.
+- No `mapping` is written on a profile; the IG Publisher adds the base's, so the harness drops it
+  as Publisher-added. A `Mapping:` entity writes only its own declaration.
+- `Context:` compiles: a quoted item is `fhirpath`; an unquoted one is `extension` with the
+  Extension's canonical when it names one (local or a dependency's), else `element`.
+- The type-characteristics `can-bind` extension goes on R5+ Extensions only, not R4 ones.
+- A root `^extension[Name]` (an alias without `$`, or an extension's name or id) resolves to the
+  Extension's canonical. Before this, mCODE's 89 `^extension[FMM]` carets wrote the url "FMM";
+  the harness's FMM normalisation hid it.
+Measured against raw SUSHI (byte-identical apart from text/snapshot): IPS 102/118, mCODE 326/350,
+golden 19/22 (the remaining diffs are differential details). The SUSHI outputs are not vendored yet.
 
 ## Editor and agent support (`fsh/support.rkt`)
 What FSH offers the family's hubs through `fhir/lang/support` (the contract in the foundation): the
