@@ -41,6 +41,11 @@ for f in sorted(glob.glob(os.path.join(src,'FSHImporter*.test.ts')))+[os.path.jo
         for em in re.finditer(r"getLastMessage\('(error|warn|info)'\)\)\.toMatch\(\s*(/(.*?)/([a-z]*)|'((?:[^'\\]|\\.)*)')\s*\)", body, re.S):
             lvl=em.group(1); rx=em.group(3) if em.group(3) is not None else re.escape(em.group(5))
             expects.append({'level':lvl,'regex':rx})
+        # `const messages = loggerSpy.getAllMessages('error'); expect(messages[i]).toMatch(/…/)`
+        im2=re.search(r"const (\w+)\s*=\s*loggerSpy\.getAllMessages\('(error|warn)'\)", body)
+        if im2:
+            for em in re.finditer(r"expect\(%s\[\d+\]\)\.toMatch\(\s*/(.*?)/([a-z]*)\s*\)" % re.escape(im2.group(1)), body, re.S):
+                expects.append({'level':im2.group(2),'regex':em.group(1)})
         # a count of logged errors/warnings is an expectation too
         for cm in re.finditer(r"getAllMessages\('(error|warn)'\)\)\.toHaveLength\((\d+)\)", body):
             if int(cm.group(2))>0: expects.append({'level':cm.group(1),'regex':'.*','count':int(cm.group(2))})

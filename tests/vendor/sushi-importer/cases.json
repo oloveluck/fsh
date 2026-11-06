@@ -4580,7 +4580,20 @@
   "name": "should avoid crashing and log error messages because of mismatched input",
   "fsh_file": "Mismatch.fsh",
   "input": "\nProfile: \"BadProfile\"\n\nProfile: BetterProfile\nId: \"BadId\"\nDescription: BadDescription\n",
-  "expects": [],
+  "expects": [
+   {
+    "level": "error",
+    "regex": "BadProfile.*SEQUENCE.*File: Mismatch\\.fsh.*Line: 2\\D*"
+   },
+   {
+    "level": "error",
+    "regex": "BadId.*SEQUENCE.*File: Mismatch\\.fsh.*Line: 5\\D*"
+   },
+   {
+    "level": "error",
+    "regex": "BadDescription.*{STRING, MULTILINE_STRING}.*File: Mismatch\\.fsh.*Line: 6\\D*"
+   }
+  ],
   "no_messages": false
  },
  {

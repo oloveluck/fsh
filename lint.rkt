@@ -98,7 +98,8 @@
   (for/list ([prev (in-list (cons #f toks))] [t (in-list toks)]
              [next (in-list (if (null? toks) '() (append (cdr toks) (list #f))))]
              #:when (memq (token-struct-type t) '(EQUAL ARROW))
-             #:when (or (and prev (eqv? (end prev) (token-struct-offset t)))
+             ;; (a `*` token carries its trailing space: `* -> "x"` is spaced)
+             #:when (or (and prev (not (eq? (token-struct-type prev) 'STAR)) (eqv? (end prev) (token-struct-offset t)))
                         (and next (eqv? (end t) (token-struct-offset next)))))
     (err (token-loc t src)
          (cond [(eq? (token-struct-type t) 'ARROW)
@@ -152,9 +153,12 @@
       [_ '()]))
   (for/list ([c (in-list codes)] #:when (regexp-match? #px"#\"\\s" c))
     (err l (format "A concept string cannot start with whitespace (~a)" c))))
-;; component-codes : vs-component body -> (listof string)
+;; component-codes : vs-component body -> (listof string)   the concepts a component lists (not a
+;; filter's code value)
 (define (component-codes body)
-  (for/list ([n (in-list (find-nodes body 'code))]) (code-text (cadr n))))
+  (for*/list ([cc (in-list (find-nodes body 'vsConceptComponent))]
+              [n (in-list (find-nodes (cdr cc) 'code))])
+    (code-text (cadr n))))
 (define (code-text c) (if (code-tok? c) (code-tok-text c) (format "~a" c)))
 (define pipes-message "Using '|' to list references is no longer supported. Use 'or' to list multiple references")
 ;; rule-checks : entity rule loc -> (listof diagnostic)
@@ -165,9 +169,9 @@
          (list (err l (format "Neither side of the cardinality was specified on path \"~a\". A min, max, or both need to be specified" p)))
          '())]
     [(rule-only _ types)
-     (for/list ([t (in-list types)] #:when (and (string? t) (regexp-match? #rx"[|]" t))) (err l pipes-message))]
+     (for/list ([t (in-list types)] #:when (and (string? t) (piped-reference? t))) (err l pipes-message))]
     [(rule-assign _ (fsh-reference target _) _)
-     #:when (regexp-match? #rx"[|]" target)
+     #:when (piped-reference? target)
      (list (err l pipes-message))]
     [(rule-caret p _ _)
      #:when (and p (not (equal? p ".")) (or (fsh-valueset? e) (fsh-codesystem? e)))
@@ -219,6 +223,8 @@
     [(rule-contains p _) p] [(rule-only p _) p] [(rule-obeys p _) p] [(rule-caret p _ _) p]
     [(rule-mapping p _ _ _) p] [(rule-insert p _) p] [(rule-add-element p _ _ _ _ _) p]
     [(rule-add-cr-element p _ _ _ _ _) p] [(rule-path p) p] [_ #f]))
+;; piped-reference? : string -> boolean   `Reference(A | B)` (a Canonical's `|` is its version)
+(define (piped-reference? t) (regexp-match? #px"^(?:Codeable)?Reference\\s*\\([^)]*[|]" t))
 ;; choice? : string -> boolean   `Reference(A or B)` — a choice of targets inside the parentheses
 (define (choice? target) (regexp-match? #px"\\((?:[^)]*\\s)?or\\s[^)]*\\)" target))
 
@@ -304,6 +310,9 @@
                                            (list (tok 'STAR "* " 0 3 0 2) (tok 'SEQUENCE "status" 2 3 2 6)
                                                  (tok 'EQUAL "=" 9 3 9 1) (tok 'CODE "#final" 11 3 11 6)))))
                 '())
+  (check-equal? (lint-document (list (list (fsh-mapping "M" '() '()) (loc #f 1 1 0 8)
+                                           (list (tok 'STAR "* " 0 3 0 2) (tok 'ARROW "->" 2 3 2 2) (tok 'STRING "x" 5 3 5 3)))))
+                '())
   ;; an Instance without InstanceOf, and with an unknown Usage
   (check-equal? (msgs (lint-document (list (list (fsh-instance "I" '((title . "t")) '()) (loc #f 1 1 0 9) '()))))
                 '("Instance I is missing its InstanceOf declaration"))
@@ -328,7 +337,8 @@
   (check-equal? (rule-msgs (fsh-valueset "VS" '() (list (rule-code-caret '("ZOO#a" "ZOO#b") "^designation.value" "x"))))
                 '("Only one concept may be listed before a caret rule on a ValueSet."))
   ;; filter values by kind
-  (define (filt op v) (list 'vsFilterComponent "codes" (list 'vsFilterList (list 'vsFilterDefinition (list 'name "concept") (list 'vsFilterOperator op) (list 'vsFilterValue v)))))
+  (define (filt op v) (list 'vsFilterComponent "codes" (list 'vsComponentFrom "from" (list 'vsFromSystem "system" (list 'name "ZOO")))
+                            (list 'vsFilterList (list 'vsFilterDefinition (list 'name "concept") (list 'vsFilterOperator op) (list 'vsFilterValue v)))))
   (check-equal? (rule-msgs (fsh-valueset "VS" '() (list (vs-component #t (list (filt "is-a" "/bear/"))))))
                 '("The \"is-a\" filter value must be a code or string"))
   (check-equal? (rule-msgs (fsh-valueset "VS" '() (list (vs-component #t (list (filt "is-a" (list 'code (code-tok "#bear"))))))))
@@ -358,6 +368,9 @@
   ;; pipes in references; a caret rule with a path on a ValueSet; a concept string starting with whitespace; a glued operator
   (check-equal? (rule-msgs (fsh-profile "P" '() (list (rule-only "performer" '("Reference(Organization | CareTeam)")))))
                 (list pipes-message))
+  (check-equal? (rule-msgs (fsh-profile "P" '() (list (rule-only "instantiates" '("Canonical(A|1.0 or B|2.0)"))))) '())
+  ;; a filter's code value is not a concept of the component
+  (check-equal? (rule-msgs (fsh-valueset "VS" '() (list (vs-component #t (list (filt "is-a" (list 'code (code-tok "ZOO#bear")))))))) '())
   (check-equal? (rule-msgs (fsh-profile "P" '() (list (rule-assign "subject" (fsh-reference "Reference(A|B)" #f) #f))))
                 (list pipes-message))
   (check-equal? (rule-msgs (fsh-valueset "VS" '() (list (rule-caret "mypath" "^publisher" "foo"))))
