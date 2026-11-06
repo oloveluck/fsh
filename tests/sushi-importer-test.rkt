@@ -91,7 +91,10 @@
       (define c (car r))
       (printf "    ~a / ~a~a\n" (hash-ref c 'file) (hash-ref c 'name)
               (if (caddr r) (format ": ~a" (let ([s (caddr r)]) (if (> (string-length s) 200) (substring s 0 200) s))) "")))))
-;; RATCHETED — floors from the first run
-(check-true (>= (+ (n 'agree) (n 'agree-line) (n 'agree-unasserted)) 0) "fewer agreements than the floor")
-(check-true (<= (n 'over-error) 515) "more over-reports than the ceiling")
-(check-true (<= (n 'crash) 515) "more crashes than the ceiling")
+;; RATCHETED — agreements up, misses and over-reports down (0907fc0: 408 + 95 + 11 of 515; the one
+;; line elsewhere is the empty RuleSet, whose error SUSHI positions at the NEXT entity)
+(check-true (>= (+ (n 'agree) (n 'agree-line) (n 'agree-unasserted)) 514) "fewer agreements than the floor")
+(check-true (<= (n 'missed-error) 0) "more missed errors than the ceiling")
+(check-true (<= (n 'line-elsewhere) 1) "more lines elsewhere than the ceiling")
+(check-true (<= (n 'over-error) 0) "more over-reports than the ceiling")
+(check-true (<= (n 'crash) 0) "more crashes than the ceiling")

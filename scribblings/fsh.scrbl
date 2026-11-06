@@ -172,12 +172,12 @@ all published content, all 438 differential elements; mCODE 4.0.0 pairs 349, 227
 complete, 472 of 473 differential elements; Plan-Net 1.2.0 (its package and US Core 3.1.1 fetched from
 the registry when the tests run) pairs 109, 78 identical, 99 complete, all 321 differential
 elements; HRex 1.1.0 (three US Core versions in context) pairs 46, 31 identical, all 46 complete, all
-138 differential elements; Genomics Reporting 2.0.0 pairs 141, 105 identical, 118 complete, 250 of 259
+138 differential elements; Genomics Reporting 2.0.0 pairs 141, 113 identical, 129 complete, 254 of 259
 differential elements. The decompiler is measured the same way: the published IPS and mCODE packages
 decompiled to FSH, compiled back and compared (@filepath{tests/gofsh-ips-test.rkt},
 @filepath{tests/gofsh-mcode-test.rkt}) — all 117 IPS resources come back identical, 341 of 349 mCODE
 resources. The parser and the linter are measured against SUSHI's own importer test suite
-(@filepath{tests/sushi-importer-test.rkt}: 515 texts; IMPORTER_SHORT). The tests print every
+(@filepath{tests/sushi-importer-test.rkt}: 515 texts; 514 verdicts agree, no missed error, no over-report). The tests print every
 remaining difference, classified, largest first. The differences:
 
 @itemlist[

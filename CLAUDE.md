@@ -282,8 +282,8 @@ HL7 Genomics Reporting's own FSH (`tests/vendor/genomics-reporting-2.0.0`, HL7/g
 commit c2cf861 — the commit whose resource ids match the published package 46/46; the 2.0.0 tag's do
 not) against fhir-spec's `hl7.fhir.uv.genomics-reporting-2.0.0.tgz`. What it adds: OperationDefinitions
 and ConceptMaps as instances, deep component slicing through RuleSets, large code systems, examples
-authored as Bundles. Current: **0 compile errors; 141 paired; 105 exact, 118 with all published
-content; 250/259 differential elements** — ratcheted. It drove: `drop-unchanged` (SUSHI writes what
+authored as Bundles. Current: **0 compile errors; 141 paired; 113 exact, 129 with all published
+content; 254/259 differential elements** — ratcheted. It drove: `drop-unchanged` (SUSHI writes what
 changes — a property equal to the Parent's element's leaves the differential), `extension[<Extension
 name>]` resolved to the slice typed with it in the profile's OWN `contains` (`extension contains
 GenomicReportNote named coded-note`, then `extension[GenomicReportNote] ^requirements`), quoted
@@ -291,7 +291,7 @@ concept codes (`$PHARMVAR#"CYP2C9 *2/*5"`) unquoted, the harness dropping the Pu
 `structuredefinition-category`/`-security-category` extensions. Named residue, not chased: the
 package was built by SUSHI 2.x, which wrote a type-specific choice path as an element of its own
 (`Observation.valueQuantity`) where SUSHI 3 and we write the type slice (`value[x]:valueQuantity`,
-9 differential elements); its OperationDefinitions and several examples drifted after publication
+5 differential elements); its OperationDefinitions and several examples drifted after publication
 (parameter names, types, cardinalities; coding versions the FSH never writes; the examples it kept
 in XML/JSON).
 
@@ -312,7 +312,7 @@ told from strings), and `=`/`->` without their spaces. The parser enforces SUSHI
 as positioned errors (two spaces per level, the first rule left-aligned, at most one level deeper
 than the rule above, nothing indented under a path-less rule, `.` only at the top level).
 `compile-project` parses through the same entry point, so a project reports every file's findings.
-Current: **IMPORTER_NUMBERS** — ratcheted (agreements up, over-reports and crashes down). The
+Current: **514/515 — 408 agree, 95 of them on SUSHI's own line, 11 where SUSHI logs an error its test leaves unasserted; 0 missed errors, 0 over-reports, 0 crashes; the one line elsewhere is the empty RuleSet, whose error SUSHI positions at the next entity** — ratcheted (agreements up, over-reports and crashes down). The
 over-reports are read against SUSHI's source: a shape-asserting test (no message assertion) can
 hide an error SUSHI did log — `* address 1..* Address` without a short does (BadDefs.fsh asserts
 that very error). Remaining misses are named in the CI output.
