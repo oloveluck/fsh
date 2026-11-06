@@ -25,7 +25,8 @@
    (printf "  Genomics Reporting IG corpus: skipped (needs the fhir-spec package)\n")]
   [else
    (define r (parameterize ([current-sd-packages (list r4-core)])
-               (check-fsh-ig (build-path genomics "fsh") published (ig-config-canonical cfg))))
+               (check-fsh-ig (build-path genomics "fsh") published (ig-config-canonical cfg)
+                             #:dump '("Observation/TxImp06"))))
    (printf "  Genomics Reporting 2.0.0 from FSH: ~a resources paired; ~a exact, ~a with all published content; SD differential ~a/~a elements\n"
            (ig-fsh-report-pairs r) (ig-fsh-report-exact r) (ig-fsh-report-contained r)
            (ig-fsh-report-elements-ok r) (ig-fsh-report-elements-total r))

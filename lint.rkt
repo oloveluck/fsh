@@ -13,7 +13,7 @@
 
 (require racket/match racket/list racket/string racket/contract
          brag/support
-         (only-in fhir/diagnostic diagnostic loc loc-source attached-loc)
+         (only-in fhir/diagnostic diagnostic diagnostic? loc loc-source attached-loc)
          "parser/ast.rkt")
 
 (provide

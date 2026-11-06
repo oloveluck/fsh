@@ -207,11 +207,25 @@
 ;; rewrite-extension-slices : rules parent-elements base-type -> rules   a leading
 ;; `extension[Name]` whose Name is not one of the Parent's slices but names an Extension (an alias,
 ;; a url, a profile) means the Parent's slice typed with it: `extension[us-core-birthsex] MS` is
-;; the slice `birthsex` of US Core's Patient
+;; the slice `birthsex` of US Core's Patient — or this profile's own slice typed with it:
+;; after `extension contains GenomicReportNote named coded-note`, `extension[GenomicReportNote]`
+;; is `extension[coded-note]`
 (define (rewrite-extension-slices rules parent-elements base-type)
+  ;; the document's `contains X named y` items: the Extension named -> the slice
+  (define own-slices
+    (for*/hash ([r (in-list rules)] #:when (rule-contains? r)
+                #:when (regexp-match? #px"(?:^|\\.)(?:modifierE|e)xtension$" (rule-contains-path r))
+                [it (in-list (rule-contains-items r))] #:when (contains-item-named-as it))
+      (values (contains-item-name it) (contains-item-named-as it))))
+  (define own-names
+    (for*/hash ([r (in-list rules)] #:when (rule-contains? r)
+                [it (in-list (rule-contains-items r))])
+      (values (or (contains-item-named-as it) (contains-item-name it)) #t)))
   (define (slice-for field name)
     (cond
       [(hash-has-key? parent-elements (string-append base-type "." field ":" name)) name]
+      [(hash-ref own-names name #f) name]
+      [(hash-ref own-slices name #f) => values]
       [(extension-url-of name)
        => (lambda (url)
             (or (for/or ([(id el) (in-hash parent-elements)])
@@ -221,9 +235,9 @@
                 name))]
       [else name]))
   (define (fix p)
-    (regexp-replace #px"^((?:modifierE|e)xtension)\\[([^\\]]+)\\]" p
-                    (lambda (all field name) (string-append field "[" (slice-for field name) "]"))))
-  (if (hash-empty? parent-elements) rules (map (lambda (r) (map-rule-path fix r)) rules)))
+    (regexp-replace* #px"(^|\\.)((?:modifierE|e)xtension)\\[([^\\]]+)\\]" p
+                     (lambda (all pre field name) (string-append pre field "[" (slice-for field name) "]"))))
+  (if (and (hash-empty? parent-elements) (hash-empty? own-slices)) rules (map (lambda (r) (map-rule-path fix r)) rules)))
 ;; add-slice-parents : elems order -> (values elems order)   a slice whose children the rules
 ;; constrain is in the differential itself (SUSHI puts it there, bare but for its sliceName, as the
 ;; IG Publisher needs it to place the children)

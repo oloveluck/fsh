@@ -104,7 +104,11 @@
 (define (strip# s) (if (and (string? s) (regexp-match? #px"^#" s)) (substring s 1) s))
 (define (split-code c)
   (define m (regexp-match #px"^([^#]*)#(.*)$" c))
-  (if m (values (let ([s (cadr m)]) (and (positive? (string-length s)) s)) (caddr m)) (values #f c)))
+  (if m (values (let ([s (cadr m)]) (and (positive? (string-length s)) s)) (unquote-code (caddr m))) (values #f c)))
+;; unquote-code : string -> string   a quoted concept code (`$PHARMVAR#"CYP2C9 *2/*5"`) is its text
+(define (unquote-code s)
+  (cond [(regexp-match #px"^\"(.*)\"$" s) => (lambda (m) (regexp-replace* #px"\\\\(.)" (cadr m) "\\1"))]
+        [else s]))
 (define (capitalize s)
   (if (= 0 (string-length s)) s (string-append (string-upcase (substring s 0 1)) (substring s 1))))
 (define (sd-url t)
