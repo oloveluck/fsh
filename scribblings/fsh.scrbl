@@ -3,7 +3,7 @@
                      fsh/parser/parse fsh/lint fsh/compile fsh/decompile fsh/print fsh/project fsh/pack fsh/check fsh/ig-config
                      (only-in fhir/diagnostic diagnostic?)))
 
-@title{fsh: FHIR Shorthand for Racket}
+@title{fsh: FHIR Shorthand}
 
 A @hyperlink["https://hl7.org/fhir/uv/shorthand/"]{FHIR Shorthand} compiler. You write profiles,
 extensions, value sets, code systems and example instances in @tt{.fsh} files, the way you would for

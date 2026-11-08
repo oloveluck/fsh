@@ -2,7 +2,7 @@
 
 (define collection "fsh")
 (define version "0.3")
-(define pkg-desc "FHIR Shorthand for Racket: a bidirectional FSH compiler (FSH -> FHIR and GoFSH-style FHIR -> FSH), #lang fsh, and raco fsh — including `raco fsh check`, which validates a project's examples against its profiles and positions every problem in the FSH")
+(define pkg-desc "FHIR Shorthand: a bidirectional FSH compiler (FSH -> FHIR and GoFSH-style FHIR -> FSH), the fsh command-line tool and #lang fsh — including `fsh check`, which validates a project's examples against its profiles and positions every problem in the FSH")
 (define pkg-authors '(oloveluck))
 (define license 'MIT)
 (define deps '("base" "fhir" "fhirpath" "fhir-tx" "fhir-validation" "brag-lib" "br-parser-tools-lib"))
