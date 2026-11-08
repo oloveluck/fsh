@@ -34,15 +34,18 @@
 (provide
  (struct-out check-report)
  (contract-out
-  [check-fsh-project (->* (path-string?) (#:capability (or/c string? #f)) check-report?)]
+  [check-fsh-project (->* (path-string?) (#:capability (or/c string? #f) #:canonical (or/c string? #f)
+                                          #:fhir-version (or/c string? #f) #:packages (listof path-string?))
+                          check-report?)]
   [trace-rule        (-> list? string? (or/c any/c #f))]))
 
 ;; A check-report: every diagnostic (compile first, then validation, then server), the source texts
 ;; (for excerpts), the counts, and the compiled artifacts.
 (struct check-report (diagnostics texts examples invalid artifacts) #:transparent)
 
-(define (check-fsh-project dir #:capability [capability #f])
-  (define p (compile-project dir))
+(define (check-fsh-project dir #:capability [capability #f] #:canonical [canonical #f] #:fhir-version [fhir-version #f]
+                           #:packages [packages '()])
+  (define p (compile-project dir #:canonical canonical #:fhir-version fhir-version #:packages packages))
   (define compile-diags (project-diagnostics p))
   (define-values (examples invalid validation-diags) (validate-examples p))
   (define map-diags (check-maps p examples))
@@ -199,7 +202,7 @@
 ;; index reads (its own profiles and extensions resolve before any dependency's)
 (define (artifacts-package! dir cfg artifacts)
   (define out (build-path dir "project.tgz"))
-  (pack-package! out (or cfg (ig-config #f #f '() #f #f #f #f #f #f #f #f)) artifacts (hash))
+  (pack-package! out (or cfg (ig-config #f #f '() #f #f #f #f #f #f #f #f #f)) artifacts (hash))
   out)
 
 ;; ---- the server generated from the packed project -------------------------------------------------

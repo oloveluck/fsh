@@ -31,7 +31,8 @@
   [fsh-files       (-> path-string? (listof path?))]
   [map-files       (-> path-string? (listof path?))]
   [compile-project (->* (path-string?) (#:canonical (or/c string? #f) #:fhir-version (or/c string? #f)
-                                        #:snapshot? boolean? #:texts (hash/c string? string?))
+                                        #:snapshot? boolean? #:texts (hash/c string? string?)
+                                        #:packages (listof path-string?))
                         project?)]
   [pack-project!   (-> project? path-string? path?)]))
 
@@ -83,7 +84,7 @@
 
 ;; #:texts — the text of a file as an editor holds it (by its complete path), in place of the disk
 (define (compile-project src #:canonical [canonical* #f] #:fhir-version [fhir-version* #f] #:snapshot? [snapshot? #f]
-                         #:texts [overrides (hash)])
+                         #:texts [overrides (hash)] #:packages [extra-packages '()])
   (define cfg (let ([f (find-config src)]) (and f (read-ig-config f))))
   (define canonical (or canonical* (and cfg (ig-config-canonical cfg))))
   (define fhir-version (or fhir-version* (and cfg (ig-config-fhir-version cfg)) "5.0.0"))
@@ -94,7 +95,8 @@
     (let ([core (spec-package-path (if r4? "hl7.fhir.r4.core.tgz" "hl7.fhir.r5.core.tgz") #:optional? #t)])
       ;; after the declared dependencies, the packages SUSHI loads implicitly (extensions,
       ;; terminology) when a copy is at hand, then core
-      (append dep-packages (implicit-packages fhir-version) (if core (list core) '()))))
+      ;; #:packages — packages the caller puts in context (a workspace's), after the declared ones
+      (append dep-packages extra-packages (implicit-packages fhir-version) (if core (list core) '()))))
   (dynamic-require (if r4? 'fhir/r4/schemas 'fhir/r5/schemas) #f)
   (define files (fsh-files src))
   (define mfiles (map-files src))

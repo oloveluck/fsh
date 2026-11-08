@@ -349,3 +349,12 @@ profiles, value sets after `from`, rule sets, invariants, the base type's elemen
 and the tools `fsh_check`, `fsh_compile`, `fsh_decompile`. `support/symbols.rkt` reads declarations,
 aliases, rule paths and Parents from the TEXT (parser-free, so it works while a document does not
 parse yet). The hubs know no FSH: a language change and its editor support live and test together here.
+
+## Workspace support (`workspace.rkt`)
+The workspace's `.fsh` files are one project: `check-fsh-project` with the workspace's canonical,
+FHIR version and packages (`#:canonical`/`#:fhir-version`/`#:packages`, new on check-fsh-project and
+compile-project — the packages go after a sushi-config's dependencies). `run` of a file = the
+resources its entities compile to, each with the problems inside its span; `explain` of an entity =
+its resource and problems (examples' validation issues traced to rules). Fixed with it: check.rkt's
+fallback `ig-config` had 11 fields after the struct grew a 12th, so checking a project without a
+sushi-config.yaml raised.
