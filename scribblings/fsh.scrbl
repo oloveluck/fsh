@@ -158,12 +158,13 @@ type, so an @tt{Instance:} of it builds like any resource. The worked project is
 
 @section{In an editor, for an agent}
 
-@tt{fsh/support} is what the family's language server (fhir-lsp) and MCP server (fhir-mcp) load for
+@tt{fsh/support} is what the family's language server (fhir-lsp) loads for
 FSH: a document's diagnostics with its project, the project's files, the outline, hover (an element
 path in the base type; a name's declaration), go to definition across the project, completion
 (keywords, Parent and InstanceOf types and profiles, value sets after @tt{from}, rule sets,
-invariants, the base type's elements at a path, flags), and the tools @tt{fsh_check},
-@tt{fsh_compile} and @tt{fsh_decompile}. It is a @tt{fhir/lang/support} value; the hubs know no FSH.
+invariants, the base type's elements at a path, flags). It is a @tt{fhir/lang/support} value.
+@tt{fsh/workspace} is what fhir-mcp runs for an agent: the workspace's FSH as one project, every
+example validated, each problem positioned in the FSH.
 
 @section{Limits}
 

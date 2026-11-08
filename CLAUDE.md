@@ -341,12 +341,12 @@ golden 19/22 (the remaining diffs are differential details). The SUSHI outputs a
 
 ## Editor and agent support (`fsh/support.rkt`)
 What FSH offers the family's hubs through `fhir/lang/support` (the contract in the foundation): the
-LSP server (fhir-lsp) and the MCP server (fhir-mcp) load `fsh/support` by its collection name. It
+LSP server (fhir-lsp) loads `fsh/support` by its collection name. It
 gives a document's diagnostics with its project (`compile-project #:texts`), the project's files, the
 outline, hover (an element path in the base type's snapshot; a name's declaration), go to definition
 across the project, completion (`support/complete.rkt`: keywords, Parent/InstanceOf types and
-profiles, value sets after `from`, rule sets, invariants, the base type's elements at a path, flags),
-and the tools `fsh_check`, `fsh_compile`, `fsh_decompile`. `support/symbols.rkt` reads declarations,
+profiles, value sets after `from`, rule sets, invariants, the base type's elements at a path, flags).
+`support/symbols.rkt` reads declarations,
 aliases, rule paths and Parents from the TEXT (parser-free, so it works while a document does not
 parse yet). The hubs know no FSH: a language change and its editor support live and test together here.
 

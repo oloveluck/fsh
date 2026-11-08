@@ -2,17 +2,13 @@
 
 ;;; support.rkt — what FSH offers the family's editor and agent hubs (fhir/lang/support): diagnostics
 ;;; for a document with its project, the project's files, the outline, hover on element paths and
-;;; names, go to definition across the project, completion, and the tools an agent calls (check a
-;;; project, compile FSH, decompile FHIR). The language server and the MCP server load this module by
-;;; its collection name; nothing here knows the protocols.
+;;; names, go to definition across the project, and completion. The language server loads this module
+;;; by its collection name; nothing here knows the protocol. What an agent runs is workspace.rkt.
 
 (require racket/contract racket/string racket/list json
          fhir/lang/support
          (only-in fhir/sd/sd-index resolve-sd-raw sd-index-available?)
          (only-in "project.rkt" compile-project project-diagnostics)
-         (only-in "check.rkt" check-fsh-project check-report-diagnostics)
-         (only-in "compile.rkt" fsh->fhir)
-         (only-in "decompile.rkt" fhir->fsh)
          "support/symbols.rkt" "support/complete.rkt")
 
 (provide (contract-out [support lang-support?]))
@@ -54,34 +50,7 @@
 
 (define (completion pr text pos) (complete text pos (project-entities pr) (project-aliases pr)))
 
-;; ---- the tools --------------------------------------------------------------------------------
-(define tools
-  (list
-   (tool "fsh_check"
-         "Check an FSH project (a directory with sushi-config.yaml and .fsh files): compile it and validate every example against its profiles. Returns the diagnostics, each positioned in the FSH."
-         (text-schema 'directory "the project directory")
-         (lambda (args)
-           (define dir (string-arg args 'directory))
-           (cond [(not dir) (missing 'directory)]
-                 [(not (directory-exists? dir)) (values (format "no such directory: ~a" dir) #t)]
-                 [else (diagnostics-result (check-report-diagnostics (check-fsh-project dir)))])))
-   (tool "fsh_compile"
-         "Compile FSH text (profiles, extensions, instances, value sets, code systems) to FHIR JSON resources. R5 with the default canonical base."
-         (text-schema 'fsh "the FSH source")
-         (lambda (args)
-           (define src (string-arg args 'fsh))
-           (cond [(not src) (missing 'fsh)]
-                 [else (values (jsexpr->string (fsh->fhir src)) #f)])))
-   (tool "fsh_decompile"
-         "FHIR JSON to FSH (GoFSH-style): a StructureDefinition, ValueSet or CodeSystem becomes idiomatic FSH, any other resource an Instance."
-         (hasheq 'type "object" 'properties (hasheq 'resource (hasheq 'type "object" 'description "the resource as JSON")) 'required '("resource"))
-         (lambda (args)
-           (define r (hash-ref args 'resource #f))
-           (cond [(not (hash? r)) (missing 'resource)]
-                 [else (dynamic-require 'fhir/r5/schemas #f)
-                       (values (fhir->fsh r) #f)])))))
-
-(define support (lang-support "fsh" diagnose project-files entities-of hover definition completion tools))
+(define support (lang-support "fsh" diagnose project-files entities-of hover definition completion))
 
 (module+ test
   (require rackunit racket/file (only-in fhir/r5/schemas))
@@ -99,13 +68,4 @@
   (check-equal? (length (project-files (build-path dir "a.fsh"))) 1)
   (define ds (diagnose "Profile: P\nParent: Observation\n* nmae MS\n" (build-path dir "a.fsh")))
   (check-true (pair? ds))
-  (delete-directory/files dir)
-  ;; the tools
-  (define by-name (for/hash ([t (in-list tools)]) (values (tool-name t) t)))
-  (define-values (t1 e1) (call-tool (hash-ref by-name "fsh_compile") (hasheq 'fsh "Profile: P\nParent: Patient\n* name MS\n")))
-  (check-false e1)
-  (check-equal? (hash-ref (car (string->jsexpr t1)) 'resourceType) "StructureDefinition")
-  (define-values (t2 e2) (call-tool (hash-ref by-name "fsh_compile") (hasheq)))
-  (check-true e2)
-  (define-values (t3 e3) (call-tool (hash-ref by-name "fsh_check") (hasheq 'directory "/nonexistent")))
-  (check-true e3))
+  (delete-directory/files dir))
