@@ -428,3 +428,5 @@ What an agent working through fhir-mcp needed (the main repo's CLAUDE.md, "Claud
   undecidable without packages; an R5 resource in an R4 project is accepted, as SUSHI does (IPS's
   ActorDefinitions, `r5-resource?`).
 - A binding to a value set nothing defines is a warning at the rule (it was silently kept as a name).
+- A `code` element decompiles as `#code` (`* status = #final`), as FSH is written (it compiled back
+  the same as `"final"`); the corpora are unchanged.

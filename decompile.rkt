@@ -114,11 +114,15 @@
   (and (not (string=? rel "")) (with-handlers ([exn:fail? (lambda (_) #f)]) (element-fhir-type root rel))))
 
 ;; compact-value : type-code|#f jsexpr -> FSH value | #f   the one FSH value that compiles to exactly
-;; `v` at an element of that type, or #f. Measured against the compiler: `system#code "display"` is
+;; `v` at an element of that type, or #f. A `code` is `#code`. Measured against the compiler: `system#code "display"` is
 ;; a Coding (or a CodeableConcept's only coding, no text); `n 'code' "unit"` a UCUM Quantity, whose
 ;; unit is the display (the code when no display is written — so a Quantity without a unit is not
 ;; compacted); `Reference(Type/id) "display"` a Reference.
 (define (compact-value type v)
+  (cond
+    [(and (equal? type "code") (token? v)) (fsh-code (string-append "#" v) #f)]   ; `#final`, FSH's own way
+    [else (compact-object type v)]))
+(define (compact-object type v)
   (and (hash? v)
        (match type
          ["Coding" (coding-value v)]
@@ -514,11 +518,11 @@
   (check-equal? (fsh-instance-name e) "p1")
   (check-equal? (fsh-instance-metadata e) (list (cons 'instanceOf "Patient") (cons 'usage "#example")))
   (check-equal? (fsh-instance-rules e)
-                (list (rule-assign "active" #t #f) (rule-assign "gender" "female" #f)
+                (list (rule-assign "active" #t #f) (rule-assign "gender" (fsh-code "#female" #f) #f)
                       (rule-assign "name[0].family" "Doe" #f)
                       (rule-assign "name[0].given[0]" "Jane" #f) (rule-assign "name[0].given[1]" "J" #f)))
   (check-equal? (fhir->fsh pat)
-                "Instance: p1\nInstanceOf: Patient\nUsage: #example\n* active = true\n* gender = \"female\"\n* name[0].family = \"Doe\"\n* name[0].given[0] = \"Jane\"\n* name[0].given[1] = \"J\"")
+                "Instance: p1\nInstanceOf: Patient\nUsage: #example\n* active = true\n* gender = #female\n* name[0].family = \"Doe\"\n* name[0].given[0] = \"Jane\"\n* name[0].given[1] = \"J\"")
   ;; a value set: its enumerated concepts as include rules, a whole system as `codes from system`
   (define vs (hasheq 'resourceType "ValueSet" 'id "vs1" 'name "VS1" 'url "http://x/ValueSet/vs1" 'status "active"
                      'compose (hasheq 'include (list (hasheq 'system "http://x/cs" 'concept (list (hasheq 'code "a" 'display "A")))
