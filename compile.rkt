@@ -409,6 +409,11 @@
   (check-equal? (param-arg '(lastParameter "[[a, b)]] )")) "a, b)")
   (check-equal? (unescape-param "a\\, b") "a, b")
   (check-equal? (substitute "x = {d}" (substitution (list "d") (list "\"a (b\\) & c\""))) "x = \"a (b\\) & c\"")
+  ;; an insert under a path prefixes every kind of rule the RuleSet holds — mapping and
+  ;; content-reference rules too (compile's own prefixer used to leave them as written)
+  (check-equal? (rule-mapping-path (prefix-rule "section" (rule-mapping "code" "Composition.code" #f #f))) "section.code")
+  (check-equal? (rule-add-cr-element-path (prefix-rule "section" (rule-add-cr-element "sub" "0..*" '() "#x" #f #f))) "section.sub")
+  (check-equal? (rule-card-path (prefix-rule "section" (rule-card #f "1..1" '()))) "section")
   ;; a parameterized RuleSet in an instance: the display argument with an escaped paren arrives whole
   (define cm (car (fsh->fhir (string-append
                               "RuleSet: MapConcept(code, display, targetcode, targetdisplay)\n"
