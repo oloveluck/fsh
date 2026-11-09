@@ -16,7 +16,7 @@
 ;;; check-fsh-project : dir [#:capability id] -> check-report
 ;;;   never exits; everything is a fhir/diagnostic (lang 'fsh, phase 'compile | 'validate | 'server)
 
-(require racket/contract racket/list racket/string racket/file
+(require racket/contract racket/list racket/string racket/file racket/path
          (only-in fhir/diagnostic diagnostic diagnostic-severity loc-source loc-line loc-column
                   attached-loc)
          (only-in fhir/sd/sd-index current-sd-packages)
@@ -135,11 +135,23 @@
                  [pl (in-value (hash-ref profiles url #f))] #:when pl)
       (define pr (trace-rule (fsh-profile-rules (car pl)) path #:exact? #t #:slice slice))
       (define pl-loc (and pr (attached-loc pr)))
-      (and pl-loc (format " (constrained by profile ~a at ~a)" (fsh-profile-name (car pl)) (loc-text pl-loc)))))
+      (and pl-loc (format " (constrained by profile ~a at ~a)" (fsh-profile-name (car pl)) (loc-text pl-loc at)))))
   (diagnostic 'fsh 'validate (string->symbol (if (equal? (issue-severity i) "warning") "warning" "error"))
               (format "instance ~a: ~a: ~a~a" (fsh-instance-name (car inst)) path (issue-msg i) (or prof-note ""))
               at))
-(define (loc-text l) (if l (format "~a:~a:~a" (loc-source l) (loc-line l) (loc-column l)) "?"))
+;; loc-text : loc loc -> string   where a profile rule is, said from where the problem is: "line 12"
+;; in the same file, else the file relative to the problem's directory ("profiles.fsh:12:3")
+(define (loc-text l from)
+  (define (dir-of s) (let-values ([(d _n _x) (split-path (path->complete-path s))]) d))
+  (cond
+    [(not l) "?"]
+    [(and from (equal? (loc-source l) (loc-source from))) (format "line ~a" (loc-line l))]
+    [else
+     (define src (loc-source l))
+     (define shown (if (and src from (loc-source from))
+                       (path->string (find-relative-path (simplify-path (dir-of (loc-source from))) (simplify-path (path->complete-path src))))
+                       src))
+     (format "~a:~a:~a" shown (loc-line l) (loc-column l))]))
 
 ;; trace-rule : rules issue-path [#:exact? b] -> rule|#f
 ;; the rule whose FSH path best matches a validator path. `Observation.component.code` drops its

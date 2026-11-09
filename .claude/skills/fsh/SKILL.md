@@ -18,7 +18,7 @@ guide is what fhir-mcp serves as `learn://fsh`). This skill is the workflow arou
    against its base type and the profiles it claims. Each problem is at its rule, and a validation
    problem names the profile rule that constrains it:
    ```
-   p2/a.fsh:8:3: fsh validate error: instance prelim: Observation.status: value does not match required pattern "final" (constrained by profile Final at p2/a.fsh:4:3)
+   p2/a.fsh:8:3: fsh validate error: instance prelim: Observation.status: value does not match required pattern "final" (constrained by profile Final at line 4)
     8 | * status = #preliminary
       |   ^^^^^^
    fsh check: 1 examples, 1 with errors; 1 error(s), 0 warning(s)

@@ -24,6 +24,7 @@
          (only-in "parser/parse.rkt" parse-fsh-doc)
          (only-in fhir/diagnostic diagnostic attached-loc)
          (only-in fhir/model/registry type-registered?)
+         (only-in fhir/suggest did-you-mean)
          (only-in fhir/serialize/jsexpr-util drop-false)
          (only-in fhir/sd/sd-index resolve-sd-raw sd-index-available? sd-context)
          (only-in fhir/sd/logical register-structure-definition!)
@@ -62,9 +63,10 @@
   (define found (box '()))
   (define-values (out errors) (parameterize ([current-rule-diagnostics found]) (compile-doc/errors entities)))
   (values out errors (reverse (unbox found))))
-(define (rule-diagnostic! rule entity-label msg)
+;; rule-diagnostic! : rule label message [#:severity] -> void   a problem at the rule, when collected
+(define (rule-diagnostic! rule entity-label msg #:severity [severity 'error])
   (define b (current-rule-diagnostics))
-  (when b (set-box! b (cons (diagnostic 'fsh 'compile 'error (format "~a: ~a" entity-label msg) (attached-loc rule)) (unbox b)))))
+  (when b (set-box! b (cons (diagnostic 'fsh 'compile severity (format "~a: ~a" entity-label msg) (attached-loc rule)) (unbox b)))))
 ;; check-element-paths! : entity -> void   a rule whose path starts at an element the base type does
 ;; not have (`* nosuchelement 1..1` on a Patient profile) is an error, positioned at the rule. Only
 ;; the FIRST path element is checked (deeper steps go through slices, extensions, choices and
@@ -82,6 +84,17 @@
                                         (and of (instance-base (resolve-alias of (current-aliases)) (current-profiles))))
                                       r)]
         [_ (values #f '())]))
+    ;; a binding to a value set nothing defines (not this project's, not its packages', not an alias,
+    ;; not a url) is written as the bare name, which no validator resolves: say so at the rule
+    (when (sd-index-available?)
+      (for ([r (in-list rules)])
+        (match r
+          [(rule-binding _ (? string? vs) _)
+           (unless (regexp-match? #rx":" (valueset-url vs))
+             (rule-diagnostic! r (entity-label e)
+                               (format "value set `~a` not found: it is not a ValueSet of this project or its packages, an alias, or a url" vs)
+                               #:severity 'warning))]
+          [_ (void)])))
     (define names (and base (type-registered? (string->symbol base)) (base-element-names base)))
     (when names
       (for ([r (in-list rules)])
@@ -90,7 +103,8 @@
           (define first (let ([steps (with-handlers ([exn:fail? (lambda (_) '())]) (fsh-path-steps (parse-fsh-path p)))])
                           (and (pair? steps) (fsh-step-name (car steps)))))
           (when (and first (not (known-element? names first)))
-            (rule-diagnostic! r (entity-label e) (format "`~a` is not an element of ~a" first base))))))))
+            (rule-diagnostic! r (entity-label e) (format "`~a` is not an element of ~a~a" first base
+                                                         (did-you-mean first (map (lambda (n) (regexp-replace #rx"\\[x\\]$" n "")) names))))))))))
 ;; base-element-names : type -> (listof string)|#f   its top-level element names ("value[x]", "name"),
 ;; per package context (every entity of a type asks; the snapshot scan was repeated for each)
 (define base-element-name-cache (make-hash))

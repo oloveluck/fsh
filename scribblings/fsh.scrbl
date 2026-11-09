@@ -68,8 +68,7 @@ Usage: #example
 @verbatim{
 $ raco fsh check ig/
 ig/input/fsh/bp.fsh:22:3: fsh validate error: instance reading-1: Observation.status: value does
-    not match required pattern "final" (constrained by profile ScreeningBloodPressure at
-    ig/input/fsh/bp.fsh:7:3)
+    not match required pattern "final" (constrained by profile ScreeningBloodPressure at line 7)
  22 | * status = #preliminary
     |   ^^^^^^
 fsh check: 1 examples, 1 with errors; 1 error(s), 0 warning(s)

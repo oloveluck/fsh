@@ -11,7 +11,8 @@
          (only-in "resolve.rkt" element-fhir-type field-info)
          (only-in fhir/model/registry type-schema-of)
          (only-in fhir/model/schema type-schema-fields type-schema-parent schema-field-name schema-field-choice-base)
-         (only-in fhir/model/registry type-registered?)
+         (only-in fhir/model/registry type-registered? all-types)
+         (only-in fhir/suggest did-you-mean)
          (only-in fhir/model/schema ftype-tag ftype-type-name)
          (only-in fhir/serialize/jsexpr-util drop-false)
          (only-in fhirpath/parser/parse parse-fhirpath)
@@ -26,6 +27,9 @@
   [compile-profile (->* ((or/c fsh-profile? fsh-extension?)) (hash?) hash?)]
   ;; a Logical / Resource -> its StructureDefinition (specialization)
   [compile-logical-resource (-> (or/c fsh-logical? fsh-resource?) hash?)]
+  ;; a binding's value set reference (a name, alias or url) as the canonical it means; the name
+  ;; itself when nothing resolves it
+  [valueset-url (-> string? string?)]
   ;; an Invariant -> the constraint source compile-profile reads
   [compile-invariant (-> fsh-invariant? hash?)]
   ;; a Mapping injected into its Source StructureDefinition among the compiled SDs
@@ -56,7 +60,9 @@
   ;; baseDefinition named after it (decided only when the packages can be asked)
   (unless (or local-parent ext? (unknown-parent-undecidable?) (type-registered? (string->symbol base-type))
               (hash-ref (current-logicals) parent #f) (resolve-sd-raw parent))
-    (raise (exn:fail (format "Parent `~a` not found: it is not a FHIR type, a profile, extension or logical model in this project, nor a definition in its packages" parent) (current-continuation-marks))))
+    (raise (exn:fail (format "Parent `~a` not found: it is not a FHIR type, a profile, extension or logical model in this project, nor a definition in its packages~a"
+                             parent (did-you-mean parent (parent-candidates)))
+                     (current-continuation-marks))))
   (define parent-url (cond [local-parent (string-append (canonical-base) "/StructureDefinition/" (cdr local-parent))]
                            [(external-sd parent) => (lambda (sd) (hash-ref sd 'url))]
                            [else (sd-url parent)]))
@@ -408,6 +414,12 @@
                       (hash-set h 'type (list (hasheq 'code "Extension" 'profile (list ext-profile))))
                       h)))))]
       [_ (values elems order)]))))
+;; parent-candidates : -> (listof string)   the names a Parent may take here: the registered FHIR
+;; types and this document's profiles, extensions and logical models (for "did you mean")
+(define (parent-candidates)
+  (append (map symbol->string (all-types))
+          (filter string? (hash-keys (current-profiles)))
+          (filter string? (hash-keys (current-logicals)))))
 ;; hash-set-present* : hash key value ... -> hash   set only the keys whose value is non-#f (racket's
 ;; hash-set* sets them all; this one drops absent values, as drop-false does)
 (define (hash-set-present* h . kvs)

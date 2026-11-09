@@ -64,6 +64,6 @@
               "* component[systolic].valueQuantity = 150 'mm[Hg]'\n* component[diastolic].valueString = \"eighty\"\n"))
   (define slice-errors (errors (check-files (list (cons "a.fsh" bp)))))
   (check-equal? (length slice-errors) 1 (format "~s" (map diagnostic-message slice-errors)))
-  (check-regexp-match #rx"valueString is not allowed in slice 'diastolic' [(]value\\[x\\]: Quantity[)] [(]constrained by profile BP at [^ ]*a.fsh:12:3[)]"
+  (check-regexp-match #rx"valueString is not allowed in slice 'diastolic' [(]value\\[x\\]: Quantity[)] [(]constrained by profile BP at line 12[)]"
                       (diagnostic-message (car slice-errors)))
   (check-equal? (loc-line (diagnostic-loc (car slice-errors))) 20))
