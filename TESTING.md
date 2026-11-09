@@ -14,7 +14,7 @@ adds (narratives, snapshots, dates, OIDs). Floors only rise.
 | mCODE 4.0.0 (with US Core 6.1.0 and Genomics Reporting 2.0.0) | 0 | 349 | 311 | 339 | 472/473 |
 | Da Vinci Plan-Net 1.2.0 | 0 | 109 | 84 | 99 | 321/321 |
 | Da Vinci HRex 1.1.0 | 0 | 46 | 31 | 46 | 138/138 |
-| Genomics Reporting 2.0.0 | 0 | 141 | 113 | 129 | 254/259 |
+| Genomics Reporting 2.0.0 | 0 | 141 | 121 | 129 | 254/259 |
 
 **Decompiling the published packages** (FHIR → FSH → FHIR, compared the same way)
 
@@ -31,6 +31,11 @@ SUSHI positions at the next entity.
 **The SUSHI golden corpus** (hand-authored FSH and JSON pairs): 22/22 compile to their JSON, and 22/22
 survive FSH → FHIR → FSH → FHIR unchanged.
 
+**The documentation.** `tests/guide-test.rkt`: every FSH block in guide.md is a project that checks
+with no error and has an example to validate; the worked example's failure and each common problem
+are reported as the guide quotes them. `tests/docs-test.rkt`: scribblings/fsh.scrbl renders with no
+broken reference to its own sections or `fsh/…` bindings.
+
 ## What the remaining differences are
 
 `tests/ig-harness.rkt` classifies every difference by kind, largest first, and the tests print the
@@ -46,6 +51,7 @@ raco test .                              # everything, with the floors
 raco test tests/ig-ips-test.rkt          # one IG (also ig-mcode, ig-genomics, gofsh-ips, gofsh-mcode)
 raco test tests/sushi-importer-test.rkt  # the importer oracle
 raco test tests/golden-test.rkt tests/roundtrip-test.rkt
+raco test tests/guide-test.rkt tests/docs-test.rkt   # the guide and the manual
 ```
 
 `tests/ig-plannet-test.rkt` and `tests/ig-hrex-test.rkt` fetch their packages from

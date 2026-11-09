@@ -47,5 +47,7 @@ raco pkg install --link --auto ../fhir/fhir ../fhir/fhir-spec ../fhirpath ../vcl
 raco test .
 ```
 
-Reference: [oloveluck.github.io/fsh](https://oloveluck.github.io/fsh/). Architecture: `CLAUDE.md`.
+Reference: [oloveluck.github.io/fsh](https://oloveluck.github.io/fsh/). The language for agents,
+with a checked cheat sheet and the common problems: [guide.md](guide.md); the workflow without MCP:
+[.claude/skills/fsh](.claude/skills/fsh/SKILL.md). Architecture: `CLAUDE.md`.
 License: MIT.

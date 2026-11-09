@@ -13,15 +13,17 @@
 ;;; pack-project! : project out.tgz -> path   the FHIR NPM package (pack.rkt)
 ;;; `raco fsh` (cli.rkt) is a thin shell over these.
 
-(require racket/contract racket/list racket/file racket/path
+(require racket/contract racket/list racket/file racket/path racket/match
          (only-in fhir/sd/sd-index current-sd-packages)
          (only-in fhir/spec-package spec-package-path)
-         (only-in fhir/diagnostic diagnostic loc exn:fail:diagnostic? exn:fail:diagnostic-diagnostic)
+         (only-in fhir/diagnostic diagnostic loc loc-source loc-line exn:fail:diagnostic? exn:fail:diagnostic-diagnostic)
          (only-in "compile.rkt" compile-doc/diagnostics entity-label emit-snapshot? canonical-base fsh-fhir-version)
          (only-in "context.rkt" fsh-config-status fsh-config-version)
          (only-in "yaml.rkt" yref yaml-boolean)
          (only-in "parser/parse.rkt" parse-fsh-doc/diagnostics)
-         (only-in "parser/ast.rkt" fsh-instance? fsh-instance-metadata fsh-instance-name)
+         (only-in "parser/ast.rkt" fsh-instance? fsh-instance-metadata fsh-instance-name
+                  fsh-profile fsh-profile? fsh-extension fsh-extension? fsh-logical fsh-logical? fsh-resource fsh-resource?
+                  fsh-valueset fsh-valueset? fsh-codesystem fsh-codesystem?)
          "ig-config.rkt" "pack.rkt")
 
 (provide
@@ -128,10 +130,40 @@
      ;; rule-level diagnostics (an unknown element, …) first, then entities that failed outright
      (project cfg fhir-version files texts located (append out structuremaps)
               (append rule-diags
+                      (duplicate-id-diagnostics located)
                       (for/list ([e (in-list errors)])
                         (diagnostic 'fsh 'compile 'error (format "~a: ~a" (car e) (exn-message (cdr e))) (hash-ref at (car e) #f)))
                       map-diags)
               missing sd-packages maps)]))
+
+;; duplicate-id-diagnostics : located -> diagnostics   two definitions of one resource type with one id
+;; (`Id: x`, or the name when there is none) would be one artifact, the later silently replacing the
+;; earlier: an error at the later one, naming where the first is
+(define (duplicate-id-diagnostics located)
+  (define (kind e)
+    (cond [(or (fsh-profile? e) (fsh-extension? e) (fsh-logical? e) (fsh-resource? e)) "StructureDefinition"]
+          [(fsh-valueset? e) "ValueSet"] [(fsh-codesystem? e) "CodeSystem"] [else #f]))
+  (define (id-of e)
+    (match e
+      [(or (fsh-profile n m _) (fsh-extension n m _) (fsh-logical n m _) (fsh-resource n m _) (fsh-valueset n m _) (fsh-codesystem n m _))
+       (let ([i (assoc 'id m)]) (if i (cdr i) n))]))
+  (let loop ([ls located] [seen (hash)] [out '()])
+    (match ls
+      ['() (reverse out)]
+      [(cons (cons e l) rest)
+       (define k (kind e))
+       (define key (and k (cons k (id-of e))))
+       (cond [(and key (hash-ref seen key #f))
+              => (lambda (first-l)
+                   (loop rest seen
+                         (cons (diagnostic 'fsh 'compile 'error
+                                           (format "~a: the ~a id `~a` is already used~a" (entity-label e) k (cdr key)
+                                                   (if (and first-l (loc-source first-l) (loc-line first-l))
+                                                       (format " (~a:~a)" (loc-source first-l) (loc-line first-l)) ""))
+                                           l)
+                               out)))]
+             [key (loop rest (hash-set seen key l) out)]
+             [else (loop rest seen out)])])))
 
 ;; pack-project! : project out -> path   instances' Usage decides package/ vs package/example/
 (define (pack-project! p out)

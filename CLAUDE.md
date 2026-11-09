@@ -282,7 +282,7 @@ HL7 Genomics Reporting's own FSH (`tests/vendor/genomics-reporting-2.0.0`, HL7/g
 commit c2cf861 — the commit whose resource ids match the published package 46/46; the 2.0.0 tag's do
 not) against fhir-spec's `hl7.fhir.uv.genomics-reporting-2.0.0.tgz`. What it adds: OperationDefinitions
 and ConceptMaps as instances, deep component slicing through RuleSets, large code systems, examples
-authored as Bundles. Current: **0 compile errors; 141 paired; 113 exact, 129 with all published
+authored as Bundles. Current: **0 compile errors; 141 paired; 121 exact, 129 with all published
 content; 254/259 differential elements** — ratcheted. It drove: `drop-unchanged` (SUSHI writes what
 changes — a property equal to the Parent's element's leaves the differential), `extension[<Extension
 name>]` resolved to the slice typed with it in the profile's OWN `contains` (`extension contains
@@ -358,3 +358,27 @@ resources its entities compile to, each with the problems inside its span; `expl
 its resource and problems (examples' validation issues traced to rules). Fixed with it: check.rkt's
 fallback `ig-config` had 11 fields after the struct grew a 12th, so checking a project without a
 sushi-config.yaml raised.
+
+## Documentation for users and agents (2026-11-09; the family's pattern, cql first)
+`guide.md` is the language for agents — official references, a cheat sheet, a worked example,
+running it (command line, module, workspace), common problems with the messages they produce —
+provided by `fsh/workspace` as `guide` (fhir-mcp's `learn://fsh`, replacing the hub's own
+`learn/fsh.md`). `tests/guide-test.rkt` checks every ```fsh block as a project (no error, at least
+one example validated) and that each quoted message is what the checker reports. The hub's old
+cheat sheet used `#` comments (a parse error in FSH) and its example broke its own profile, which is
+why the claims are tested. `.claude/skills/fsh/SKILL.md` is the workflow without MCP (every command
+in it was run). `scribblings/fsh.scrbl` is the manual; `tests/docs-test.rkt` renders it and fails on
+a broken reference to its sections or `fsh/…` bindings.
+Writing them turned up silent mistakes, each now an error (SUSHI reports them too):
+- a `Parent` nothing defines (not a FHIR type, nor a local profile/extension/logical model, nor in
+  the packages) — `sd.rkt`; the profile used to compile with an invented base. Skipped when no SD
+  index is available (undecidable).
+- two definitions of one kind sharing an id (StructureDefinitions — Profile/Extension/Logical/
+  Resource — ValueSets, CodeSystems; the id is `Id:` else the name) — `project.rkt`
+  `duplicate-id-diagnostics`, at the later entity, naming the first.
+- an `insert` of a RuleSet the project does not define — `compile.rkt` `unknown-ruleset!`, a rule
+  diagnostic at the insert (it used to be left unexpanded).
+- `check --capability` without a sushi-config.yaml now says so instead of failing to pack.
+Not fixed here (fhir-validation): a `valueString` in a slice narrowed to `value[x] only Quantity`
+is reported neither by `fsh check` nor by `raco fhir-validate`; the manual's old quick start relied
+on it.

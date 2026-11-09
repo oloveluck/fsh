@@ -10,14 +10,19 @@
 ;;; inside the entity (from its declaration to the next one), an example's validation issues among
 ;;; them, each traced to the rule that wrote the element.
 
-(require racket/contract racket/list racket/string json
+(require racket/contract racket/list racket/string racket/file racket/runtime-path json
          fhir/lang/workspace
          (only-in fhir/lang/support entity-kind entity-name entity-id entity-line)
          (only-in fhir/diagnostic diagnostic-loc diagnostic-severity loc-source loc-line diagnostic->jsexpr)
          (only-in "check.rkt" check-fsh-project check-report-diagnostics check-report-artifacts)
          (only-in "support/symbols.rkt" entities-of))
 
-(provide (contract-out [workspace-support ws-support?]))
+(provide (contract-out [workspace-support ws-support?]
+                       ;; guide : the language guide (guide.md) a hub serves to agents (learn://fsh)
+                       [guide string?]))
+
+(define-runtime-path guide-file "guide.md")
+(define guide (file->string guide-file))
 
 (define (path-string p) (if (path? p) (path->string p) p))
 

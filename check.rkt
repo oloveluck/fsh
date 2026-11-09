@@ -212,7 +212,11 @@
   (with-handlers ([exn:fail:filesystem:missing-module?
                    (lambda (_) (list (diagnostic 'fsh 'server 'error
                                                  "--capability needs the server: raco pkg install fhir-server" #f)))])
-    (server-gaps* p capability)))
+    (if (project-config p)
+        (server-gaps* p capability)
+        ;; the server is generated from the project's package, which sushi-config.yaml describes
+        (list (diagnostic 'fsh 'server 'error
+                          "--capability needs the project's sushi-config.yaml: the server is generated from the project packed as a package (id, version, dependencies)" #f)))))
 (define (server-gaps* p capability)
   (define make-ig-server (dynamic-require 'fhir/store/ig-server 'make-ig-server))
   (define gap->list (dynamic-require 'fhir/store/ig-server 'gap->list))

@@ -1,7 +1,8 @@
 #lang scribble/manual
 @(require (for-label racket/base racket/contract
                      fsh/parser/parse fsh/lint fsh/compile fsh/decompile fsh/print fsh/project fsh/pack fsh/check fsh/ig-config
-                     (only-in fhir/diagnostic diagnostic?)))
+                     fsh/workspace
+                     (only-in fhir/diagnostic diagnostic?) (only-in fhir/lang/workspace ws-support?)))
 
 @title{fsh: FHIR Shorthand}
 
@@ -52,29 +53,33 @@ Id: screening-blood-pressure
 * component contains systolic 1..1 and diastolic 1..1
 * component[systolic].code = $loinc#8480-6 "Systolic blood pressure"
 * component[systolic].value[x] only Quantity
+* component[diastolic].code = $loinc#8462-4 "Diastolic blood pressure"
+* component[diastolic].value[x] only Quantity
 
 Instance: reading-1
 InstanceOf: ScreeningBloodPressure
 Usage: #example
-* status = #final
+* status = #preliminary
 * subject = Reference(Patient/ann)
-* component[systolic].valueString = "high"}|
+* component[systolic].valueQuantity = 150 'mm[Hg]'}|
 
 @bold{3. Check it.}
 
 @verbatim{
 $ raco fsh check ig/
-ig/input/fsh/bp.fsh:22:3: fsh validate error: instance reading-1: Observation.component.value[x]:
-    valueString is not allowed in slice 'systolic' (value[x]: Quantity)
-    (constrained by profile ScreeningBloodPressure at ig/input/fsh/bp.fsh:15:3)
-22 | * component[systolic].valueString = "high"
-   |   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ig/input/fsh/bp.fsh:22:3: fsh validate error: instance reading-1: Observation.status: value does
+    not match required pattern "final" (constrained by profile ScreeningBloodPressure at
+    ig/input/fsh/bp.fsh:7:3)
+ 22 | * status = #preliminary
+    |   ^^^^^^
 fsh check: 1 examples, 1 with errors; 1 error(s), 0 warning(s)
 }
 
 The error sits on the instance rule that wrote the bad element and names the profile rule it breaks.
-Fix the line (@tt{valueQuantity = 140 'mm[Hg]'}), run again, exit 0. Then @tt{raco fsh ig/} writes
-the resources to @tt{ig/fsh-generated/}, and @tt{raco fsh ig/ --pack} writes the FHIR NPM package.
+(The example has no diastolic component, and none is reported missing: as SUSHI does, the compiler
+fills a required slice's fixed values, here its @tt{code}.) Fix the line (@tt{* status = #final}),
+run again, exit 0. Then @tt{raco fsh ig/} writes the resources to @tt{ig/fsh-generated/}, and
+@tt{raco fsh ig/ --pack} writes the FHIR NPM package (@tt{example.bp-0.1.0.tgz}).
 
 @section{Writing FSH}
 
@@ -105,7 +110,7 @@ dependencies named in @tt{sushi-config.yaml}, which are found in @tt{fhir-spec} 
 
 @tabular[#:style 'boxed #:sep @hspace[2]
 (list (list @tt{raco fsh check ig/} "compile; validate every example against the project's profiles; problems on their FSH lines")
-      (list @tt{raco fsh check ig/ --capability <id>} "also what a server generated from that CapabilityStatement would not do (needs fhir-server)")
+      (list @tt{raco fsh check ig/ --capability <id>} "also what a server generated from that CapabilityStatement would not do (needs fhir-server and the project's sushi-config.yaml)")
       (list @tt{raco fsh ig/} @elem{compile every @tt{.fsh} to @tt{ig/fsh-generated/<Type>-<id>.json}})
       (list @tt{raco fsh ig/ --pack [out.tgz]} "also write the FHIR NPM package")
       (list @tt{raco fsh file.fsh} "one file, with the default canonical and R5")
@@ -130,6 +135,7 @@ for a project with a config.
 @racketblock[
 (require (only-in "bp.fsh" [compiled clinic])
          fhir/data-source (only-in fhir/conformance/operations ensure-valid))
+(define reading (for/first ([r clinic] #:when (equal? (hash-ref r 'id) "reading-1")) r))
 (code:comment "the profile is resolvable by url, because requiring the module registered it")
 (parameterize ([current-data-source (resources->data-source clinic)])
   (ensure-valid reading #:profile "http://example.org/StructureDefinition/screening-blood-pressure"))
@@ -163,17 +169,22 @@ FSH: a document's diagnostics with its project, the project's files, the outline
 path in the base type; a name's declaration), go to definition across the project, completion
 (keywords, Parent and InstanceOf types and profiles, value sets after @tt{from}, rule sets,
 invariants, the base type's elements at a path, flags). It is a @tt{fhir/lang/support} value.
-@tt{fsh/workspace} is what fhir-mcp runs for an agent: the workspace's FSH as one project, every
-example validated, each problem positioned in the FSH.
+@racketmodname[fsh/workspace] is what fhir-mcp runs for an agent: the workspace's FSH as one
+project, every example validated, each problem positioned in the FSH.
+
+An agent learns the language from @filepath{guide.md} at the repository root (fhir-mcp serves it as
+@tt{learn://fsh}; @racketmodname[fsh/workspace] provides it as @racket[guide]): a cheat sheet and a
+worked example that the tests check, how to run it, and the common problems with the messages they
+produce. Without MCP, the skill @filepath{.claude/skills/fsh/SKILL.md} gives the command-line loop.
 
 @section{Limits}
 
 Measured against the IGs' published packages: IPS 2.0.1 pairs 114 resources, 94 identical, 108 with
-all published content, all 438 differential elements; mCODE 4.0.0 pairs 349, 227 identical, 339
+all published content, all 438 differential elements; mCODE 4.0.0 pairs 349, 311 identical, 339
 complete, 472 of 473 differential elements; Plan-Net 1.2.0 (its package and US Core 3.1.1 fetched from
-the registry when the tests run) pairs 109, 78 identical, 99 complete, all 321 differential
+the registry when the tests run) pairs 109, 84 identical, 99 complete, all 321 differential
 elements; HRex 1.1.0 (three US Core versions in context) pairs 46, 31 identical, all 46 complete, all
-138 differential elements; Genomics Reporting 2.0.0 pairs 141, 113 identical, 129 complete, 254 of 259
+138 differential elements; Genomics Reporting 2.0.0 pairs 141, 121 identical, 129 complete, 254 of 259
 differential elements. The decompiler is measured the same way: the published IPS and mCODE packages
 decompiled to FSH, compiled back and compared (@filepath{tests/gofsh-ips-test.rkt},
 @filepath{tests/gofsh-mcode-test.rkt}) — all 117 IPS resources come back identical, 341 of 349 mCODE
@@ -191,9 +202,6 @@ of its own), OperationDefinitions and examples that drifted after publication, c
 FSH never writes.}
 @item{No ImplementationGuide resource, no narratives, no ActorDefinition conversion: these are
 publisher output.}
-@item{@tt{Characteristics:} and @tt{Context:} metadata are parsed but not read (an extension's
-context comes from a @tt{^context} caret). An @tt{insert} of an unknown RuleSet is left unexpanded,
-not reported.}
 @item{Snapshots are opt-in (@litchar{--snapshot}, @racket[emit-snapshot?]); the default output is
 the differential. R4 and R5 only.}
 @item{No code validation: a binding records its strength and value set, and @tt{check} runs without
@@ -285,9 +293,15 @@ maps as @racket[(cons file fml-map)].}
 @defproc[(compile-project [src path-string?]
                           [#:canonical canonical (or/c string? #f) #f]
                           [#:fhir-version fhir-version (or/c string? #f) #f]
-                          [#:snapshot? snapshot? boolean? #f]) project?]{
+                          [#:snapshot? snapshot? boolean? #f]
+                          [#:texts texts (hash/c string? string?) (hash)]
+                          [#:packages packages (listof path-string?) '()]) project?]{
 A file or a directory. The arguments override sushi-config.yaml; a version starting with 4 registers
-the R4 tower. Never exits: everything wrong is in @racket[project-diagnostics].}
+the R4 tower. @racket[texts] gives a file's text in place of what is on disk (an editor's unsaved
+buffer); @racket[packages] go into the definition context after the config's dependencies. Never
+exits: everything wrong is in @racket[project-diagnostics] — parse errors, a failing entity at its
+declaration, a rule whose path the base type lacks, an @tt{insert} of a RuleSet the project does not
+define, a @tt{Parent} nothing defines, and two definitions of one kind sharing an id.}
 @defproc[(pack-project! [p project?] [out path-string?]) path?]{The FHIR NPM package (needs the config).}
 @defproc[(find-config [src path-string?]) (or/c path? #f)]{sushi-config.yaml beside the sources or up to two levels up.}
 @defproc[(fsh-files [src path-string?]) (listof path?)]{A file, or every @tt{.fsh} under a directory.}
@@ -297,12 +311,16 @@ the R4 tower. Never exits: everything wrong is in @racket[project-diagnostics].}
 @defmodule[fsh/ig-config]
 
 @defstruct*[ig-config ([canonical any/c] [fhir-version any/c] [dependencies list?] [id any/c] [name any/c] [title any/c]
-                       [version any/c] [status any/c] [license any/c] [description any/c] [publisher any/c])]{
+                       [version any/c] [status any/c] [license any/c] [description any/c] [publisher any/c]
+                       [yaml any/c])]{
 What compiling and packaging read from sushi-config.yaml; any field may be @racket[#f]. A dependency
-is @racket[(cons package-id version)].}
+is @racket[(cons package-id version)]; @racket[yaml] is the whole file as read.}
 @defproc[(read-ig-config [file path-string?]) ig-config?]
 @defproc[(dependency-packages [deps (listof (cons/c string? string?))]) (values (listof path?) (listof (cons/c string? string?)))]{
 Each dependency's package in @tt{fhir-spec} as @tt{<id>-<version>.tgz}, and the ones missing.}
+@defproc[(implicit-packages [fhir-version (or/c string? #f)]) (listof path?)]{
+The packages SUSHI loads without being asked — the newest @tt{hl7.fhir.uv.extensions} and
+@tt{hl7.terminology} for the version — when a copy is at hand, else none.}
 
 @subsection[#:style 'unnumbered]{@tt{fsh/pack}}
 @defmodule[fsh/pack]
@@ -316,10 +334,15 @@ instances in @tt{package/}, other instances in @tt{package/example/}, an index p
 @subsection[#:style 'unnumbered]{@tt{fsh/check}}
 @defmodule[fsh/check]
 
-@defproc[(check-fsh-project [dir path-string?] [#:capability capability (or/c string? #f) #f]) check-report?]{
-The project end to end: compile; validate every example against the project's profiles in the same
-package context (the project's own artifacts ahead of its dependencies and core); with a
-CapabilityStatement id, the generated server's unmet requirements (loads @tt{fhir-server} on demand).
+@defproc[(check-fsh-project [dir path-string?] [#:capability capability (or/c string? #f) #f]
+                            [#:canonical canonical (or/c string? #f) #f]
+                            [#:fhir-version fhir-version (or/c string? #f) #f]
+                            [#:packages packages (listof path-string?) '()]) check-report?]{
+The project end to end: compile (the keywords as for @racket[compile-project]); validate every
+example against the project's profiles in the same package context (the project's own artifacts
+ahead of its dependencies and core); with a CapabilityStatement id, the generated server's unmet
+requirements (loads @tt{fhir-server} on demand; needs the project's sushi-config.yaml, since the
+server is generated from the project packed as a package).
 Every problem is a @tt{fhir/diagnostic} positioned in the FSH: a validation issue is traced to the
 instance rule that wrote the element and names the profile rule it breaks. The project's maps are
 checked against its structures in the same context (@tt{fml/project}, on demand), their findings
@@ -329,3 +352,15 @@ positioned in the map.}
 @defproc[(trace-rule [rules list?] [issue-path string?]) (or/c any/c #f)]{
 The rule whose path best matches a validator path: the type root dropped, brackets and choice suffixes
 normalised, the longest leading run of steps wins.}
+
+@subsection[#:style 'unnumbered]{@tt{fsh/workspace}}
+@defmodule[fsh/workspace]
+
+@defthing[workspace-support ws-support?]{
+FSH's @tt{fhir/lang/workspace} support, which fhir-mcp loads by collection name: the workspace's
+@tt{.fsh} files are one project, checked with the workspace's canonical, FHIR version and packages
+(@racket[check-fsh-project]); @tt{run} of a file gives the resources its entities compile to, each
+with its problems; @tt{explain} of an entity gives its resource and its problems, an example's
+validation issues traced to the rules.}
+@defthing[guide string?]{The text of @filepath{guide.md}, the language guide for agents (fhir-mcp's
+@tt{learn://fsh}).}

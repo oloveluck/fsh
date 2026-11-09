@@ -44,6 +44,8 @@
       (let ([snap (generate-snapshot sd)]) (if (pair? snap) (hash-set sd 'snapshot (hasheq 'element snap)) sd))
       sd))
 ;; ---- Profile / Extension -> StructureDefinition.differential -------------------------------
+;; unknown-parent-undecidable? : -> boolean   without the packages, an unknown Parent is not judged
+(define (unknown-parent-undecidable?) (not (sd-index-available?)))
 (define (compile-profile e [invariants (hash)])
   (define-values (name meta rules)
     (match e [(fsh-profile n m r) (values n m r)] [(fsh-extension n m r) (values n m r)]))
@@ -53,6 +55,12 @@
   ;; constrained type is found by following the Parent chain down to a base resource type
   (define local-parent (hash-ref (current-profiles) parent #f))
   (define base-type (if ext? "Extension" (instance-base parent (current-profiles))))
+  ;; a Parent nothing defines — no type, no profile or logical model here, nothing in the packages —
+  ;; is an error, as SUSHI's "Parent … not found": compiling on would invent a type and a
+  ;; baseDefinition named after it (decided only when the packages can be asked)
+  (unless (or local-parent ext? (unknown-parent-undecidable?) (type-registered? (string->symbol base-type))
+              (hash-ref (current-logicals) parent #f) (resolve-sd-raw parent))
+    (raise (exn:fail (format "Parent `~a` not found: it is not a FHIR type, a profile, extension or logical model in this project, nor a definition in its packages" parent) (current-continuation-marks))))
   (define parent-url (cond [local-parent (string-append (canonical-base) "/StructureDefinition/" (cdr local-parent))]
                            [(external-sd parent) => (lambda (sd) (hash-ref sd 'url))]
                            [else (sd-url parent)]))

@@ -292,13 +292,14 @@
        ;; plain `insert RuleSet` — ref is the ruleset name string
        [(and (rule-insert? r) (string? (rule-insert-ref r)))
         (define rs (hash-ref rulesets (rule-insert-ref r) #f))
+        (unless (or rs (hash-ref param-rulesets (rule-insert-ref r) #f)) (unknown-ruleset! r (rule-insert-ref r)))
         (if rs (under (rule-insert-path r) (expand-rules rs rulesets param-rulesets)) (list r))]
        ;; parameterized `insert RuleSet(args)` — ref is (name param-token …)
        [(and (rule-insert? r) (pair? (rule-insert-ref r)))
         (define ref (rule-insert-ref r))
         (define pr (hash-ref param-rulesets (car ref) #f))
         (cond
-          [(not pr) (list r)]
+          [(not pr) (unknown-ruleset! r (car ref)) (list r)]
           [else
            (define args (filter-map param-arg (cdr ref)))
            (under (rule-insert-path r) (expand-rules (instantiate-ruleset (car pr) (cdr pr) args) rulesets param-rulesets))])]
@@ -368,8 +369,14 @@
 (define (substitute s subst)
   (for/fold ([s s]) ([kv (in-list subst)])
     (regexp-replace* (regexp (regexp-quote (string-append "{" (car kv) "}"))) s (lambda (_) (cdr kv)))))
+;; unknown-ruleset! : rule name -> void   an insert of a RuleSet the project does not define is an
+;; error at the rule (SUSHI: "Unable to find definition for RuleSet"); the rule is left as it is
+(define current-insert-label (make-parameter #f))
+(define (unknown-ruleset! r name)
+  (when (current-insert-label)
+    (rule-diagnostic! r (current-insert-label) (format "RuleSet `~a` not found: no RuleSet of that name is in the project" name))))
 (define (expand-entity-inserts e rulesets param-rulesets)
-  (define (xr rs) (expand-rules rs rulesets param-rulesets))
+  (define (xr rs) (parameterize ([current-insert-label (entity-label e)]) (expand-rules rs rulesets param-rulesets)))
   (match e
     [(fsh-profile n m rs)    (fsh-profile n m (xr rs))]
     [(fsh-extension n m rs)  (fsh-extension n m (xr rs))]
