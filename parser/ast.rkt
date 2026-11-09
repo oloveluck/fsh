@@ -27,6 +27,8 @@
          ;; values
          (struct-out fsh-code) (struct-out fsh-quantity) (struct-out fsh-ratio)
          (struct-out fsh-reference) (struct-out fsh-canonical)
+         ;; the accessors every stage shares (one definition each; see below)
+         entity-rules rule-target-path map-rule-path
          (contract-out
           [lower-entity (-> any/c any/c)]))   ; brag parse-tree datum -> an FSH entity AST
 
@@ -85,6 +87,42 @@
     [(list (and tag (or 'name 'path)) (? number? n)) (list tag (number->string n))]
     [(? list?) (map textual-names d)]
     [_ d]))
+
+;; ---- shared accessors ------------------------------------------------------------------------
+;; entity-rules : entity -> (listof rule) | #f   the rules of an entity that has them
+(define (entity-rules e)
+  (match e
+    [(fsh-profile _ _ r) r] [(fsh-extension _ _ r) r] [(fsh-logical _ _ r) r] [(fsh-resource _ _ r) r]
+    [(fsh-instance _ _ r) r] [(fsh-valueset _ _ r) r] [(fsh-codesystem _ _ r) r] [(fsh-mapping _ _ r) r]
+    [(fsh-invariant _ _ r) r] [(fsh-ruleset _ r) r] [_ #f]))
+;; rule-target-path : rule -> string | #f   the element path a rule is written at (#f: a rule with
+;; none — a concept, a code caret, a value set component — or a path-less one)
+(define (rule-target-path r)
+  (match r
+    [(rule-card p _ _) p] [(rule-flag p _ _) p] [(rule-binding p _ _) p] [(rule-assign p _ _) p]
+    [(rule-contains p _) p] [(rule-only p _) p] [(rule-obeys p _) p] [(rule-caret p _ _) p]
+    [(rule-mapping p _ _ _) p] [(rule-insert p _) p] [(rule-add-element p _ _ _ _ _) p]
+    [(rule-add-cr-element p _ _ _ _ _) p] [(rule-path p) p] [_ #f]))
+;; map-rule-path : (path|#f -> path|#f) rule -> rule   the rule with every path it is written at
+;; (a flag rule's `and` paths too) passed through f; a rule without a path is returned as it is.
+;; The one rewriting of rule paths: an indented rule's context (parse), an `insert` under a path
+;; (compile), an extension slice renamed (sd).
+(define (map-rule-path f r)
+  (match r
+    [(rule-card p c fl) (rule-card (f p) c fl)]
+    [(rule-flag p ps fl) (rule-flag (f p) (map f ps) fl)]
+    [(rule-binding p v st) (rule-binding (f p) v st)]
+    [(rule-assign p v x) (rule-assign (f p) v x)]
+    [(rule-contains p items) (rule-contains (f p) items)]
+    [(rule-only p ts) (rule-only (f p) ts)]
+    [(rule-obeys p is) (rule-obeys (f p) is)]
+    [(rule-caret p cp v) (rule-caret (f p) cp v)]
+    [(rule-mapping p t c cd) (rule-mapping (f p) t c cd)]
+    [(rule-insert p ref) (rule-insert (f p) ref)]
+    [(rule-add-element p c fl ts sh d) (rule-add-element (f p) c fl ts sh d)]
+    [(rule-add-cr-element p c fl ref sh d) (rule-add-cr-element (f p) c fl ref sh d)]
+    [(rule-path p) (rule-path (f p))]
+    [_ r]))
 
 (define (lower-entity datum0)
   (define datum (textual-names datum0))

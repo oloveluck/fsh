@@ -17,7 +17,7 @@
 ;;;   never exits; everything is a fhir/diagnostic (lang 'fsh, phase 'compile | 'validate | 'server)
 
 (require racket/contract racket/list racket/string racket/file
-         (only-in fhir/diagnostic diagnostic diagnostic-severity diagnostic-loc loc loc-source loc-line loc-column
+         (only-in fhir/diagnostic diagnostic diagnostic-severity loc-source loc-line loc-column
                   attached-loc)
          (only-in fhir/sd/sd-index current-sd-packages)
          (only-in fhir/conformance/validate validate-issues issue-severity issue-path issue-msg)
@@ -25,8 +25,8 @@
          (only-in "pack.rkt" pack-package!)
          (only-in "ig-config.rkt" ig-config)
          (only-in "project.rkt" compile-project pack-project! project-artifacts project-diagnostics project-located
-                  project-sd-packages project-config project-texts project-fhir-version project-maps)
-         (only-in "compile.rkt" rule-path-of)
+                  project-sd-packages project-config project-texts project-maps)
+         (only-in "compile.rkt" rule-path-of instance-id)
          (only-in "parser/ast.rkt" fsh-instance? fsh-instance-name fsh-instance-metadata fsh-instance-rules
                   fsh-profile? fsh-profile-name fsh-profile-metadata fsh-profile-rules
                   rule-assign? rule-assign-path rule-path? rule-path-path))
@@ -108,8 +108,7 @@
   (define examples
     (for/list ([a (in-list artifacts)]
                #:when (let ([l (instance-for a)])
-                        (and l (equal? (hash-ref a 'resourceType #f) (instance-type a))
-                             (not (equal? (usage-of (car l)) "#definition")))))
+                        (and l (not (equal? (usage-of (car l)) "#definition")))))
       a))
   (define tmp (make-temporary-directory "fsh-check-~a"))
   (define own (artifacts-package! tmp (project-config p) artifacts))
@@ -123,7 +122,6 @@
   (values examples
           (for/sum ([ds (in-list per-example)]) (if (ormap (lambda (d) (eq? (diagnostic-severity d) 'error)) ds) 1 0))
           (append* per-example)))
-(define (instance-type a) (hash-ref a 'resourceType #f))
 
 ;; issue->diagnostic : issue resource (entity . loc) profiles -> diagnostic
 (define (issue->diagnostic i res inst profiles)
@@ -199,8 +197,6 @@
   (for/fold ([best 0]) ([i (in-range (length steps))])
     (max best (prefix-score want (drop steps i)))))
 
-(define (instance-id e)
-  (let ([m (assoc 'id (fsh-instance-metadata e))]) (if m (cdr m) (fsh-instance-name e))))
 (define (profile-id e)
   (let ([m (assoc 'id (fsh-profile-metadata e))]) (if m (cdr m) (fsh-profile-name e))))
 (define (usage-of e) (let ([u (assoc 'usage (fsh-instance-metadata e))]) (and u (cdr u))))

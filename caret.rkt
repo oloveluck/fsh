@@ -9,8 +9,7 @@
 ;;; path (the decompiler emits indices it reads from the real jsexpr), so building is
 ;;; unambiguous: a bracket index ⇒ array; a plain segment ⇒ object key.
 
-(require racket/match
-         (only-in racket/list make-list list-set index-where)
+(require (only-in racket/list make-list list-set)
          racket/contract
          "parser/path.rkt"
          (only-in "resolve.rkt" field-info)

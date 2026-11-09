@@ -10,7 +10,7 @@
 ;;; #example) in package/example/; a .index.json per folder (filename, resourceType, id, url,
 ;;; version, kind, type), as package tooling expects. Built entirely by this compiler — no SUSHI.
 
-(require racket/contract racket/list racket/file racket/string json file/tar
+(require racket/contract racket/file json file/tar
          "ig-config.rkt")
 
 (provide (contract-out

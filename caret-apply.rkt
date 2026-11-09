@@ -3,26 +3,14 @@
 ;;; base-snapshot order of a differential; the mappings an entity inherits.
 (require racket/match
          racket/string
-         racket/contract
-         (only-in racket/list append-map make-list last filter-map remove-duplicates index-of drop-right)
+         (only-in racket/list last)
          "parser/ast.rkt"
-         "parser/path.rkt"
          "caret.rkt"
-         (only-in "parser/parse.rkt" parse-fsh-doc)
-         (only-in fhir/diagnostic diagnostic attached-loc)
-         (only-in "resolve.rkt" element-fhir-type field-info)
-         (only-in fhir/model/registry type-schema-of)
-         (only-in fhir/model/schema type-schema-fields type-schema-parent schema-field-name schema-field-choice-base)
          (only-in fhir/model/registry type-registered?)
-         (only-in fhir/model/schema ftype-tag ftype-type-name ftype-prim-code)
-         (only-in fhir/serialize/jsexpr-util drop-false)
-         (only-in fhirpath/parser/parse parse-fhirpath)
-         (only-in fhir/sd/snapshot generate-snapshot)
-         (only-in fhir/sd/sd-index resolve-sd-raw resolve-canonical-raw sd-index-available?)
-         (only-in fhir/sd/logical register-structure-definition!)
+         (only-in fhir/sd/sd-index resolve-sd-raw sd-index-available?)
          "context.rkt"
          "instance.rkt")
-(provide apply-carets inherited-mappings snapshot-order typed-caret-set current-slice-declarations)
+(provide apply-carets snapshot-order typed-caret-set current-slice-declarations)
 ;; current-slice-declarations : (parameter (or #f (hash (cons path slice) -> index)))   the order in
 ;; which the rules' `contains` DECLARE each slice of a path; the differential follows it (SUSHI's
 ;; order), not the first rule that happens to mention a slice
@@ -106,12 +94,6 @@
         [(null? a) #t] [(null? b) #f]
         [(< (car a) (car b)) #t] [(> (car a) (car b)) #f]
         [else (key<? (cdr a) (cdr b) ia ib)]))
-;; inherited-mappings : base type -> the core SD's `mapping` list, or #f when no core package is
-;; available to the SD index (fail open: the profile then simply carries none)
-(define (inherited-mappings base-type)
-  (define sd (and (sd-index-available?) (resolve-sd-raw base-type)))
-  (define m (and (hash? sd) (hash-ref sd 'mapping #f)))
-  (and (list? m) (pair? m) m))
 (define (caret-val v)
   (match v
     [(struct fsh-code (c _)) (strip# c)]

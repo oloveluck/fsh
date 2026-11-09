@@ -122,20 +122,13 @@
           (list (err l "Invalid Usage. Supported usage codes are \"#example\", \"#definition\", and \"#inline\""))))]
     [_ '()]))
 
-;; entity-rules : entity -> (listof rule)|#f
-(define (entity-rules e)
-  (match e
-    [(fsh-profile _ _ r) r] [(fsh-extension _ _ r) r] [(fsh-logical _ _ r) r] [(fsh-resource _ _ r) r]
-    [(fsh-instance _ _ r) r] [(fsh-valueset _ _ r) r] [(fsh-codesystem _ _ r) r] [(fsh-mapping _ _ r) r]
-    [(fsh-invariant _ _ r) r] [(fsh-ruleset _ r) r] [_ #f]))
-
 ;; lint-rule : entity rule loc -> (listof diagnostic)
 (define (lint-rule e r l)
   (append (path-checks e r l) (code-checks r l) (rule-checks e r l)))
 ;; path-checks : entity rule loc -> (listof diagnostic)   an operator glued to the path (`a->"b"`,
 ;; `a=b` lex as one word) — SUSHI's spacing rule again
 (define (path-checks e r l)
-  (define p (rule-path* r))
+  (define p (rule-target-path r))
   (define bare (and p (regexp-replace* #px"\\[[^\\]]*\\]" p "")))
   (cond [(not bare) '()]
         [(regexp-match? #rx"->" bare)
@@ -216,13 +209,6 @@
    (if (and (pair? filters) (null? systems))
        (list (err l "A filter component must name a system (`codes from system SYS where …`)")) '())))
 
-;; rule-path* : rule -> string|#f
-(define (rule-path* r)
-  (match r
-    [(rule-card p _ _) p] [(rule-flag p _ _) p] [(rule-binding p _ _) p] [(rule-assign p _ _) p]
-    [(rule-contains p _) p] [(rule-only p _) p] [(rule-obeys p _) p] [(rule-caret p _ _) p]
-    [(rule-mapping p _ _ _) p] [(rule-insert p _) p] [(rule-add-element p _ _ _ _ _) p]
-    [(rule-add-cr-element p _ _ _ _ _) p] [(rule-path p) p] [_ #f]))
 ;; piped-reference? : string -> boolean   `Reference(A | B)` (a Canonical's `|` is its version)
 (define (piped-reference? t) (regexp-match? #px"^(?:Codeable)?Reference\\s*\\([^)]*[|]" t))
 ;; choice? : string -> boolean   `Reference(A or B)` — a choice of targets inside the parentheses

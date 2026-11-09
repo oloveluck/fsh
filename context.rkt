@@ -4,23 +4,9 @@
 ;;; and the small helpers over names, aliases, codes and canonicals. The bottom of the compiler.
 (require racket/match
          racket/string
-         racket/contract
-         (only-in racket/list append-map make-list last filter-map remove-duplicates index-of drop-right)
+         (only-in racket/list last)
          "parser/ast.rkt"
-         "parser/path.rkt"
-         "caret.rkt"
-         (only-in "parser/parse.rkt" parse-fsh-doc)
-         (only-in fhir/diagnostic diagnostic attached-loc)
-         (only-in "resolve.rkt" element-fhir-type field-info)
-         (only-in fhir/model/registry type-schema-of)
-         (only-in fhir/model/schema type-schema-fields type-schema-parent schema-field-name schema-field-choice-base)
-         (only-in fhir/model/registry type-registered?)
-         (only-in fhir/model/schema ftype-tag ftype-type-name ftype-prim-code)
-         (only-in fhir/serialize/jsexpr-util drop-false)
-         (only-in fhirpath/parser/parse parse-fhirpath)
-         (only-in fhir/sd/snapshot generate-snapshot)
-         (only-in fhir/sd/sd-index resolve-sd-raw resolve-canonical-raw sd-index-available?)
-         (only-in fhir/sd/logical register-structure-definition!))
+         (only-in fhir/sd/sd-index resolve-canonical-raw sd-index-available?))
 (provide assoc-ref canonical-base fsh-config-status fsh-config-version capitalize code-text* current-aliases current-contained current-instance-ref current-instance-resolver current-local-canonical current-logicals current-profile-sd current-profiles current-rule-diagnostics current-slice-orders emit-snapshot? external-canonical fsh-fhir-version last-url-seg resolve resolve-alias sd-url split-code strip#)
 ;; the IG canonical URL base (SUSHI default in the golden corpus is http://example.org)
 (define canonical-base (make-parameter "http://example.org"))

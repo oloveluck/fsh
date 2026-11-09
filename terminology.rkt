@@ -1,24 +1,9 @@
 #lang racket/base
 ;;; terminology.rkt — ValueSet / CodeSystem -> compose / concept.
 (require racket/match
-         racket/string
          racket/contract
-         (only-in racket/list append-map make-list last filter-map remove-duplicates index-of drop-right)
          "parser/ast.rkt"
-         "parser/path.rkt"
-         "caret.rkt"
-         (only-in "parser/parse.rkt" parse-fsh-doc)
-         (only-in fhir/diagnostic diagnostic attached-loc)
-         (only-in "resolve.rkt" element-fhir-type field-info)
-         (only-in fhir/model/registry type-schema-of)
-         (only-in fhir/model/schema type-schema-fields type-schema-parent schema-field-name schema-field-choice-base)
-         (only-in fhir/model/registry type-registered?)
-         (only-in fhir/model/schema ftype-tag ftype-type-name ftype-prim-code)
          (only-in fhir/serialize/jsexpr-util drop-false)
-         (only-in fhirpath/parser/parse parse-fhirpath)
-         (only-in fhir/sd/snapshot generate-snapshot)
-         (only-in fhir/sd/sd-index resolve-sd-raw resolve-canonical-raw sd-index-available?)
-         (only-in fhir/sd/logical register-structure-definition!)
          "context.rkt"
          "caret-apply.rkt")
 (provide

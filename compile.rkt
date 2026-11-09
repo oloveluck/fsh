@@ -18,25 +18,17 @@
 (require racket/match
          racket/string
          racket/contract
-         (only-in racket/list append-map make-list last filter-map remove-duplicates index-of drop-right)
+         (only-in racket/list append-map last filter-map remove-duplicates)
          "parser/ast.rkt"
          "parser/path.rkt"
-         "caret.rkt"
          (only-in "parser/parse.rkt" parse-fsh-doc)
          (only-in fhir/diagnostic diagnostic attached-loc)
-         (only-in "resolve.rkt" element-fhir-type field-info)
-         (only-in fhir/model/registry type-schema-of)
-         (only-in fhir/model/schema type-schema-fields type-schema-parent schema-field-name schema-field-choice-base)
          (only-in fhir/model/registry type-registered?)
-         (only-in fhir/model/schema ftype-tag ftype-type-name ftype-prim-code)
          (only-in fhir/serialize/jsexpr-util drop-false)
-         (only-in fhirpath/parser/parse parse-fhirpath)
-         (only-in fhir/sd/snapshot generate-snapshot)
-         (only-in fhir/sd/sd-index resolve-sd-raw resolve-canonical-raw sd-index-available?)
+         (only-in fhir/sd/sd-index resolve-sd-raw sd-index-available? sd-context)
          (only-in fhir/sd/logical register-structure-definition!)
          "context.rkt"
          "instance.rkt"
-         "caret-apply.rkt"
          "sd.rkt"
          "terminology.rkt")
 (provide (contract-out
@@ -49,6 +41,9 @@
           [compile-doc    (-> (listof struct?) (listof hash?))]
           [compile-doc/errors (-> (listof struct?) (values (listof hash?) (listof (cons/c string? exn?))))]
           [entity-label (-> struct? string?)]   ; "profile: Name" — how compile-doc/errors names an entity
+          ;; an instance's id: `Id:`, else an `* id = "…"` rule, else its name (the one definition
+          ;; compile, check and pack share)
+          [instance-id (-> fsh-instance? string?)]
           [compile-doc/diagnostics (-> (listof struct?) (values (listof hash?) (listof (cons/c string? exn?)) list?))]
           [fsh->fhir      (-> string? (listof hash?))]
           ;; the element path a profile rule constrains ("component[a].code"), or #f
@@ -96,8 +91,13 @@
                           (and (pair? steps) (fsh-step-name (car steps)))))
           (when (and first (not (known-element? names first)))
             (rule-diagnostic! r (entity-label e) (format "`~a` is not an element of ~a" first base))))))))
-;; base-element-names : type -> (listof string)|#f   its top-level element names ("value[x]", "name")
+;; base-element-names : type -> (listof string)|#f   its top-level element names ("value[x]", "name"),
+;; per package context (every entity of a type asks; the snapshot scan was repeated for each)
+(define base-element-name-cache (make-hash))
 (define (base-element-names type)
+  (hash-ref! base-element-name-cache (cons (and (sd-index-available?) (sd-context)) type)
+             (lambda () (scan-base-element-names type))))
+(define (scan-base-element-names type)
   (define sd (and (sd-index-available?) (resolve-sd-raw type)))
   (define els (and (hash? sd) (hash-ref (hash-ref sd 'snapshot (hash)) 'element #f)))
   (and (list? els)
@@ -118,6 +118,10 @@
 ;; compile-doc/errors : entities -> (values (listof jsexpr) (listof (cons entity-label exn)))
 ;; Like SUSHI, a failing entity is reported and the rest of the document still compiles.
 (define (compile-doc/errors entities)
+  ;; one document's RuleSet instantiations are parsed once per distinct text (see instantiate-ruleset)
+  (parameterize ([current-instantiations (make-hash)])
+    (compile-doc/errors* entities)))
+(define (compile-doc/errors* entities)
   (define errors '())
   (define aliases  (for/hash ([e (in-list entities)] #:when (fsh-alias? e))
                      (values (fsh-alias-name e) (fsh-alias-value e))))
@@ -155,12 +159,6 @@
                                         'xpath (field 'xpath))))))
   ;; Instances by name and id, compiled on demand (memoised, cycle-guarded) so one instance can be
   ;; embedded in another; `Usage: #inline` instances are ONLY embedded, never emitted on their own.
-  ;; an instance's id: `Id:`, else an `* id = "…"` rule, else its name
-  (define (instance-id e)
-    (or (assoc-ref (fsh-instance-metadata e) 'id)
-        (for/or ([r (in-list (fsh-instance-rules e))])
-          (match r [(rule-assign "id" (? string? v) _) v] [_ #f]))
-        (fsh-instance-name e)))
   ;; names take precedence over ids (an id may be shared by instances of different types)
   (define instances
     (let ([by-id (for/fold ([h (hash)]) ([e (in-list entities)] #:when (fsh-instance? e))
@@ -252,7 +250,7 @@
                    [current-local-canonical (lambda (n) (hash-ref local-canonicals n #f))])
     (for*/list ([e (in-list entities)]
                 #:unless (or (fsh-alias? e) (fsh-ruleset? e) (fsh-param-ruleset? e)
-                             (fsh-invariant? e) (fsh-mapping? e) (fsh-invariant? e))
+                             (fsh-invariant? e) (fsh-mapping? e))
                 ;; a RuleSet that fails to expand (its instantiated body does not parse) fails this
                 ;; entity alone, like any other compile error
                 [x (in-value (with-handlers ([exn:fail? (lambda (x) (set! errors (cons (cons (entity-label e) x) errors)) #f)])
@@ -280,8 +278,12 @@
 (define (entity-meta e)
   (cond [(fsh-profile? e) (fsh-profile-metadata e)] [(fsh-extension? e) (fsh-extension-metadata e)]
         [(fsh-logical? e) (fsh-logical-metadata e)] [(fsh-resource? e) (fsh-resource-metadata e)] [else '()]))
-(define (entity-rules e)
-  (cond [(fsh-profile? e) (fsh-profile-rules e)] [(fsh-extension? e) (fsh-extension-rules e)] [else '()]))
+;; instance-id : instance -> string   `Id:`, else an `* id = "…"` rule, else its name
+(define (instance-id e)
+  (or (assoc-ref (fsh-instance-metadata e) 'id)
+      (for/or ([r (in-list (fsh-instance-rules e))])
+        (match r [(rule-assign "id" (? string? v) _) v] [_ #f]))
+      (fsh-instance-name e)))
 ;; ---- insert / RuleSet expansion (plain + parameterized) ------------------------------------
 (define (expand-rules rules rulesets param-rulesets)
   (append-map
@@ -313,20 +315,7 @@
       (map (lambda (r) (prefix-rule prefix r)) rules)
       rules))
 (define (prefix-rule prefix r)
-  (define (j p) (cond [(or (not p) (equal? p "") (equal? p ".")) prefix] [else (string-append prefix "." p)]))
-  (match r
-    [(rule-card p c f) (rule-card (j p) c f)]
-    [(rule-flag p ps f) (rule-flag (j p) (map j ps) f)]
-    [(rule-binding p v st) (rule-binding (j p) v st)]
-    [(rule-assign p v x) (rule-assign (j p) v x)]
-    [(rule-contains p items) (rule-contains (j p) items)]
-    [(rule-only p ts) (rule-only (j p) ts)]
-    [(rule-obeys p is) (rule-obeys (j p) is)]
-    [(rule-caret p cp v) (rule-caret (j p) cp v)]
-    [(rule-insert p ref) (rule-insert (j p) ref)]
-    [(rule-path p) (rule-path (j p))]
-    [(rule-add-element p c f ts s d) (rule-add-element (j p) c f ts s d)]
-    [_ r]))
+  (map-rule-path (lambda (p) (if (or (not p) (equal? p "") (equal? p ".")) prefix (string-append prefix "." p))) r))
 ;; a (parameter|lastParameter "v,") token -> its cleaned argument value
 (define (param-arg x)
   (match x
@@ -340,9 +329,13 @@
 ;; unescape-param : string -> string   a `)` or `,` inside an argument is written `\)` / `\,` (and a
 ;; backslash `\\`): the backslash goes, the character stays
 (define (unescape-param s) (regexp-replace* #px"\\\\([),\\\\])" s "\\1"))
-;; instantiate a parameterized RuleSet: substitute {param}->arg in the raw body, re-parse to rules
+;; instantiate-ruleset : params body-tokens args -> rules
+;; a parameterized RuleSet instantiated: {param}->arg substituted in the raw body, re-parsed to rules.
+;; The rules depend only on the substituted text, so within one document (current-instantiations) a
+;; text is parsed once however many inserts produce it (mCODE: thousands of inserts, 30% of its time).
+(define current-instantiations (make-parameter #f))
 (define (instantiate-ruleset params body args)
-  (define subst (map cons params args))
+  (define subst (substitution params args))
   ;; a STAR token carries its own leading "\n* " (starts a rule line); other tokens get a space.
   ;; padding a STAR would let the WS lexer eat the newline the STAR rule needs.
   (define text (apply string-append "RuleSet: __expand"
@@ -350,8 +343,11 @@
                         (define raw (let ([x (cdr t)]) (if (code-tok? x) (code-tok-text x) x)))
                         (define v (requote (car t) (substitute raw subst)))
                         (if (eq? (car t) 'STAR) v (string-append " " v)))))
-  (define ds (parse-fsh-doc text))
-  (if (and (pair? ds) (fsh-ruleset? (car ds))) (fsh-ruleset-rules (car ds)) '()))
+  (define (parse)
+    (define ds (parse-fsh-doc text))
+    (if (and (pair? ds) (fsh-ruleset? (car ds))) (fsh-ruleset-rules (car ds)) '()))
+  (define memo (current-instantiations))
+  (if memo (hash-ref! memo text parse) (parse)))
 ;; requote : token-type string -> string   a body token's value back as source text: the lexer
 ;; strips the quotes of strings and units (`"Not used in this profile"` re-lexed bare would be words)
 (define (requote type v)
@@ -364,11 +360,17 @@
     ;; a STAR's lexeme can carry the comment lines before it (`// note\n* `): keep only its own line
     [(STAR) (string-append "\n" (last (string-split (string-append v " ") "\n")))]
     [else v]))
-;; substitute : string (listof (cons param arg)) -> string   each `{param}` becomes its argument,
+;; A Substitution is (listof (cons regexp arg)): each `{param}`'s pattern with its argument, in
+;; parameter order. Built once per instantiation (the patterns were compiled again for every token).
+;; substitution : params args -> Substitution
+(define (substitution params args)
+  (for/list ([p (in-list params)] [a (in-list args)])
+    (cons (regexp (regexp-quote (string-append "{" p "}"))) a)))
+;; substitute : string Substitution -> string   each `{param}` becomes its argument, in order,
 ;; verbatim (a procedure, so a `\` or `&` in the argument is not read as a replacement pattern)
 (define (substitute s subst)
   (for/fold ([s s]) ([kv (in-list subst)])
-    (regexp-replace* (regexp (regexp-quote (string-append "{" (car kv) "}"))) s (lambda (_) (cdr kv)))))
+    (if (regexp-match? (car kv) s) (regexp-replace* (car kv) s (lambda (_) (cdr kv))) s)))
 ;; unknown-ruleset! : rule name -> void   an insert of a RuleSet the project does not define is an
 ;; error at the rule (SUSHI: "Unable to find definition for RuleSet"); the rule is left as it is
 (define current-insert-label (make-parameter #f))
@@ -406,7 +408,7 @@
   (check-equal? (param-arg '(lastParameter " SCT)")) "SCT")
   (check-equal? (param-arg '(lastParameter "[[a, b)]] )")) "a, b)")
   (check-equal? (unescape-param "a\\, b") "a, b")
-  (check-equal? (substitute "x = {d}" (list (cons "d" "\"a (b\\) & c\""))) "x = \"a (b\\) & c\"")
+  (check-equal? (substitute "x = {d}" (substitution (list "d") (list "\"a (b\\) & c\""))) "x = \"a (b\\) & c\"")
   ;; a parameterized RuleSet in an instance: the display argument with an escaped paren arrives whole
   (define cm (car (fsh->fhir (string-append
                               "RuleSet: MapConcept(code, display, targetcode, targetdisplay)\n"

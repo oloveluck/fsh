@@ -5,22 +5,16 @@
 (require racket/match
          racket/string
          racket/contract
-         (only-in racket/list append-map make-list last filter-map remove-duplicates index-of drop-right take)
+         (only-in racket/list make-list last remove-duplicates drop-right take)
          "parser/ast.rkt"
          "parser/path.rkt"
-         "caret.rkt"
-         (only-in "parser/parse.rkt" parse-fsh-doc)
-         (only-in fhir/diagnostic diagnostic attached-loc)
          (only-in "resolve.rkt" element-fhir-type field-info)
          (only-in fhir/model/registry type-schema-of)
-         (only-in fhir/model/schema type-schema-fields type-schema-parent schema-field-name schema-field-choice-base)
+         (only-in fhir/model/schema type-schema-parent)
          (only-in fhir/model/registry type-registered?)
          (only-in fhir/model/schema ftype-tag ftype-type-name ftype-prim-code)
          (only-in fhir/serialize/jsexpr-util drop-false)
-         (only-in fhirpath/parser/parse parse-fhirpath)
-         (only-in fhir/sd/snapshot generate-snapshot)
          (only-in fhir/sd/sd-index resolve-sd-raw resolve-canonical-raw sd-index-available?)
-         (only-in fhir/sd/logical register-structure-definition!)
          "context.rkt")
 (provide
  (contract-out
@@ -423,12 +417,13 @@
 (define (fill-embedded-profiles js elements positions [embedded-positions (hash)])
   (define type (hash-ref js 'resourceType))
   (for*/fold ([js js]) ([(pos slice) (in-hash positions)]
+                        ;; the slice's direct children: ids `<Type>.<field>:<slice>.<name>`
+                        [prefix (in-value (string-append type "." (car pos) ":" slice "."))]
                         [(cid el) (in-hash elements)]
-                        [m (in-value (regexp-match (pregexp (string-append "^" (regexp-quote (string-append type "." (car pos) ":" slice)) "[.]([A-Za-z]+)$")) cid))]
-                        #:when m
+                        [name (in-value (child-name cid prefix))] #:when name
                         [url (in-value (let ([pr (extension-profile el)]) (and (pair? pr) (car pr))))] #:when url)
     (define field (string->symbol (car pos)))
-    (define child (string->symbol (cadr m)))
+    (define child (string->symbol name))
     (define lst (hash-ref js field #f))
     (define entry (and (list? lst) (< (cdr pos) (length lst)) (list-ref lst (cdr pos))))
     (define embedded (and (hash? entry) (hash-ref entry child #f)))
@@ -439,9 +434,14 @@
        (define pes (profile-elements key))
        (if (hash-empty? pes)
            js
-           (let ([eps (hash-ref embedded-positions (list (car pos) (cdr pos) (cadr m)) (hash))])
+           (let ([eps (hash-ref embedded-positions (list (car pos) (cdr pos) name) (hash))])
              (hash-set js field (for/list ([x (in-list lst)] [i (in-naturals)])
                                   (if (= i (cdr pos)) (hash-set x child (assign-required* (fill-slice-children embedded pes eps) pes)) x)))))])))
+;; child-name : id prefix -> string|#f   the element name after `prefix` when the id is a direct
+;; child (a plain name, no further step or slice)
+(define (child-name id prefix)
+  (and (string-prefix? id prefix)
+       (let ([rest (substring id (string-length prefix))]) (and (regexp-match? #px"^[A-Za-z]+$" rest) rest))))
 ;; fill-slice-children : jsexpr elements positions -> jsexpr
 ;; a named slice the instance used gets the slice's pattern and its required children's values
 (define (fill-slice-children js elements positions)
@@ -586,7 +586,6 @@
                         (define vals (if (pair? sliced) sliced (list (cdr (assf not vs)))))
                         (list (cons (string->symbol name) (if (repeats? elements (string-append id "." name)) vals (car vals))))]))])
     (values (car kv) (cdr kv))))
-(define (assf f l) (for/first ([p (in-list l)] #:when (f (car p))) p))
 ;; merge-missing : jsexpr jsexpr -> jsexpr   `a` with the keys only `b` has (objects, recursively)
 (define (merge-missing a b)
   (if (and (hash? a) (hash? b))

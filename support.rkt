@@ -5,9 +5,8 @@
 ;;; names, go to definition across the project, and completion. The language server loads this module
 ;;; by its collection name; nothing here knows the protocol. What an agent runs is workspace.rkt.
 
-(require racket/contract racket/string racket/list json
+(require racket/contract racket/list
          fhir/lang/support
-         (only-in fhir/sd/sd-index resolve-sd-raw sd-index-available?)
          (only-in "project.rkt" compile-project project-diagnostics)
          "support/symbols.rkt" "support/complete.rkt")
 

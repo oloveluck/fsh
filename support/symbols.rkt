@@ -9,7 +9,7 @@
 (require racket/contract racket/string racket/list racket/match
          (only-in fhir/sd/sd-index resolve-sd-raw sd-index-available?)
          (only-in fhir/lang/support entity entity? entity-kind entity-name entity-id entity-file entity-line
-                  find-entity word-at line-of))
+                  find-entity line-of))
 
 (provide
  (contract-out

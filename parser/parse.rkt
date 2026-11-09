@@ -132,13 +132,6 @@
        (for ([r (in-list rules)] [l (in-list locs)] #:when l)
          (attach-loc! r l)))
      e]))
-;; entity-rules : entity -> (listof rule) | #f
-(define (entity-rules e)
-  (match e
-    [(fsh-profile _ _ r) r] [(fsh-extension _ _ r) r] [(fsh-logical _ _ r) r] [(fsh-resource _ _ r) r]
-    [(fsh-instance _ _ r) r] [(fsh-valueset _ _ r) r] [(fsh-codesystem _ _ r) r] [(fsh-mapping _ _ r) r]
-    [(fsh-invariant _ _ r) r] [(fsh-ruleset _ r) r] [_ #f]))
-
 ;; ---- indented rules (FSH 2.0 "path context") ------------------------------------------------
 ;; A rule indented under another continues its path: under `* extension[a][0]`, an indented
 ;; `* extension[b].valueString = "x"` means `extension[a][0].extension[b].valueString`. Each level is
@@ -190,7 +183,7 @@
        (when (and (null? acc) (> level 0)) (fail l "The first rule of a definition must be left-aligned"))
        (when (> level (add1 prev-level)) (fail l "The rule is indented too deeply: a rule is indented at most one level (two spaces) below the rule above it"))
        (when (and (> level 0) (vs-component? r0)) (fail l "A rule that does not use a path cannot be indented"))
-       (when (and (> level 0) (equal? (rule-path* r0) ".")) (fail l "The special '.' path is only allowed in top-level rules"))
+       (when (and (> level 0) (equal? (rule-target-path r0) ".")) (fail l "The special '.' path is only allowed in top-level rules"))
        (define live (filter (lambda (s) (< (car s) level)) stack))
        (define ctx (for/first ([s (in-list live)] #:when (= (car s) (sub1 level))) s))
        (when (and ctx (not (cadr ctx)) (not (caddr ctx)))
@@ -206,14 +199,8 @@
         [else (string-append ctx "." p)]))
 ;; a rule's path as context for the rules under it ([+] -> [=])
 (define (context-path r)
-  (define p (rule-path* r))
+  (define p (rule-target-path r))
   (and p (string-replace p "[+]" "[=]")))
-(define (rule-path* r)
-  (match r
-    [(rule-card p _ _) p] [(rule-flag p _ _) p] [(rule-binding p _ _) p] [(rule-assign p _ _) p]
-    [(rule-contains p _) p] [(rule-only p _) p] [(rule-obeys p _) p] [(rule-caret p _ _) p]
-    [(rule-mapping p _ _ _) p] [(rule-insert p _) p] [(rule-add-element p _ _ _ _ _) p]
-    [(rule-add-cr-element p _ _ _ _ _) p] [(rule-path p) p] [_ #f]))
 (define (rule-codes r)
   (match r
     [(concept-rule cs _ _) cs] [(rule-code-caret cs _ _) cs] [(rule-code-insert cs _) cs]
@@ -228,26 +215,12 @@
       [_ '()])))
 (define (code-text c) (if (code-tok? c) (code-tok-text c) c))
 (define (in-context r ctx codes)
-  (define (j p) (join-path ctx p))
   (define (jc cs) (if codes (append codes cs) cs))
   (match r
-    [(rule-card p c f) (rule-card (j p) c f)]
-    [(rule-flag p ps f) (rule-flag (j p) (map j ps) f)]
-    [(rule-binding p v st) (rule-binding (j p) v st)]
-    [(rule-assign p v x) (rule-assign (j p) v x)]
-    [(rule-contains p items) (rule-contains (j p) items)]
-    [(rule-only p ts) (rule-only (j p) ts)]
-    [(rule-obeys p is) (rule-obeys (j p) is)]
-    [(rule-caret p cp v) (rule-caret (j p) cp v)]
-    [(rule-mapping p t c cd) (rule-mapping (j p) t c cd)]
-    [(rule-insert p ref) (rule-insert (j p) ref)]
-    [(rule-add-element p c f t sh d) (rule-add-element (j p) c f t sh d)]
-    [(rule-add-cr-element p c f ref sh d) (rule-add-cr-element (j p) c f ref sh d)]
-    [(rule-path p) (rule-path (j p))]
     [(concept-rule cs d df) (concept-rule (jc cs) d df)]
     [(rule-code-caret cs cp v) (rule-code-caret (jc cs) cp v)]
     [(rule-code-insert cs ref) (rule-code-insert (jc cs) ref)]
-    [_ r]))
+    [_ (map-rule-path (lambda (p) (join-path ctx p)) r)]))
 
 ;; parse-reals : entity tokens -> its datum (entity (<kind> header-item … rule …))
 ;; brag's CFG parser is superlinear in input length, and real IGs have entities with hundreds of rules

@@ -16,12 +16,12 @@
 (require racket/contract racket/list racket/file racket/path racket/match
          (only-in fhir/sd/sd-index current-sd-packages)
          (only-in fhir/spec-package spec-package-path)
-         (only-in fhir/diagnostic diagnostic loc loc-source loc-line exn:fail:diagnostic? exn:fail:diagnostic-diagnostic)
-         (only-in "compile.rkt" compile-doc/diagnostics entity-label emit-snapshot? canonical-base fsh-fhir-version)
+         (only-in fhir/diagnostic diagnostic loc loc-source loc-line)
+         (only-in "compile.rkt" compile-doc/diagnostics entity-label emit-snapshot? canonical-base fsh-fhir-version instance-id)
          (only-in "context.rkt" fsh-config-status fsh-config-version)
          (only-in "yaml.rkt" yref yaml-boolean)
          (only-in "parser/parse.rkt" parse-fsh-doc/diagnostics)
-         (only-in "parser/ast.rkt" fsh-instance? fsh-instance-metadata fsh-instance-name
+         (only-in "parser/ast.rkt" fsh-instance? fsh-instance-metadata
                   fsh-profile fsh-profile? fsh-extension fsh-extension? fsh-logical fsh-logical? fsh-resource fsh-resource?
                   fsh-valueset fsh-valueset? fsh-codesystem fsh-codesystem?)
          "ig-config.rkt" "pack.rkt")
@@ -171,7 +171,7 @@
   (define usages (for*/hash ([l (in-list (project-located p))] #:when (fsh-instance? (car l))
                              [m (in-value (fsh-instance-metadata (car l)))]
                              [u (in-value (assoc 'usage m))] #:when u)
-                   (values (let ([i (assoc 'id m)]) (if i (cdr i) (fsh-instance-name (car l)))) (cdr u))))
+                   (values (instance-id (car l)) (cdr u))))
   (pack-package! out (project-config p) (project-artifacts p) usages))
 
 (module+ test
@@ -195,6 +195,20 @@
   (check-equal? (project-diagnostics p*) '())
   (check-equal? (length (project-artifacts p*)) 1)
   (delete-directory/files dir)
+  ;; an instance whose id comes from an `* id = "…"` rule keeps its Usage when packed: compile,
+  ;; check and pack share one instance-id (pack used to key Usage by `Id:` or the name only, so this
+  ;; #definition Basic went to package/example/; a conformance resource goes to package/ anyway)
+  (define d3 (make-temporary-directory))
+  (call-with-output-file (build-path d3 "sushi-config.yaml")
+    (λ (o) (void (write-string "id: example.ids\ncanonical: http://example.org\nname: Ids\nstatus: draft\nversion: 0.1.0\nfhirVersion: 4.0.1\nFSHOnly: true\n" o))))
+  (call-with-output-file (build-path d3 "basic.fsh")
+    (λ (o) (void (write-string "Instance: SomeBasic\nInstanceOf: Basic\nUsage: #definition\n* id = \"from-rule\"\n* code.text = \"x\"\n" o))))
+  (define out (build-path d3 "out.tgz"))
+  (void (pack-project! (compile-project d3) out))
+  (define-values (_m defs examples) ((dynamic-require 'fhir/package 'read-package) out))
+  (check-equal? (map car defs) '("Basic-from-rule.json"))
+  (check-equal? examples '())
+  (delete-directory/files d3)
   ;; a project with a map (when the fml package is installed): the StructureMap joins the artifacts,
   ;; a parse error in the map is a diagnostic positioned in it
   (when (fml-entry 'parse-map-file)

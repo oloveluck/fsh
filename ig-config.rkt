@@ -15,7 +15,7 @@
 ;;;       version: 6.1.0
 ;;;       id: hl7fhiruscore
 
-(require racket/contract racket/string racket/list racket/file racket/match
+(require racket/contract racket/string racket/file racket/match
          json file/gunzip file/untar
          (only-in fhir/spec-package spec-package-path current-package-directories)
          "yaml.rkt")

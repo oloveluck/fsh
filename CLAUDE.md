@@ -386,3 +386,30 @@ lets a slice that constrains nothing at its discriminator paths claim no entry).
 an issue that names a slice (`… in slice 'diastolic' …`) to that slice's rules, in the instance and
 in the profile (`trace-rule #:slice`; it went to the first `component[…]` rule). guide.md lists the
 message and guide-test pins both lines.
+
+## Quality and performance pass (2026-11-09)
+Held to a dump of the IPS, mCODE, Genomics and golden projects compiled, `fsh check` on mCODE and
+the published IPS package decompiled: identical before and after (with the foundation's pass, see
+the main repo's CLAUDE.md). mCODE compiles in 9.8 s (12.6), golden in 2.6 s (6.1), `check` on
+mCODE 15.1 s (18.9) — most of the gain is the foundation's lazy package index.
+- One definition each, in `parser/ast.rkt`: `entity-rules`, `rule-target-path` (was `rule-path*`,
+  written identically in parse.rkt and lint.rkt) and `map-rule-path` (parse's `in-context`,
+  compile's `prefix-rule` and sd's rewrite of extension slices all rewrote rule paths their own
+  way; compile's and sd's skipped mapping and content-reference rules, so an `insert` under a path
+  left a RuleSet's mapping rules unprefixed). `sd.rkt`'s `rule-path-of` stays separate on purpose:
+  it is the rules that CONSTRAIN an element, which the element-path check and the trace rely on.
+- `instance-id` is one function (compile.rkt, exported): compile honoured an `* id = "…"` rule,
+  check and pack did not, so such an instance packed with `Usage: #definition` went to
+  `package/example/` (project.rkt's test pins it).
+- Per-document memo of RuleSet instantiations (by substituted text; mCODE: 866 inserts, 716
+  distinct) and their `{param}` patterns compiled once per instantiation, not per token;
+  `fill-embedded-profiles` tests a prefix instead of compiling a regexp per (slice, element) pair;
+  `base-element-names` per (package context, type).
+- Removed: unused requires (six modules carried the same 20-line block), `inherited-mappings`
+  (provided, unused since profiles stopped writing `mapping`), an always-true test in check.rkt,
+  `instance.rkt`'s copy of racket's `assf`; sd.rkt's `hash-set*` (which shadowed racket's with
+  different semantics) is `hash-set-present*`.
+- The remaining cost is parsing: brag's CFG parser ~70 µs a token (lexing all three IGs: 0.3 s;
+  parsing them: ~10 s), and RuleSet bodies re-parsed per distinct instantiation (3.6 s of mCODE's
+  5.2 s compile). Group size for long entities (`rules-per-parse`) was measured at 1-32: 16 is
+  near the best, so it stays.

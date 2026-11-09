@@ -13,7 +13,7 @@
 ;;;   'flag      after a path and a space: the flags and rule keywords
 ;;; A Candidate is a jsexpr CompletionItem {label kind detail? documentation?}.
 
-(require racket/contract racket/string racket/list racket/match
+(require racket/contract racket/string racket/list
          (only-in fhir/sd/sd-index resolve-sd-raw sd-index-available?)
          (only-in fhir/model/registry all-types)
          (only-in fhir/lang/support entity? entity-kind entity-name entity-id)

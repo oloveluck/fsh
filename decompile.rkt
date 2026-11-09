@@ -15,7 +15,7 @@
          racket/string
          racket/contract
          "parser/ast.rkt"
-         (only-in "print.rkt" print-doc print-entity)
+         (only-in "print.rkt" print-doc)
          (only-in fhir/serialize/to-json node->jsexpr)
          (only-in fhir/model/node fhir?))
 

@@ -5,22 +5,18 @@
 (require racket/match
          racket/string
          racket/contract
-         (only-in racket/list append-map make-list last filter-map remove-duplicates index-of drop-right take drop)
+         (only-in racket/list append-map last index-of take drop)
          "parser/ast.rkt"
          "parser/path.rkt"
-         "caret.rkt"
-         (only-in "parser/parse.rkt" parse-fsh-doc)
-         (only-in fhir/diagnostic diagnostic attached-loc)
          (only-in "resolve.rkt" element-fhir-type field-info)
          (only-in fhir/model/registry type-schema-of)
          (only-in fhir/model/schema type-schema-fields type-schema-parent schema-field-name schema-field-choice-base)
          (only-in fhir/model/registry type-registered?)
-         (only-in fhir/model/schema ftype-tag ftype-type-name ftype-prim-code)
+         (only-in fhir/model/schema ftype-tag ftype-type-name)
          (only-in fhir/serialize/jsexpr-util drop-false)
          (only-in fhirpath/parser/parse parse-fhirpath)
          (only-in fhir/sd/snapshot generate-snapshot)
          (only-in fhir/sd/sd-index resolve-sd-raw resolve-canonical-raw sd-index-available?)
-         (only-in fhir/sd/logical register-structure-definition!)
          "context.rkt"
          "instance.rkt"
          "caret-apply.rkt")
@@ -200,22 +196,6 @@
                   [(rule-flag p (? pair? extra) flags) (cons (rule-flag p '() flags) (for/list ([q (in-list extra)]) (rule-flag q '() flags)))]
                   [_ (list r)]))
               rules))
-;; map-rule-path : (path -> path) rule -> rule   the rule with its path(s) mapped
-(define (map-rule-path f r)
-  (define (j p) (if (string? p) (f p) p))
-  (match r
-    [(rule-card p c fl) (rule-card (j p) c fl)]
-    [(rule-flag p ps fl) (rule-flag (j p) (map j ps) fl)]
-    [(rule-binding p v st) (rule-binding (j p) v st)]
-    [(rule-assign p v x) (rule-assign (j p) v x)]
-    [(rule-contains p items) (rule-contains (j p) items)]
-    [(rule-only p ts) (rule-only (j p) ts)]
-    [(rule-obeys p is) (rule-obeys (j p) is)]
-    [(rule-caret p cp v) (rule-caret (j p) cp v)]
-    [(rule-insert p ref) (rule-insert (j p) ref)]
-    [(rule-path p) (rule-path (j p))]
-    [(rule-add-element p c fl ts sh d) (rule-add-element (j p) c fl ts sh d)]
-    [_ r]))
 ;; rewrite-extension-slices : rules parent-elements base-type -> rules   a leading
 ;; `extension[Name]` whose Name is not one of the Parent's slices but names an Extension (an alias,
 ;; a url, a profile) means the Parent's slice typed with it: `extension[us-core-birthsex] MS` is
@@ -249,7 +229,7 @@
   (define (fix p)
     (regexp-replace* #px"(^|\\.)((?:modifierE|e)xtension)\\[([^\\]]+)\\]" p
                      (lambda (all pre field name) (string-append pre field "[" (slice-for field name) "]"))))
-  (if (and (hash-empty? parent-elements) (hash-empty? own-slices)) rules (map (lambda (r) (map-rule-path fix r)) rules)))
+  (if (and (hash-empty? parent-elements) (hash-empty? own-slices)) rules (map (lambda (r) (map-rule-path (lambda (p) (if (string? p) (fix p) p)) r)) rules)))
 ;; add-slice-parents : elems order -> (values elems order)   a slice whose children the rules
 ;; constrain is in the differential itself (SUSHI puts it there, bare but for its sliceName, as the
 ;; IG Publisher needs it to place the children)
@@ -278,7 +258,7 @@
               [copy-id (in-value (string-append sid "." (car m) ":" (cadr m)))]
               #:unless (hash-has-key? es copy-id))
     (define src (hash-ref elems cid))
-    (values (hash-set es copy-id (hash-set* src 'id copy-id 'path (hash-ref src 'path)))
+    (values (hash-set es copy-id (hash-set-present* src 'id copy-id 'path (hash-ref src 'path)))
             (cons copy-id os))))
 ;; slice-ancestors : element-id -> ids   its proper prefixes (at `.`) that end in a slice
 (define (slice-ancestors id)
@@ -391,7 +371,7 @@
                                                                   (constraint-of k)))))))]
       [(rule-add-element p card flags types short def)
        (upd elems order rid rpath rslice
-            (lambda (h) (hash-set* (apply-card (apply-flags h flags) card)
+            (lambda (h) (hash-set-present* (apply-card (apply-flags h flags) card)
                                    'short short 'definition (or def short)
                                    'type (and (pair? types) (map type->jsexpr types)))))]
       [(rule-contains p items)
@@ -428,8 +408,9 @@
                       (hash-set h 'type (list (hasheq 'code "Extension" 'profile (list ext-profile))))
                       h)))))]
       [_ (values elems order)]))))
-;; set only the keys whose value is non-#f (a drop-false-aware multi hash-set)
-(define (hash-set* h . kvs)
+;; hash-set-present* : hash key value ... -> hash   set only the keys whose value is non-#f (racket's
+;; hash-set* sets them all; this one drops absent values, as drop-false does)
+(define (hash-set-present* h . kvs)
   (let loop ([h h] [kvs kvs])
     (cond [(null? kvs) h]
           [(cadr kvs) (loop (hash-set h (car kvs) (cadr kvs)) (cddr kvs))]
@@ -512,7 +493,7 @@
   ;; the slice name's type suffix matches one of the base types (Quantity; dateTime for DateTime)
   (define code (and suffix (for/or ([c (in-list codes)]) (and (string-ci=? c suffix) c))))
   (define bmax (base-max base-type path))
-  (hash-set* h 'min 0 'max (or bmax "1") 'type (and code (list (hasheq 'code code)))))
+  (hash-set-present* h 'min 0 'max (or bmax "1") 'type (and code (list (hasheq 'code code)))))
 (define (base-element base-type path [fuel 8])
   (define sd (and (sd-index-available?) (resolve-sd-raw base-type)))
   (define els (and (hash? sd) (let ([sn (hash-ref sd 'snapshot #f)]) (and (hash? sn) (hash-ref sn 'element #f)))))
@@ -681,7 +662,7 @@
     (append
      ;; root element carries the extension's short/definition
      (list (lambda (es os) (upd es os "Extension" "Extension" #f
-                                (lambda (h) (hash-set* h 'short (assoc-ref meta 'title)
+                                (lambda (h) (hash-set-present* h 'short (assoc-ref meta 'title)
                                                        'definition (assoc-ref meta 'description))))))
      ;; simple extension: no sub-extensions allowed
      (if complex? '()
