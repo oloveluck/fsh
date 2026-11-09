@@ -57,6 +57,23 @@ registers its profiles, value sets and code systems, so validation (`fhir/confor
 whole project: `(check-fsh-project dir)` (`fsh/check`, the same report as `raco fsh check`) and
 `(compile-project dir)` (`fsh/project`).
 
+`raco make` compiles a `#lang fsh` module but does not validate its examples (that needs the whole
+project and the packages). To hold them to the profiles on every `raco test`, keep a test beside them:
+```racket
+#lang racket/base
+;; the FSH project's examples, checked by `raco test` as `raco fsh check fsh/` would
+(module+ test
+  (require rackunit racket/runtime-path
+           (only-in fsh/check check-fsh-project check-report-diagnostics)
+           (only-in fhir/diagnostic diagnostic->string diagnostic-severity))
+  (define-runtime-path dir "fsh")
+  (define errors (filter (lambda (d) (eq? (diagnostic-severity d) 'error))
+                         (check-report-diagnostics (check-fsh-project dir))))
+  (check-equal? (map diagnostic->string errors) '()))
+```
+A failing example shows as `fsh/p.fsh:10:1: fsh validate error: instance bad: Patient.birthDate:
+minimum required = 1, but found 0 (constrained by profile P at line 4)`.
+
 ## Working on the compiler itself
 `CLAUDE.md` is the architecture. `raco test .` runs everything: the SUSHI golden corpus, five real
 IGs' own FSH against their published packages (IPS, mCODE, Plan-Net, HRex, Genomics Reporting),
