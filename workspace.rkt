@@ -13,7 +13,7 @@
 (require racket/contract racket/list racket/string racket/file racket/runtime-path
          fhir/lang/workspace
          (only-in fhir/lang/support entity-kind entity-name entity-id entity-line)
-         (only-in fhir/diagnostic diagnostic-loc diagnostic-severity loc-source loc-line diagnostic->jsexpr)
+         (only-in fhir/diagnostic diagnostic-loc diagnostic-message diagnostic-severity loc-source loc-line diagnostic->jsexpr)
          (only-in "check.rkt" check-fsh-project check-report-diagnostics check-report-artifacts)
          (only-in "support/symbols.rkt" entities-of))
 
@@ -31,7 +31,7 @@
   (define-values (pkgs _missing) (workspace-packages ws))
   (define cfg (workspace-config ws))
   (check-fsh-project (workspace-root ws) #:canonical (ws-config-canonical cfg) #:fhir-version (ws-config-fhir-version cfg)
-                     #:packages pkgs))
+                     #:packages pkgs #:profiles (ws-config-profiles cfg)))
 
 (define (artifacts ws files)
   (cond [(null? files) (values '() '())]
@@ -120,4 +120,17 @@
   (check-equal? (length (hash-ref e 'problems)) 1)
   (check-regexp-match #rx"final" (hash-ref (car (hash-ref e 'problems)) 'message))
   (check-exn #rx"declares no entity named nope" (lambda () (explain ws f text "nope" (hasheq))))
-  (delete-directory/files dir))
+  (delete-directory/files dir)
+  ;; workspace.yaml's profiles hold the examples to them as they hold staged data: an Observation
+  ;; that claims nothing still breaks the workspace's rule for Observations
+  (define dir2 (make-temporary-directory "fsh-ws-~a"))
+  (with-output-to-file (build-path dir2 "workspace.yaml")
+    (lambda () (display "fhirVersion: 4.0.1\ncanonical: http://example.org/ws\nprofiles:\n  Observation: http://example.org/ws/StructureDefinition/bp\n")))
+  (define text2 (string-append "Profile: BP\nParent: Observation\nId: bp\n* status = #final\n\n"
+                               "Instance: plain\nInstanceOf: Observation\n* code = http://loinc.org#85354-9\n* status = #preliminary\n"))
+  (define f2 (build-path dir2 "bp.fsh"))
+  (with-output-to-file f2 (lambda () (display text2)))
+  (define-values (ws2 _2) (open-workspace dir2))
+  (define-values (rs2 ds2) (artifacts ws2 (list (cons f2 text2))))
+  (check-true (for/or ([d (in-list ds2)]) (regexp-match? #rx"final" (diagnostic-message d))) (format "~s" (map diagnostic-message ds2)))
+  (delete-directory/files dir2))

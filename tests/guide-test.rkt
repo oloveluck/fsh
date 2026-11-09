@@ -49,6 +49,8 @@
   (one (list (cons "a.fsh" "Profile: X\nParent: NoSuchProfile\n* status MS\n")) #rx"Parent `NoSuchProfile` not found")
   (one (list (cons "a.fsh" "ValueSet: A\nId: same\n* http://loinc.org#1\n") (cons "b.fsh" "ValueSet: B\nId: same\n* http://loinc.org#2\n"))
        #rx"the ValueSet id `same` is already used")
+  (one (list (cons "a.fsh" "Instance: ann\nInstanceOf: Patient\n* gender = #female\n") (cons "b.fsh" "Instance: ann\nInstanceOf: Patient\n* gender = #male\n"))
+       #rx"the Patient instance id `ann` is already used")
   (one (list (cons "a.fsh" (regexp-replace* #rx"\n[*] component\\[[01]\\][^\n]*" (car blocks) "")))
        #rx"minimum required = 2, but found 0")
   (one (list (cons "a.fsh" "Profile: P\nParent: Patient\n* insert NoSuchRuleSet\n")) #rx"RuleSet `NoSuchRuleSet` not found")

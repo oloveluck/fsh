@@ -35,7 +35,8 @@
  (struct-out check-report)
  (contract-out
   [check-fsh-project (->* (path-string?) (#:capability (or/c string? #f) #:canonical (or/c string? #f)
-                                          #:fhir-version (or/c string? #f) #:packages (listof path-string?))
+                                          #:fhir-version (or/c string? #f) #:packages (listof path-string?)
+                                          #:profiles (hash/c string? (listof string?)))
                           check-report?)]
   [trace-rule        (->* (list? string?) (#:exact? any/c #:slice (or/c string? #f)) (or/c any/c #f))]))
 
@@ -44,10 +45,10 @@
 (struct check-report (diagnostics texts examples invalid artifacts) #:transparent)
 
 (define (check-fsh-project dir #:capability [capability #f] #:canonical [canonical #f] #:fhir-version [fhir-version #f]
-                           #:packages [packages '()])
+                           #:packages [packages '()] #:profiles [required (hash)])
   (define p (compile-project dir #:canonical canonical #:fhir-version fhir-version #:packages packages))
   (define compile-diags (project-diagnostics p))
-  (define-values (examples invalid validation-diags) (validate-examples p))
+  (define-values (examples invalid validation-diags) (validate-examples p required))
   (define map-diags (check-maps p examples))
   (define server-diags (if capability (server-gaps p capability) '()))
   (check-report (append compile-diags validation-diags map-diags server-diags)
@@ -81,8 +82,9 @@
 
 ;; validate-examples : project -> (values examples invalid-count diagnostics)
 ;; the instances the package would carry as examples (Usage #example, the default), each validated
-;; against its base type and the profiles it claims, the project's own artifacts first in context
-(define (validate-examples p)
+;; against its base type, the profiles it claims and the ones `required` names for its type (a
+;; workspace's constraints: workspace.yaml `profiles`), the project's own artifacts first in context
+(define (validate-examples p [required (hash)])
   (define located (project-located p))
   (define artifacts (project-artifacts p))
   (define instances                                  ; id -> (entity . loc)
@@ -114,7 +116,8 @@
   (define own (artifacts-package! tmp (project-config p) artifacts))
   (define per-example
     (parameterize ([current-sd-packages (cons own (project-sd-packages p))])
-      (for/list ([a (in-list examples)])
+      (for/list ([a0 (in-list examples)])
+        (define a (claiming a0 (hash-ref required (hash-ref a0 'resourceType "") '())))
         (for/list ([i (in-list (validate-issues (strip-jnum a)))]
                    #:when (member (issue-severity i) '("error" "fatal" "warning")))
           (issue->diagnostic i a (instance-for a) profiles)))))
@@ -122,6 +125,15 @@
   (values examples
           (for/sum ([ds (in-list per-example)]) (if (ormap (lambda (d) (eq? (diagnostic-severity d) 'error)) ds) 1 0))
           (append* per-example)))
+
+;; claiming : resource (listof canonical) -> resource   the resource also claiming those profiles
+(define (claiming r urls)
+  (cond
+    [(null? urls) r]
+    [else
+     (define meta (let ([m (hash-ref r 'meta #f)]) (if (hash? m) m (hasheq))))
+     (define claimed (let ([p (hash-ref meta 'profile '())]) (if (list? p) p '())))
+     (hash-set r 'meta (hash-set meta 'profile (append claimed (filter (lambda (u) (not (member u claimed))) urls))))]))
 
 ;; issue->diagnostic : issue resource (entity . loc) profiles -> diagnostic
 (define (issue->diagnostic i res inst profiles)

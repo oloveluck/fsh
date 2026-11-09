@@ -435,3 +435,7 @@ What an agent working through fhir-mcp needed (the main repo's CLAUDE.md, "Claud
   canonical, FHIR version, dependencies — `with-config` in base.rkt), as `raco fsh` does, and provides
   `canonical-of` (a definition's url by name or id; tests/module-config-test.rkt). `raco fsh check` on
   a path that does not exist exits 2 (it reported "0 examples, 0 errors").
+
+- **New users, round 3** (2026-11-09): `check-fsh-project #:profiles` (type -> canonicals) holds each
+  example to those profiles too — a workspace's constraints (workspace.yaml `profiles`), passed by
+  fsh/workspace. Two Instances of one InstanceOf with one id are a duplicate (Usage #inline excepted).

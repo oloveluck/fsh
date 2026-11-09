@@ -140,11 +140,20 @@
 ;; (`Id: x`, or the name when there is none) would be one artifact, the later silently replacing the
 ;; earlier: an error at the later one, naming where the first is
 (define (duplicate-id-diagnostics located)
+  ;; an Instance's kind is what it is an instance OF (two Observations, or two instances of one
+  ;; profile, with one id overwrite each other in a package or a store); inline ones are embedded
+  (define (instance-kind e)
+    (define m (fsh-instance-metadata e))
+    (define io (assoc 'instanceOf m))
+    (define u (assoc 'usage m))
+    (and io (not (and u (equal? (cdr u) "#inline"))) (format "~a instance" (cdr io))))
   (define (kind e)
     (cond [(or (fsh-profile? e) (fsh-extension? e) (fsh-logical? e) (fsh-resource? e)) "StructureDefinition"]
-          [(fsh-valueset? e) "ValueSet"] [(fsh-codesystem? e) "CodeSystem"] [else #f]))
+          [(fsh-valueset? e) "ValueSet"] [(fsh-codesystem? e) "CodeSystem"]
+          [(fsh-instance? e) (instance-kind e)] [else #f]))
   (define (id-of e)
     (match e
+      [(? fsh-instance?) (instance-id e)]
       [(or (fsh-profile n m _) (fsh-extension n m _) (fsh-logical n m _) (fsh-resource n m _) (fsh-valueset n m _) (fsh-codesystem n m _))
        (let ([i (assoc 'id m)]) (if i (cdr i) n))]))
   (let loop ([ls located] [seen (hash)] [out '()])
