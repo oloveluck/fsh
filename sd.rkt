@@ -17,7 +17,8 @@
          (only-in fhir/serialize/jsexpr-util drop-false)
          (only-in fhirpath/parser/parse parse-fhirpath)
          (only-in fhir/sd/snapshot generate-snapshot)
-         (only-in fhir/sd/sd-index resolve-sd-raw resolve-canonical-raw sd-index-available?)
+         (only-in fhir/sd/sd-index resolve-sd-raw resolve-canonical-raw sd-index-available? current-sd-packages)
+         (only-in fhir/spec-package spec-package-path)
          "context.rkt"
          "instance.rkt"
          "caret-apply.rkt")
@@ -37,7 +38,9 @@
   ;; the path an element rule addresses, #f for other rules
   [rule-path-of (-> any/c (or/c string? #f))]
   ;; "1..*" -> 1 ; the low end of a cardinality
-  [card-lo (-> string? exact-nonnegative-integer?)]))
+  [card-lo (-> string? exact-nonnegative-integer?)]
+  ;; raises when an Instance's InstanceOf names nothing (as an unknown Parent does)
+  [check-instance-of! (-> fsh-instance? hash? hash? void?)]))
 ;; attach a snapshot to a built StructureDefinition when emit-snapshot? is on
 (define (maybe-snapshot sd)
   (if (emit-snapshot?)
@@ -414,6 +417,25 @@
                       (hash-set h 'type (list (hasheq 'code "Extension" 'profile (list ext-profile))))
                       h)))))]
       [_ (values elems order)]))))
+;; check-instance-of! : instance aliases profiles -> void   an InstanceOf nothing defines — not a type,
+;; a profile, extension or logical model here, nor a definition in the packages — is an error, as
+;; SUSHI's "Cannot find definition for Instance": compiling on writes a resource of a type that does
+;; not exist (`{"resourceType": "Nope"}`), which nothing downstream rejects
+(define (check-instance-of! e aliases profiles)
+  (define of (let ([o (assoc-ref (fsh-instance-metadata e) 'instanceOf)]) (and o (resolve-alias o aliases))))
+  (unless (or (not of) (unknown-parent-undecidable?)
+              (type-registered? (string->symbol (instance-base of profiles)))
+              (resolve-sd-raw of) (r5-resource? of))
+    (raise (exn:fail (format "InstanceOf `~a` not found: it is not a FHIR type, a profile, extension or logical model in this project, nor a definition in its packages~a"
+                             of (did-you-mean of (parent-candidates)))
+                     (current-continuation-marks)))))
+;; r5-resource? : name -> boolean   SUSHI takes an Instance of an R5 resource in an R4 project (the IG
+;; Publisher turns it into a Basic): IPS 2.0.1's ActorDefinitions
+(define (r5-resource? name)
+  (define r5 (spec-package-path "hl7.fhir.r5.core.tgz" #:optional? #t))
+  (and r5 (regexp-match? #px"^[A-Z][A-Za-z]+$" name)
+       (let ([sd (parameterize ([current-sd-packages (list r5)]) (resolve-sd-raw name))])
+         (and (hash? sd) (equal? (hash-ref sd 'kind #f) "resource")))))
 ;; parent-candidates : -> (listof string)   the names a Parent may take here: the registered FHIR
 ;; types and this document's profiles, extensions and logical models (for "did you mean")
 (define (parent-candidates)

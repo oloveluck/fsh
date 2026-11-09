@@ -405,7 +405,7 @@
 ;; ---- entity dispatch -----------------------------------------------------------------------
 (define (compile-entity e [aliases (hash)] [profiles (hash)] [invariants (hash)])
   (cond
-    [(fsh-instance? e)   (compile-instance e aliases profiles)]
+    [(fsh-instance? e)   (check-instance-of! e aliases profiles) (compile-instance e aliases profiles)]
     [(fsh-valueset? e)   (compile-valueset e aliases)]
     [(fsh-codesystem? e) (compile-codesystem e aliases)]
     [(fsh-invariant? e)  (compile-invariant e)]
@@ -415,7 +415,7 @@
 
 ;; ---- living examples ------------------------------------------------------------------------
 (module+ test
-  (require rackunit (only-in fhir/r5/schemas))
+  (require rackunit (only-in fhir/r5/schemas) (only-in fhir/diagnostic diagnostic-severity diagnostic-message))
   ;; parameter values: `\)` and `\,` are the characters; an argument is inserted verbatim
   (check-equal? (unescape-param "Aortic structure (body structure\\)") "Aortic structure (body structure)")
   (check-equal? (param-arg '(parameter "Canonical(TG263CS\\),")) "Canonical(TG263CS)")   ; the escaped paren survives
@@ -535,4 +535,15 @@
                               (fsh-instance "p2" (list (cons 'instanceOf "Patient")) '()))))
   (check-equal? (map (lambda (r) (hash-ref r 'resourceType)) ok) '("StructureDefinition" "Patient"))
   (check-equal? errs '())
-  (check-equal? (entity-label (fsh-profile "P2" '() '())) "profile: P2"))
+  (check-equal? (entity-label (fsh-profile "P2" '() '())) "profile: P2")
+  ;; what an agent misspells is said where it is written, with the nearest name: an element, an
+  ;; InstanceOf (an error), a value set nothing defines (a warning: the profile still compiles)
+  (define-values (_ok2 errs2 ds2)
+    (compile-doc/diagnostics
+     (parse-fsh-doc (string-append "Profile: P3\nParent: Observation\n* stauts 1..1\n* code from NoSuchVS (required)\n\n"
+                                   "Instance: x\nInstanceOf: Observaton\n* status = #final\n"))))
+  (check-equal? (map car errs2) '("instance: x"))
+  (check-regexp-match #rx"InstanceOf `Observaton` not found.*did you mean `Observation`" (exn-message (cdar errs2)))
+  (check-equal? (sort (map (lambda (d) (list (diagnostic-severity d) (diagnostic-message d))) ds2) string<? #:key cadr)
+                '((error "profile: P3: `stauts` is not an element of Observation (did you mean `status`?)")
+                  (warning "profile: P3: value set `NoSuchVS` not found: it is not a ValueSet of this project or its packages, an alias, or a url"))))

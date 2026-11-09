@@ -11,6 +11,7 @@
 ;;; typed-node entry (`node->fsh`) uses this repo's `node->jsexpr`.
 
 (require racket/match
+         (only-in "resolve.rkt" element-fhir-type)
          racket/list
          racket/string
          racket/contract
@@ -68,9 +69,27 @@
   (define type (hash-ref js 'resourceType))
   (define id (hash-ref js 'id "Example"))
   (define usage (if (member type definition-types) "#definition" "#example"))
-  (fsh-instance (str id) (list (cons 'instanceOf type) (cons 'usage usage)) (walk js "" #t)))
+  (fsh-instance (str id) (list (cons 'instanceOf type) (cons 'usage usage)) (walk js "" #t (string->symbol type) "")))
 
-(define (walk js path top?)
+;; walk : jsexpr path top? root rel -> rules   the assignments that rebuild `js` at `path`; `root` is
+;; the resource type the value sits in and `rel` its path there (for the element's type). A Coding,
+;; CodeableConcept, Quantity or Reference whose shape FSH writes in one value (`system#code
+;; "display"`, `150 'mm[Hg]'`, `Reference(Patient/p)`) is one rule — about half the text of one rule
+;; per leaf — when it compiles back to exactly that JSON (see compact-value); anything else, per leaf.
+(define (walk js path top? [root #f] [rel ""])
+  (define compact (and (not top?) root (compact-value (element-type root rel) js)))
+  (cond
+    [compact (list (rule-assign path compact #f))]
+    [(and (hash? js) (not top?) (string? (hash-ref js 'resourceType #f)))      ; an embedded resource
+     (walk-object js path #f (string->symbol (hash-ref js 'resourceType)) "")]
+    [(hash? js) (walk-object js path top? root rel)]
+    [(list? js)
+     (append* (for/list ([elt (in-list js)] [i (in-naturals)])
+                (walk elt (format "~a[~a]" path i) #f root (format "~a[~a]" rel i))))]
+    [else (list (rule-assign path js #f))]))
+
+;; walk-object : hash path top? root rel -> rules
+(define (walk-object js path top? root rel)
   (cond
     [(hash? js)
      ;; `resourceType` first: an embedded resource is typed by the first rule that names it (its
@@ -82,12 +101,59 @@
       (for/list ([k (in-list ordered)]
                  #:unless (and top? (memq k '(resourceType id)))
                  #:unless (and (underscore? k) (hash-has-key? js (plain k))))
-        (define here (extend path (symbol->string (if (underscore? k) (plain k) k))))
-        (append (walk (hash-ref js k) here #f)
+        (define name (symbol->string (if (underscore? k) (plain k) k)))
+        (define here (extend path name))
+        (define rel* (extend rel name))
+        ;; a `_x` sibling carries the primitive's id/extensions: never compacted (no type for it)
+        (append (walk (hash-ref js k) here #f (and (not (underscore? k)) root) rel*)
                 (let ([sib (and (not (underscore? k)) (hash-ref js (underscore k) #f))]) (if sib (walk sib here #f) '())))))]
-    [(list? js)
-     (append* (for/list ([elt (in-list js)] [i (in-naturals)]) (walk elt (format "~a[~a]" path i) #f)))]
-    [else (list (rule-assign path js #f))]))
+    [else '()]))
+
+;; element-type : root rel -> type-code | #f   the declared type at a path, when the schema knows it
+(define (element-type root rel)
+  (and (not (string=? rel "")) (with-handlers ([exn:fail? (lambda (_) #f)]) (element-fhir-type root rel))))
+
+;; compact-value : type-code|#f jsexpr -> FSH value | #f   the one FSH value that compiles to exactly
+;; `v` at an element of that type, or #f. Measured against the compiler: `system#code "display"` is
+;; a Coding (or a CodeableConcept's only coding, no text); `n 'code' "unit"` a UCUM Quantity, whose
+;; unit is the display (the code when no display is written — so a Quantity without a unit is not
+;; compacted); `Reference(Type/id) "display"` a Reference.
+(define (compact-value type v)
+  (and (hash? v)
+       (match type
+         ["Coding" (coding-value v)]
+         ["CodeableConcept"
+          (and (equal? (sort (hash-keys v) symbol<?) '(coding))
+               (let ([cs (hash-ref v 'coding)]) (and (list? cs) (= (length cs) 1) (coding-value (car cs)))))]
+         [(or "Quantity" "SimpleQuantity") (quantity-value v)]
+         ["Reference" (reference-value v)]
+         [_ #f])))
+(define (only-keys? v allowed) (for/and ([k (in-hash-keys v)]) (memq k allowed)))
+(define (token? s) (and (string? s) (regexp-match? #px"^[^\\s#\"|()]+$" s)))
+(define (coding-value v)
+  (define code (hash-ref v 'code #f))
+  (define system (hash-ref v 'system #f))
+  (define version (hash-ref v 'version #f))
+  (define display (hash-ref v 'display #f))
+  (and (hash? v) (only-keys? v '(system code display version))
+       (token? code) (or (not system) (token? system)) (or (not version) (and system (token? version)))
+       (or (not display) (string? display))
+       (fsh-code (string-append (or system "") (if version (string-append "|" version) "") "#" code) display)))
+(define (quantity-value v)
+  (define value (hash-ref v 'value #f))
+  (define code (hash-ref v 'code #f))
+  (define unit (hash-ref v 'unit #f))
+  (and (only-keys? v '(value unit system code))
+       (equal? (hash-ref v 'system #f) "http://unitsofmeasure.org")
+       (real? value) (string? code) (string? unit) (not (regexp-match? #rx"'" code))
+       (fsh-quantity value code (if (equal? unit code) #f unit))))
+(define (reference-value v)
+  (define ref (hash-ref v 'reference #f))
+  (define display (hash-ref v 'display #f))
+  (and (only-keys? v '(reference display))
+       (string? ref) (regexp-match? #px"^[A-Z][A-Za-z]+/[A-Za-z0-9.-]{1,64}$" ref)
+       (or (not display) (string? display))
+       (fsh-reference (format "Reference(~a)" ref) display)))
 
 (define (extend path seg) (if (= 0 (string-length path)) seg (string-append path "." seg)))
 (define (underscore? k) (char=? (string-ref (symbol->string k) 0) #\_))
@@ -439,7 +505,7 @@
 
 ;; ---- living examples ------------------------------------------------------------------------
 (module+ test
-  (require rackunit)
+  (require rackunit (only-in fhir/r5/schemas))
   ;; an instance: one assignment per primitive leaf, arrays indexed, the type and id as metadata
   (define pat (hasheq 'resourceType "Patient" 'id "p1" 'gender "female" 'active #t
                       'name (list (hasheq 'family "Doe" 'given '("Jane" "J")))))
@@ -477,4 +543,28 @@
   (define doc (fhir->fsh sd))
   (check-true (regexp-match? #rx"Profile: BP" doc))
   (check-true (regexp-match? #rx"Invariant: bp-1" doc))
-  (check-true (regexp-match? #rx"Severity: #error" doc)))
+  (check-true (regexp-match? #rx"Severity: #error" doc))
+  ;; one rule per Coding, CodeableConcept, Quantity and Reference whose JSON the value compiles back
+  ;; to exactly; everything else per leaf (the element types come from the tower)
+  (define obs (hasheq 'resourceType "Observation" 'id "o1" 'status "final"
+                      'code (hasheq 'coding (list (hasheq 'system "http://loinc.org" 'code "4548-4" 'display "Hemoglobin A1c")))
+                      'subject (hasheq 'reference "Patient/ann")
+                      'valueQuantity (hasheq 'value 6.2 'unit "%" 'system "http://unitsofmeasure.org" 'code "%")
+                      'category (list (hasheq 'coding (list (hasheq 'code "laboratory")))
+                                      (hasheq 'coding (list (hasheq 'code "a") (hasheq 'code "b"))))
+                      'interpretation (list (hasheq 'text "high" 'coding (list (hasheq 'code "H"))))
+                      'performer (list (hasheq 'reference "Practitioner/x" 'type "Practitioner"))
+                      'referenceRange (list (hasheq 'low (hasheq 'value 4 'unit "percent" 'system "http://unitsofmeasure.org" 'code "%")))))
+  (define rules (fsh-instance-rules (fhir->fsh-entity obs)))
+  (define (value-at p) (for/first ([r (in-list rules)] #:when (equal? (rule-assign-path r) p)) (rule-assign-value r)))
+  (check-equal? (value-at "code") (fsh-code "http://loinc.org#4548-4" "Hemoglobin A1c"))
+  (check-equal? (value-at "subject") (fsh-reference "Reference(Patient/ann)" #f))
+  (check-equal? (value-at "valueQuantity") (fsh-quantity 6.2 "%" #f))
+  (check-equal? (value-at "category[0]") (fsh-code "#laboratory" #f))
+  (check-equal? (value-at "referenceRange[0].low") (fsh-quantity 4 "%" "percent"))
+  ;; two codings, a text beside the coding, a Reference with a type: per leaf
+  (check-false (value-at "category[1]"))
+  (check-equal? (value-at "category[1].coding[1]") (fsh-code "#b" #f))      ; each Coding still one rule
+  (check-false (value-at "interpretation[0]"))
+  (check-equal? (value-at "interpretation[0].text") "high")
+  (check-equal? (value-at "performer[0].type") "Practitioner"))

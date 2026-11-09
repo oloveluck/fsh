@@ -413,3 +413,18 @@ mCODE 15.1 s (18.9) — most of the gain is the foundation's lazy package index.
   parsing them: ~10 s), and RuleSet bodies re-parsed per distinct instantiation (3.6 s of mCODE's
   5.2 s compile). Group size for long entities (`rules-per-parse`) was measured at 1-32: 16 is
   near the best, so it stays.
+
+## Claude as the user (2026-11-09)
+What an agent working through fhir-mcp needed (the main repo's CLAUDE.md, "Claude as the user"):
+- The decompiler writes idiomatic instances: a Coding, a CodeableConcept with one coding and nothing
+  else, a UCUM Quantity (`6.2 '%'`, the unit as display when it differs from the code) and a plain
+  `Type/id` Reference (`Reference(Patient/ann)`) are one rule each (`compact-value`), only when that
+  rule compiles back to exactly the JSON; anything else stays per leaf, and `_x` siblings are never
+  compacted. The element's type comes from the tower (`element-fhir-type`), an embedded resource
+  restarts the type root. GoFSH IPS 117/117 and mCODE 341/349 exact, unchanged; fhir-mcp's
+  `describe(ref, as: "fsh")` uses it.
+- An `InstanceOf` nothing defines is an error at the instance, with a suggestion
+  (`check-instance-of!` in sd.rkt, called by compile-entity), as an unknown Parent already was;
+  undecidable without packages; an R5 resource in an R4 project is accepted, as SUSHI does (IPS's
+  ActorDefinitions, `r5-resource?`).
+- A binding to a value set nothing defines is a warning at the rule (it was silently kept as a name).
