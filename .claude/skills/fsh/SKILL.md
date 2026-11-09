@@ -72,7 +72,11 @@ project and the packages). To hold them to the profiles on every `raco test`, ke
   (check-equal? (map diagnostic->string errors) '()))
 ```
 A failing example shows as `fsh/p.fsh:10:1: fsh validate error: instance bad: Patient.birthDate:
-minimum required = 1, but found 0 (constrained by profile P at line 4)`.
+minimum required = 1, but found 0 (constrained by profile P at line 4)`. An example that is MEANT to
+fail (to show a profile refusing something) belongs in a directory of its own (`fsh-invalid/`, with
+the profile's file copied or linked beside it): check it there and assert its exact diagnostic, so the
+project's own `raco fsh check fsh/` stays a pass/fail gate. A misspelt element in a profile
+(`* birthdate 1..1`) already fails `raco make` of the `#lang fsh` file, at its line.
 
 ## Working on the compiler itself
 `CLAUDE.md` is the architecture. `raco test .` runs everything: the SUSHI golden corpus, five real

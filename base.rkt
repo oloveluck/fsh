@@ -41,7 +41,8 @@
 
 (provide (except-out (all-from-out racket/base) #%module-begin)
          (rename-out [fsh-module-begin #%module-begin])
-         fsh-entity)
+         fsh-entity
+         with-config)
 
 ;; (fsh-entity ast) yields the prefab entity-AST literal; module-begin collects them.
 (define-syntax-rule (fsh-entity ast) (quote ast))

@@ -439,3 +439,9 @@ What an agent working through fhir-mcp needed (the main repo's CLAUDE.md, "Claud
 - **New users, round 3** (2026-11-09): `check-fsh-project #:profiles` (type -> canonicals) holds each
   example to those profiles too — a workspace's constraints (workspace.yaml `profiles`), passed by
   fsh/workspace. Two Instances of one InstanceOf with one id are a duplicate (Usage #inline excepted).
+
+- **New users, round 5** (2026-11-09): the `#lang fsh` reader runs `compile-doc/diagnostics` (under the
+  nearest sushi-config.yaml, `with-config`, now exported by base.rkt) and raises the first RULE-level
+  error at its rule — a profile's `* birthdate 1..1` fails `raco make` as FML's and CQL's mistakes do
+  (it built, then every valid Patient failed validation). Entity-level errors (a Parent or RuleSet
+  another file defines) are not raised there: a module compiles alone. `tests/lang-check-test.rkt`.
