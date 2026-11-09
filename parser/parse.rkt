@@ -9,7 +9,7 @@
 
 (require brag/support
          (only-in fhir/diagnostic raise-diagnostic exn->diagnostic exn:fail:diagnostic? exn:fail:diagnostic-diagnostic
-                  error-position loc diagnostic diagnostic? attach-loc!)
+                  error-position loc diagnostic diagnostic? attach-loc! diagnostic-loc diagnostic-message diagnostic-lang diagnostic-phase diagnostic-severity loc-line)
          "../lint.rkt"
          racket/contract
          racket/match
@@ -72,9 +72,30 @@
 
 (define (parse-fsh-doc str #:source [source #f]) (map car (parse-fsh-doc/located str #:source source)))
 (define (parse-fsh-doc/located str #:source [source #f])
-  (for/list ([ch (in-list (real-chunks str source))])
-    (parse-located-chunk ch source)))
+  (with-handlers ([exn:fail:diagnostic? (lambda (e) (raise-diagnostic (hinted (exn:fail:diagnostic-diagnostic e) str)))])
+    (for/list ([ch (in-list (real-chunks str source))])
+      (parse-located-chunk ch source))))
 (define (parse-fsh-doc/diagnostics str #:source [source #f])
+  (define-values (es ds) (parse-fsh-doc/diagnostics* str #:source source))
+  (values es (for/list ([d (in-list ds)]) (hinted d str))))
+
+;; hinted : diagnostic text -> diagnostic   a parse error whose line shows a common slip gets the fix:
+;; a number followed by a bare unit (`* valueQuantity = 7.1 %`) — FSH quotes a UCUM unit (`7.1 '%'`)
+(define (hinted d str)
+  (define l (diagnostic-loc d))
+  (define line (and l (loc-line l)
+                    (let ([ls (regexp-split #rx"\n" str)]) (and (<= (loc-line l) (length ls)) (list-ref ls (sub1 (loc-line l)))))))
+  (define msg (diagnostic-message d))
+  (cond
+    [(and line (regexp-match? #rx"^unexpected" msg)
+          (regexp-match #px"=\\s*(-?[0-9][0-9.]*)\\s+([^'\"\\s#]+)\\s*$" line))
+     => (lambda (m)
+          (diagnostic (diagnostic-lang d) (diagnostic-phase d) (diagnostic-severity d)
+                      (format "~a — a quantity's UCUM unit is quoted: `~a '~a'`" msg (cadr m) (caddr m))
+                      l))]
+    [else d]))
+
+(define (parse-fsh-doc/diagnostics* str #:source [source #f])
   (define chunks (with-handlers ([exn:fail:diagnostic? exn:fail:diagnostic-diagnostic]) (real-chunks str source)))
   (cond
     [(diagnostic? chunks) (values '() (list chunks))]    ; the lexer refused the text

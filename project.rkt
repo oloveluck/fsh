@@ -16,7 +16,7 @@
 (require racket/contract racket/list racket/file racket/path racket/match
          (only-in fhir/sd/sd-index current-sd-packages)
          (only-in fhir/spec-package spec-package-path)
-         (only-in fhir/diagnostic diagnostic loc loc-source loc-line)
+         (only-in fhir/diagnostic diagnostic loc loc-source loc-line diagnostic-loc)
          (only-in "compile.rkt" compile-doc/diagnostics entity-label emit-snapshot? canonical-base fsh-fhir-version instance-id)
          (only-in "context.rkt" fsh-config-status fsh-config-version)
          (only-in "yaml.rkt" yref yaml-boolean)
@@ -34,7 +34,7 @@
   [map-files       (-> path-string? (listof path?))]
   [compile-project (->* (path-string?) (#:canonical (or/c string? #f) #:fhir-version (or/c string? #f)
                                         #:snapshot? boolean? #:texts (hash/c string? string?)
-                                        #:packages (listof path-string?))
+                                        #:packages (listof path-string?) #:context (listof path-string?))
                         project?)]
   [pack-project!   (-> project? path-string? path?)]))
 
@@ -86,7 +86,7 @@
 
 ;; #:texts — the text of a file as an editor holds it (by its complete path), in place of the disk
 (define (compile-project src #:canonical [canonical* #f] #:fhir-version [fhir-version* #f] #:snapshot? [snapshot? #f]
-                         #:texts [overrides (hash)] #:packages [extra-packages '()])
+                         #:texts [overrides (hash)] #:packages [extra-packages '()] #:context [context '()])
   (define cfg (let ([f (find-config src)]) (and f (read-ig-config f))))
   (define canonical (or canonical* (and cfg (ig-config-canonical cfg))))
   (define fhir-version (or fhir-version* (and cfg (ig-config-fhir-version cfg)) "5.0.0"))
@@ -102,8 +102,15 @@
   (dynamic-require (if r4? 'fhir/r4/schemas 'fhir/r5/schemas) #f)
   (define files (fsh-files src))
   (define mfiles (map-files src))
+  ;; #:context — other directories whose DEFINITIONS (profiles, extensions, value sets, rule sets,
+  ;; aliases…) this project compiles against, without their instances and without reporting on them:
+  ;; a folder of examples meant to fail, checked against the project's profiles in another folder
+  (define own (for/list ([f (in-list files)]) (path->string (simplify-path (path->complete-path f)))))
+  (define ctx-files (for*/list ([d (in-list context)] [f (in-list (fsh-files d))]
+                                #:unless (member (path->string (simplify-path (path->complete-path f))) own))
+                      f))
   ;; a leading #lang line is blanked, not removed, so line numbers stay true
-  (define texts (for/hash ([f (in-list (append files mfiles))])
+  (define texts (for/hash ([f (in-list (append files ctx-files mfiles))])
                   (define text (or (hash-ref overrides (path->string (simplify-path (path->complete-path f))) #f) (file->string f)))
                   (values (path->string f) (regexp-replace #px"^#lang[^\n]*" text ""))))
   (define-values (maps map-diags) (parse-maps mfiles))
@@ -111,9 +118,11 @@
   ;; every file's entities that parse, with every parse error and import-level check (fsh/lint)
   (define-values (located parse-errors)
     (for/fold ([located '()] [errors '()] #:result (values located errors))
-              ([f (in-list files)])
+              ([f (in-list (append files ctx-files))])
+      (define ctx? (memq f ctx-files))
       (define-values (es ds) (parse-fsh-doc/diagnostics (hash-ref texts (path->string f)) #:source (path->string f)))
-      (values (append located es) (append errors ds))))
+      (values (append located (if ctx? (filter (lambda (l) (not (fsh-instance? (car l)))) es) es))
+              (append errors (if ctx? '() ds)))))
   (cond
     [(pair? parse-errors) (project cfg fhir-version files texts located '() (append parse-errors map-diags) missing sd-packages maps)]
     [else
@@ -128,9 +137,10 @@
          (compile-doc/diagnostics (map car located))))
      (define at (for/hash ([p (in-list located)]) (values (entity-label (car p)) (cdr p))))
      ;; rule-level diagnostics (an unknown element, …) first, then entities that failed outright
+     (define (own-diagnostic? d) (let ([l (diagnostic-loc d)]) (not (and l (loc-source l) (for/or ([f (in-list ctx-files)]) (equal? (loc-source l) (path->string f)))))))
      (project cfg fhir-version files texts located (append out structuremaps)
-              (append rule-diags
-                      (duplicate-id-diagnostics located)
+              (append (filter own-diagnostic? rule-diags)
+                      (filter own-diagnostic? (duplicate-id-diagnostics located))
                       (for/list ([e (in-list errors)])
                         (diagnostic 'fsh 'compile 'error (format "~a: ~a" (car e) (exn-message (cdr e))) (hash-ref at (car e) #f)))
                       map-diags)

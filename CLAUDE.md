@@ -445,3 +445,8 @@ What an agent working through fhir-mcp needed (the main repo's CLAUDE.md, "Claud
   error at its rule — a profile's `* birthdate 1..1` fails `raco make` as FML's and CQL's mistakes do
   (it built, then every valid Patient failed validation). Entity-level errors (a Parent or RuleSet
   another file defines) are not raised there: a module compiles alone. `tests/lang-check-test.rkt`.
+
+- **New users, round 6** (2026-11-09): `compile-project`/`check-fsh-project #:context dirs` and
+  `raco fsh check <dir> --context <dir>` — another folder's definitions in context (its instances
+  dropped, its problems not reported), so failing examples live apart (`tests/context-test.rkt`);
+  a parse error on a line where a number is followed by a bare unit says to quote it (`hinted`).

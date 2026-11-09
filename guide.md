@@ -116,6 +116,8 @@ uses its value sets, a VCL file is a value set beside it.
   name, when there is no `Id:`), so one would replace the other. Give one of them its own `Id:`.
   Instances too: `the Patient instance id `ann` is already used` — two instances of one type (or
   profile) with one id, often a file of data written beside a project's examples.
+- `` unexpected sequence `%` — a quantity's UCUM unit is quoted: `7.1 '%'` ``: a unit written bare
+  after a number (`* valueQuantity = 7.1 %`); FSH quotes it, `7.1 '%'`, or `7.1 'mm[Hg]' "mmHg"`.
 - `` RuleSet `X` not found ``: an `insert` of a RuleSet no file of the project defines (a typo in
   its name, or a file missing from the directory).
 - An example with `minimum required = 2, but found 0`: the profile's cardinality (`component 2..*`)

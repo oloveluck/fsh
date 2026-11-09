@@ -73,8 +73,8 @@
 ;; raco fsh check <dir> [--capability id]   compile, then validate every example against the
 ;; project's profiles and (with a CapabilityStatement) report the generated server's unmet
 ;; requirements — every problem positioned in the FSH (fsh/check)
-(define (check-project dir capability fmt)
-  (define r (check-fsh-project dir #:capability capability))
+(define (check-project dir capability fmt [context '()])
+  (define r (check-fsh-project dir #:capability capability #:context context))
   (define diags (check-report-diagnostics r))
   (unless (null? diags)
     (emit-diagnostics diags #:format fmt #:text-of (lambda (s) (and s (hash-ref (check-report-texts r) s #f)))))
@@ -84,7 +84,7 @@
   (exit (if (zero? errors) 0 1)))
 
 (define (usage [code 2])                             ; --help: stdout, exit 0
-  ((if (zero? code) printf eprintf) "usage: raco fsh <file.fsh | dir> [-o <outdir>] [--snapshot] [--canonical <url>] [--fhir-version 4.0.1|5.0.0] [--format text|json|outcome] [--pack [out.tgz]]\n       raco fsh --decompile <file.json>...\n       raco fsh check <dir> [--capability <CapabilityStatement id>] [--format text|json|outcome]\n")
+  ((if (zero? code) printf eprintf) "usage: raco fsh <file.fsh | dir> [-o <outdir>] [--snapshot] [--canonical <url>] [--fhir-version 4.0.1|5.0.0] [--format text|json|outcome] [--pack [out.tgz]]\n       raco fsh --decompile <file.json>...\n       raco fsh check <dir> [--context <dir>]… [--capability <CapabilityStatement id>] [--format text|json|outcome]\n")
   (exit code))
 
 (module+ main
@@ -105,10 +105,15 @@
      (define (existing p) (unless (or (directory-exists? p) (file-exists? p))
                             (eprintf "fsh check: no such file or directory: ~a\n" p) (exit 2))
        p)
-     (match (cdr args)
-       [(list dir) (check-project (existing dir) #f fmt)]
-       [(list dir "--capability" cs) (check-project (existing dir) cs fmt)]
-       [_ (usage)])]
+     ;; --context <dir> (repeatable): another folder whose definitions are in context, its instances
+     ;; and its problems left out — examples meant to fail, checked against the project's profiles
+     (let loop ([as (cdr args)] [dir #f] [cs #f] [ctx '()])
+       (match as
+         ['() (if dir (check-project (existing dir) cs fmt (reverse ctx)) (usage))]
+         [(list* "--capability" c rest) (loop rest dir c ctx)]
+         [(list* "--context" d rest) (loop rest dir cs (cons (existing d) ctx))]
+         [(list* d rest) #:when (and (not dir) (not (regexp-match? #rx"^--" d))) (loop rest d cs ctx)]
+         [_ (usage)]))]
     [(null? args) (usage)]
     [(equal? (car args) "--decompile") (if (pair? (cdr args)) (decompile-files (cdr args)) (usage))]
     [else

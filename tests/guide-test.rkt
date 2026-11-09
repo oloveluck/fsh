@@ -54,6 +54,8 @@
   (one (list (cons "a.fsh" (regexp-replace* #rx"\n[*] component\\[[01]\\][^\n]*" (car blocks) "")))
        #rx"minimum required = 2, but found 0")
   (one (list (cons "a.fsh" "Profile: P\nParent: Patient\n* insert NoSuchRuleSet\n")) #rx"RuleSet `NoSuchRuleSet` not found")
+  (one (list (cons "a.fsh" "Instance: a1\nInstanceOf: Observation\n* status = #final\n* code = http://loinc.org#4548-4\n* valueQuantity = 7.1 %\n"))
+       #rx"unexpected sequence `%` — a quantity's UCUM unit is quoted: `7.1 '%'`")
   (one (list (cons "a.fsh" "Profile: P  # a comment\nParent: Patient\n")) #rx"unexpected sequence `#`")
   ;; a choice type a slice excludes: at the instance rule of that slice, naming the slice's `only`
   (define bp (string-append

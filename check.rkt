@@ -36,7 +36,8 @@
  (contract-out
   [check-fsh-project (->* (path-string?) (#:capability (or/c string? #f) #:canonical (or/c string? #f)
                                           #:fhir-version (or/c string? #f) #:packages (listof path-string?)
-                                          #:profiles (hash/c string? (listof string?)))
+                                          #:profiles (hash/c string? (listof string?))
+                                          #:context (listof path-string?))
                           check-report?)]
   [trace-rule        (->* (list? string?) (#:exact? any/c #:slice (or/c string? #f)) (or/c any/c #f))]))
 
@@ -45,8 +46,8 @@
 (struct check-report (diagnostics texts examples invalid artifacts) #:transparent)
 
 (define (check-fsh-project dir #:capability [capability #f] #:canonical [canonical #f] #:fhir-version [fhir-version #f]
-                           #:packages [packages '()] #:profiles [required (hash)])
-  (define p (compile-project dir #:canonical canonical #:fhir-version fhir-version #:packages packages))
+                           #:packages [packages '()] #:profiles [required (hash)] #:context [context '()])
+  (define p (compile-project dir #:canonical canonical #:fhir-version fhir-version #:packages packages #:context context))
   (define compile-diags (project-diagnostics p))
   (define-values (examples invalid validation-diags) (validate-examples p required))
   (define map-diags (check-maps p examples))
