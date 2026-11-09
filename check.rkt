@@ -37,7 +37,7 @@
   [check-fsh-project (->* (path-string?) (#:capability (or/c string? #f) #:canonical (or/c string? #f)
                                           #:fhir-version (or/c string? #f) #:packages (listof path-string?))
                           check-report?)]
-  [trace-rule        (-> list? string? (or/c any/c #f))]))
+  [trace-rule        (->* (list? string?) (#:exact? any/c #:slice (or/c string? #f)) (or/c any/c #f))]))
 
 ;; A check-report: every diagnostic (compile first, then validation, then server), the source texts
 ;; (for excerpts), the counts, and the compiled artifacts.
@@ -128,12 +128,14 @@
 ;; issue->diagnostic : issue resource (entity . loc) profiles -> diagnostic
 (define (issue->diagnostic i res inst profiles)
   (define path (issue-path i))
-  (define rule (trace-rule (fsh-instance-rules (car inst)) path))
+  ;; an issue about one slice's entry ("… in slice 'diastolic' …") is traced among that slice's rules
+  (define slice (let ([m (regexp-match #px"slice '([^']+)'" (issue-msg i))]) (and m (cadr m))))
+  (define rule (trace-rule (fsh-instance-rules (car inst)) path #:slice slice))
   (define at (or (and rule (attached-loc rule)) (cdr inst)))
   (define prof-note
     (for*/or ([url (in-list (let ([m (hash-ref res 'meta #f)]) (if (hash? m) (hash-ref m 'profile '()) '())))]
                  [pl (in-value (hash-ref profiles url #f))] #:when pl)
-      (define pr (trace-rule (fsh-profile-rules (car pl)) path #:exact? #t))
+      (define pr (trace-rule (fsh-profile-rules (car pl)) path #:exact? #t #:slice slice))
       (define pl-loc (and pr (attached-loc pr)))
       (and pl-loc (format " (constrained by profile ~a at ~a)" (fsh-profile-name (car pl)) (loc-text pl-loc)))))
   (diagnostic 'fsh 'validate (string->symbol (if (equal? (issue-severity i) "warning") "warning" "error"))
@@ -147,8 +149,9 @@
 ;; `component.valueQuantity`). The rule sharing the longest leading run of steps wins (the first
 ;; such rule). A path rooted at a datatype (`Timing.repeat.periodUnit`, the validator inside a nested
 ;; type) matches anywhere in a rule path. #:exact? (for profiles) wants the rule to name the element
-;; itself or its parent, not a sibling.
-(define (trace-rule rules issue-path #:exact? [exact? #f])
+;; itself or its parent, not a sibling. #:slice names the slice the issue is about: the rules that
+;; address it (`component[diastolic]…`) are preferred when any matches.
+(define (trace-rule rules issue-path #:exact? [exact? #f] #:slice [slice #f])
   (define segs (string-split issue-path "."))
   (define rooted-at-datatype? (and (pair? segs) (regexp-match? #px"^[A-Z]" (car segs))
                                    (not (resource-like? (car segs)))))
@@ -160,9 +163,13 @@
                 [s (in-value (if rooted-at-datatype? (infix-score want steps) (prefix-score want steps)))]
                 #:when (and (> s 0) (or (not exact?) (>= s (max 1 (sub1 (length want)))))))
       (cons s r)))
-  (and (pair? scored)
-       (let ([best (apply max (map car scored))])
-         (cdr (findf (lambda (p) (= (car p) best)) scored)))))
+  (define in-slice (if slice
+                       (filter (lambda (p) (string-contains? (rule-path-string (cdr p)) (string-append "[" slice "]"))) scored)
+                       '()))
+  (define candidates (if (pair? in-slice) in-slice scored))
+  (and (pair? candidates)
+       (let ([best (apply max (map car candidates))])
+         (cdr (findf (lambda (p) (= (car p) best)) candidates)))))
 
 ;; a validator path is rooted at the resource type for the resource's own elements; at a datatype
 ;; (`Timing`, `Quantity`) when it recurses into one
@@ -254,5 +261,9 @@
   (check-equal? (rule-assign-path (trace-rule rules "Observation.component.code")) "component[tumorSize].code")
   (check-equal? (rule-assign-path (trace-rule rules "Timing.repeat.periodUnit")) "dosageInstruction.timing.repeat.periodUnit")
   (check-false (trace-rule rules "Observation.subject"))
+  ;; an issue about one slice's entry goes to that slice's rule
+  (define bp (list (rule-assign "component[systolic].valueQuantity" 'v #f) (rule-assign "component[diastolic].valueString" 'v #f)))
+  (check-equal? (rule-assign-path (trace-rule bp "Observation.component.value[x]" #:slice "diastolic")) "component[diastolic].valueString")
+  (check-equal? (rule-assign-path (trace-rule bp "Observation.component.value[x]")) "component[systolic].valueQuantity")
   ;; profiles: the element itself (or its parent), not a sibling
   (check-false (trace-rule (list (rule-assign "component.code" 'v #f)) "Observation.component.interpretation.text" #:exact? #t)))

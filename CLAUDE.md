@@ -379,6 +379,10 @@ Writing them turned up silent mistakes, each now an error (SUSHI reports them to
 - an `insert` of a RuleSet the project does not define — `compile.rkt` `unknown-ruleset!`, a rule
   diagnostic at the insert (it used to be left unexpanded).
 - `check --capability` without a sushi-config.yaml now says so instead of failing to pack.
-Not fixed here (fhir-validation): a `valueString` in a slice narrowed to `value[x] only Quantity`
-is reported neither by `fsh check` nor by `raco fhir-validate`; the manual's old quick start relied
-on it.
+Then fixed (2026-11-09): a `valueString` in a slice narrowed to `value[x] only Quantity` went
+unreported whenever ANOTHER slice of the same element pinned nothing at the discriminator (the
+validator skipped every slice's member checks when any slice was undecidable; fhir-validation now
+lets a slice that constrains nothing at its discriminator paths claim no entry). `check.rkt` traces
+an issue that names a slice (`… in slice 'diastolic' …`) to that slice's rules, in the instance and
+in the profile (`trace-rule #:slice`; it went to the first `component[…]` rule). guide.md lists the
+message and guide-test pins both lines.

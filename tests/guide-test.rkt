@@ -52,4 +52,18 @@
   (one (list (cons "a.fsh" (regexp-replace* #rx"\n[*] component\\[[01]\\][^\n]*" (car blocks) "")))
        #rx"minimum required = 2, but found 0")
   (one (list (cons "a.fsh" "Profile: P\nParent: Patient\n* insert NoSuchRuleSet\n")) #rx"RuleSet `NoSuchRuleSet` not found")
-  (one (list (cons "a.fsh" "Profile: P  # a comment\nParent: Patient\n")) #rx"unexpected sequence `#`"))
+  (one (list (cons "a.fsh" "Profile: P  # a comment\nParent: Patient\n")) #rx"unexpected sequence `#`")
+  ;; a choice type a slice excludes: at the instance rule of that slice, naming the slice's `only`
+  (define bp (string-append
+              "Alias: $loinc = http://loinc.org\n\nProfile: BP\nParent: Observation\n"
+              "* component ^slicing.discriminator.type = #pattern\n* component ^slicing.discriminator.path = \"code\"\n"
+              "* component ^slicing.rules = #open\n* component contains systolic 1..1 and diastolic 1..1\n"
+              "* component[systolic].code = $loinc#8480-6\n* component[systolic].value[x] only Quantity\n"
+              "* component[diastolic].code = $loinc#8462-4\n* component[diastolic].value[x] only Quantity\n\n"
+              "Instance: bp-1\nInstanceOf: BP\nUsage: #example\n* status = #final\n* code = $loinc#85354-9\n"
+              "* component[systolic].valueQuantity = 150 'mm[Hg]'\n* component[diastolic].valueString = \"eighty\"\n"))
+  (define slice-errors (errors (check-files (list (cons "a.fsh" bp)))))
+  (check-equal? (length slice-errors) 1 (format "~s" (map diagnostic-message slice-errors)))
+  (check-regexp-match #rx"valueString is not allowed in slice 'diastolic' [(]value\\[x\\]: Quantity[)] [(]constrained by profile BP at [^ ]*a.fsh:12:3[)]"
+                      (diagnostic-message (car slice-errors)))
+  (check-equal? (loc-line (diagnostic-loc (car slice-errors))) 20))

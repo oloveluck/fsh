@@ -118,4 +118,7 @@ uses its value sets, a VCL file is a value set beside it.
   its name, or a file missing from the directory).
 - An example with `minimum required = 2, but found 0`: the profile's cardinality (`component 2..*`)
   — the example must have the elements its profile requires.
+- `valueString is not allowed in slice 'diastolic' (value[x]: Quantity)`: an entry of a slice
+  uses a type the slice's `only` rule excludes. The error sits on the instance rule that wrote the
+  entry and names the slice's rule in the profile.
 - `fsh parse error: unexpected sequence `#``: a `#` comment; FSH comments are `//`.
