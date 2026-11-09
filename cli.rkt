@@ -101,9 +101,13 @@
   (cond
     [(ormap (lambda (a) (member a '("-h" "--help"))) args) (usage 0)]
     [(equal? (car args) "check")
+     ;; a path that is not there is a usage error (exit 2), not a clean check of nothing
+     (define (existing p) (unless (or (directory-exists? p) (file-exists? p))
+                            (eprintf "fsh check: no such file or directory: ~a\n" p) (exit 2))
+       p)
      (match (cdr args)
-       [(list dir) (check-project dir #f fmt)]
-       [(list dir "--capability" cs) (check-project dir cs fmt)]
+       [(list dir) (check-project (existing dir) #f fmt)]
+       [(list dir "--capability" cs) (check-project (existing dir) cs fmt)]
        [_ (usage)])]
     [(null? args) (usage)]
     [(equal? (car args) "--decompile") (if (pair? (cdr args)) (decompile-files (cdr args)) (usage))]

@@ -430,3 +430,8 @@ What an agent working through fhir-mcp needed (the main repo's CLAUDE.md, "Claud
 - A binding to a value set nothing defines is a warning at the rule (it was silently kept as a name).
 - A `code` element decompiles as `#code` (`* status = #final`), as FSH is written (it compiled back
   the same as `"final"`); the corpora are unchanged.
+
+- A `#lang fsh` module compiles with the nearest sushi-config.yaml (beside it or up to two levels:
+  canonical, FHIR version, dependencies — `with-config` in base.rkt), as `raco fsh` does, and provides
+  `canonical-of` (a definition's url by name or id; tests/module-config-test.rkt). `raco fsh check` on
+  a path that does not exist exits 2 (it reported "0 examples, 0 errors").
