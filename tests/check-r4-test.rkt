@@ -30,7 +30,7 @@
    ;; a String where the slice allows only Quantity: the rule that wrote it, and the profile's `only`
    (check-regexp-match #rx"valueString is not allowed in slice 'longest'.*profiles.fsh:10:3" (diagnostic-message (second ds)))
    ;; a status outside its required value set: the rule (the base, not the profile, constrains it)
-   (check-regexp-match #rx"status: code not in required value set" (diagnostic-message (third ds)))
+   (check-regexp-match #rx"status: code `[^`]+` not in required value set" (diagnostic-message (third ds)))
    (check-equal? (list (check-report-examples r) (check-report-invalid r)) '(2 2))
    ;; ---- a real IG checks clean ------------------------------------------------------------------
    (define m (check-fsh-project mcode #:capability "mcode-sender-patients-in-group"))
