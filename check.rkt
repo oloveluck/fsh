@@ -141,7 +141,12 @@
   (define path (issue-path i))
   ;; an issue about one slice's entry ("… in slice 'diastolic' …") is traced among that slice's rules
   (define slice (let ([m (regexp-match #px"slice '([^']+)'" (issue-msg i))]) (and m (cadr m))))
-  (define rule (trace-rule (fsh-instance-rules (car inst)) path #:slice slice))
+  ;; an invariant broken at the resource names what it found (`… (found value.ofType(Quantity) = 300 '/min')`):
+  ;; the rule that wrote that element is where the problem is
+  (define found (let ([m (regexp-match #px"[(]found ([A-Za-z]+)" (issue-msg i))]) (and m (cadr m))))
+  (define rule (or (and found (not (string-contains? path "."))
+                        (trace-rule (fsh-instance-rules (car inst)) (string-append path "." found) #:slice slice))
+                   (trace-rule (fsh-instance-rules (car inst)) path #:slice slice)))
   (define at (or (and rule (attached-loc rule)) (cdr inst)))
   (define prof-note
     (for*/or ([url (in-list (let ([m (hash-ref res 'meta #f)]) (if (hash? m) (hash-ref m 'profile '()) '())))]

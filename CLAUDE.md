@@ -450,3 +450,8 @@ What an agent working through fhir-mcp needed (the main repo's CLAUDE.md, "Claud
   `raco fsh check <dir> --context <dir>` — another folder's definitions in context (its instances
   dropped, its problems not reported), so failing examples live apart (`tests/context-test.rkt`);
   a parse error on a line where a number is followed by a bare unit says to quote it (`hinted`).
+
+- **New users, round 7** (2026-11-10): an invariant broken at the resource names what it found
+  (fhir-validation's `found-text`: `… (found value.ofType(Quantity) = 300 '/min')`), and `check.rkt`
+  traces it to the instance rule writing that element (`* valueQuantity = 300 '/min'`), not the
+  instance header. `tests/invariant-trace-test.rkt`.

@@ -109,6 +109,9 @@ uses its value sets, a VCL file is a value set beside it.
   path must be an element of the Parent.
 - `Observation.status: value does not match required pattern "final" (constrained by profile …)`:
   the example contradicts a fixed value in its profile; the message names the profile's rule.
+- `instance fast: Observation: hr-range: A heart rate is between 20 and 250 /min (found
+  value.ofType(Quantity) = 300 '/min')`: an example breaks a profile's invariant; the problem is
+  at the rule that wrote what the invariant found (`* valueQuantity = 300 '/min'`), and quotes it.
 - `` Parent `X` not found ``: nothing defines the Parent — not a FHIR type, not a profile,
   extension or logical model in the project, not in the packages. Check the name, or add the
   package that defines it to `dependencies`. The profile is not compiled.
