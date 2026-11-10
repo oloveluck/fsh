@@ -477,3 +477,7 @@ What an agent working through fhir-mcp needed (the main repo's CLAUDE.md, "Claud
 - **New users, round 18** (2026-11-10): `* birthDate = "1940-02-30"` is an error at its rule (the
   validator checks the calendar now; `tests/calendar-test.rkt`); `raco fsh check`'s default canonical
   note is `canonical: http://example.org (default)`.
+
+- **New users, round 20** (2026-11-10): two instances with one id in two files keep their own problems
+  (check.rkt pairs artifacts with instances by order — the k-th artifact with an id is the k-th instance
+  with it; `instances` maps an id to every instance); `tests/duplicate-id-test.rkt`.

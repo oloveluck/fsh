@@ -25,7 +25,9 @@ guide is what fhir-mcp serves as `learn://fsh`). This skill is the workflow arou
       |   ^^^^^^
    fsh check: 1 example, 1 with errors; 1 error, 0 warnings
    ```
-   Exit 1 on an error, 0 otherwise. `--format json` gives the same diagnostics on stdout
+   Exit 1 on an error, 0 otherwise. The project is every `.fsh` file under `dir/`, in every
+   subfolder (and its `.map` files, checked against the structures): keep scratch copies outside it,
+   or two copies of one instance are a duplicate id. `--format json` gives the same diagnostics on stdout
    (`source`, `line`, `column`, `message`, `phase`: parse, compile or validate); `--format outcome`
    as an OperationOutcome. `--capability <CapabilityStatement id>` also reports what a server
    generated from the project would leave unmet (needs fhir-server, and a sushi-config.yaml: the

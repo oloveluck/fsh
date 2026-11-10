@@ -125,9 +125,9 @@
 (define (validate-examples p [required (hash)])
   (define located (project-located p))
   (define artifacts (project-artifacts p))
-  (define instances                                  ; id -> (entity . loc)
-    (for/hash ([l (in-list located)] #:when (fsh-instance? (car l)))
-      (values (instance-id (car l)) l)))
+  (define instances                                  ; id -> (listof (entity . loc)), in project order
+    (for/fold ([h (hash)]) ([l (in-list located)] #:when (fsh-instance? (car l)))
+      (hash-update h (instance-id (car l)) (lambda (ls) (append ls (list l))) '())))
   (define profiles                                   ; canonical url and id -> (entity . loc)
     (for*/hash ([l (in-list located)] #:when (fsh-profile? (car l))
                 [a (in-value (findf (lambda (a) (and (equal? (hash-ref a 'resourceType #f) "StructureDefinition")
@@ -138,18 +138,26 @@
       (values k l)))
   ;; the FSH instance an artifact came from: by id; an instance of a logical model carries no id,
   ;; so it is matched by the model it is an InstanceOf (its resourceType)
-  (define (instance-for a)
-    (or (let ([id (hash-ref a 'id #f)]) (and id (hash-ref instances id #f)))
+  ;; two instances with one id (a duplicate, reported apart) are told apart by order: the k-th
+  ;; artifact with an id is the k-th instance with it (both instances' errors went to the later file)
+  (define seen (make-hash))
+  (define (instance-for* a)
+    (or (let* ([id (hash-ref a 'id #f)] [ls (and id (hash-ref instances id #f))])
+          (and ls (let ([k (hash-ref seen id 0)])
+                    (hash-set! seen id (add1 k))
+                    (list-ref ls (min k (sub1 (length ls)))))))
         (for/first ([l (in-list located)]
                     #:when (and (fsh-instance? (car l))
                                 (let ([io (assoc 'instanceOf (fsh-instance-metadata (car l)))])
                                   (and io (equal? (cdr io) (hash-ref a 'resourceType #f))))))
           l)))
+  (define pairs                                      ; (artifact . (entity . loc)), each artifact once
+    (for*/list ([a (in-list artifacts)] [l (in-value (instance-for* a))] #:when l) (cons a l)))
+  (define (instance-for a) (cond [(assq a pairs) => cdr] [else #f]))
   (define examples
-    (for/list ([a (in-list artifacts)]
-               #:when (let ([l (instance-for a)])
-                        (and l (not (equal? (usage-of (car l)) "#definition")))))
-      a))
+    (for/list ([pr (in-list pairs)]
+               #:unless (equal? (usage-of (cadr pr)) "#definition"))
+      (car pr)))
   (define tmp (make-temporary-directory "fsh-check-~a"))
   (define own (artifacts-package! tmp (project-config p) artifacts))
   (define per-example
@@ -158,7 +166,7 @@
         (define a (claiming a0 (hash-ref required (hash-ref a0 'resourceType "") '())))
         (for/list ([i (in-list (validate-issues (strip-jnum a)))]
                    #:when (member (issue-severity i) '("error" "fatal" "warning")))
-          (issue->diagnostic i a (instance-for a) profiles)))))
+          (issue->diagnostic i a (instance-for a0) profiles)))))   ; a0: the artifact as compiled (a claims more)
   (delete-directory/files tmp #:must-exist? #f)
   (values examples
           (for/sum ([ds (in-list per-example)]) (if (ormap (lambda (d) (eq? (diagnostic-severity d) 'error)) ds) 1 0))
