@@ -95,6 +95,16 @@ A project's `sushi-config.yaml` (as SUSHI reads it) gives its `canonical`, `fhir
 **As a module.** A file that starts with `#lang fsh` is a Racket module providing `compiled` (the
 resources as JSON), `resources` (typed nodes) and `document` (the FSH AST); its profiles, value sets
 and code systems are registered when it is required, so other modules find them by canonical.
+```
+#lang fsh
+Profile: AdultPatient
+Parent: Patient
+* birthDate 1..1
+```
+saved as `patients.fsh`, is used from Racket as `(require "patients.fsh")` (then `compiled`).
+Without the `#lang fsh` line, requiring the file fails with `default-load-handler: expected a
+`module' declaration, but found something else`: add the line. `raco fsh` reads the file with or
+without it.
 
 **In a workspace** (fhir-mcp). The workspace's `.fsh` files are one project, compiled with
 `workspace.yaml`'s canonical, FHIR version and packages. `write` answers a file's problems at their

@@ -464,3 +464,8 @@ What an agent working through fhir-mcp needed (the main repo's CLAUDE.md, "Claud
 - **New users, round 9** (2026-11-10): "constrained by profile …" cites a profile rule only when it
   imposes the kind of constraint broken (`constraint-kinds` in check.rkt); `raco fsh check` prints the
   canonical in use (the default `http://example.org` when no sushi-config.yaml sets one).
+
+- **New users, round 10** (2026-11-10): `canonical-of` with a name no definition has suggests the
+  nearest and lists the defined names; `raco fsh check` names a profile rule's file relative to the
+  current directory (absolute when that would climb out); guide.md shows a `#lang fsh` file and the
+  error Racket gives without the line.

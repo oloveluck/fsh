@@ -16,6 +16,8 @@
          (only-in fhir/serialize/from-json from-json)
          (only-in fhir/result/result ok? ok-value)
          (only-in fhir/registry register-resources!)
+         (only-in fhir/suggest did-you-mean)
+         (only-in racket/string string-join)
          (only-in fhir/sd/sd-index current-sd-packages)
          (only-in "project.rkt" find-config)
          (only-in "ig-config.rkt" read-ig-config ig-config-canonical ig-config-fhir-version ig-config-dependencies dependency-packages)
@@ -34,6 +36,12 @@
                     [current-sd-packages (append deps (current-sd-packages))])
        (thunk))]))
 ;; canonicals : compiled -> (hash name|id -> url)
+;; unknown-canonical : name names -> raises   one line, the nearest name and the others (a raw
+;; arguments error with a stack was what a misspelt `canonical-of` gave)
+(define (unknown-canonical name names)
+  (raise-user-error 'canonical-of "this file defines nothing named ~s~a; it defines ~a"
+                    name (did-you-mean name names) (string-join (map (lambda (n) (format "`~a`" n)) (sort names string<?)) ", ")))
+
 (define (canonicals compiled)
   (for*/fold ([h (hash)]) ([j (in-list compiled)] #:when (string? (hash-ref j 'url #f))
                           [k (in-list (list (hash-ref j 'name #f) (hash-ref j 'id #f)))] #:when (string? k))
@@ -67,8 +75,7 @@
         ;; canonical-of : name|id -> url   a profile's, extension's, value set's or code system's
         (define (canonical-of name)
           (hash-ref (canonicals compiled) name
-                    (lambda () (raise-arguments-error 'canonical-of "this file defines nothing of that name"
-                                                      "name" name "defined" (sort (hash-keys (canonicals compiled)) string<?)))))
+                    (lambda () (unknown-canonical name (hash-keys (canonicals compiled))))))
         ;; the module system as the FHIR registry: what this file defines resolves by canonical
         ;; (fhir/registry) — a profile for `#:profile`, a value set for `$expand`, a logical model
         ;; for a map's `uses` — once the module is required

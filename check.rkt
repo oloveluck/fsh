@@ -193,8 +193,11 @@
     [(and from (equal? (loc-source l) (loc-source from))) (format "line ~a" (loc-line l))]
     [else
      (define src (loc-source l))
-     (define shown (if (and src from (loc-source from))
-                       (path->string (find-relative-path (simplify-path (dir-of (loc-source from))) (simplify-path (path->complete-path src))))
+     ;; named as the problem's own file is: from the current directory (`fsh/intake.fsh:8:3`), not
+     ;; from the problem's directory (`../fsh/intake.fsh`, which read as a path from nowhere)
+     (define shown (if src
+                       (let ([r (path->string (find-relative-path (simplify-path (current-directory)) (simplify-path (path->complete-path src))))])
+                         (if (regexp-match? #rx"^[.][.]/[.][.]/" r) (path->string (simplify-path (path->complete-path src))) r))
                        src))
      (format "~a:~a:~a" shown (loc-line l) (loc-column l))]))
 
