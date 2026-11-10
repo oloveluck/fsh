@@ -21,7 +21,7 @@
 (define errors (filter (lambda (d) (eq? (diagnostic-severity d) 'error)) (check-report-diagnostics r)))
 (check-equal? (check-report-examples r) 1)                       ; only the folder's own example
 (check-equal? (length errors) 1)
-(check-regexp-match #rx"instance no-birthdate: Patient.birthDate: minimum required = 1" (diagnostic-message (car errors)))
+(check-regexp-match #rx"instance no-birthdate: Patient.birthDate: minimum required = 1, but found 0 [(]no rule of no-birthdate writes `birthDate`[)]" (diagnostic-message (car errors)))
 ;; the project itself is clean, and the whole tree has no duplicate
 (check-equal? (filter (lambda (d) (eq? (diagnostic-severity d) 'error)) (check-report-diagnostics (check-fsh-project (build-path root "fsh")))) '())
 (check-equal? (length (filter (lambda (d) (regexp-match? #rx"already used" (diagnostic-message d))) (check-report-diagnostics (check-fsh-project root)))) 0)

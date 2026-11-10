@@ -455,3 +455,8 @@ What an agent working through fhir-mcp needed (the main repo's CLAUDE.md, "Claud
   (fhir-validation's `found-text`: `… (found value.ofType(Quantity) = 300 '/min')`), and `check.rkt`
   traces it to the instance rule writing that element (`* valueQuantity = 300 '/min'`), not the
   instance header. `tests/invariant-trace-test.rkt`.
+
+- **New users, round 8** (2026-11-10): the invariant evidence names an item by index
+  (`found component[0].valueQuantity = 20 'kPa'`) and `check.rkt` takes the instance rule whose path
+  starts with it as written; "found no …" (something missing) stays at the instance. A required element
+  no rule of the instance writes says `(no rule of <instance> writes `birthDate`)`.

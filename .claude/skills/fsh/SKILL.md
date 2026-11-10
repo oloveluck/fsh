@@ -72,7 +72,8 @@ project and the packages). To hold them to the profiles on every `raco test`, ke
   (check-equal? (map diagnostic->string errors) '()))
 ```
 A failing example shows as `fsh/p.fsh:10:1: fsh validate error: instance bad: Patient.birthDate:
-minimum required = 1, but found 0 (constrained by profile P at line 4)`. An example that is MEANT to
+minimum required = 1, but found 0 (no rule of bad writes `birthDate`) (constrained by profile P at line
+4)` — at the instance's first line, since no rule of it wrote the element. An example that is MEANT to
 fail (to show a profile refusing something) belongs in a directory of its own, checked against the
 project's definitions with `--context`: `raco fsh check fsh-invalid/ --context fsh/` (the context's
 profiles, value sets and rule sets are compiled; its instances are not checked twice and its own

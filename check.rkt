@@ -143,10 +143,14 @@
   (define slice (let ([m (regexp-match #px"slice '([^']+)'" (issue-msg i))]) (and m (cadr m))))
   ;; an invariant broken at the resource names what it found (`… (found value.ofType(Quantity) = 300 '/min')`):
   ;; the rule that wrote that element is where the problem is
-  (define found (let ([m (regexp-match #px"[(]found ([A-Za-z]+)" (issue-msg i))]) (and m (cadr m))))
+  ;; (`… (found component[0].valueQuantity = 20 'kPa')`: the rule writing that very path first, as
+  ;; written; "found no …" is about what is missing, which no rule wrote)
+  (define found (let ([m (regexp-match #px"[(]found (?!no )([A-Za-z][A-Za-z0-9_.\\[\\]]*)" (issue-msg i))]) (and m (cadr m))))
+  (define rules (fsh-instance-rules (car inst)))
   (define rule (or (and found (not (string-contains? path "."))
-                        (trace-rule (fsh-instance-rules (car inst)) (string-append path "." found) #:slice slice))
-                   (trace-rule (fsh-instance-rules (car inst)) path #:slice slice)))
+                        (or (findf (lambda (r) (let ([rp (rule-path-string r)]) (and rp (string-prefix? rp found)))) rules)
+                            (trace-rule rules (string-append path "." (regexp-replace* #px"\\[[0-9]+\\]" found "")) #:slice slice)))
+                   (and (not (regexp-match? #px"[(]found no " (issue-msg i))) (trace-rule rules path #:slice slice))))
   (define at (or (and rule (attached-loc rule)) (cdr inst)))
   (define prof-note
     (for*/or ([url (in-list (let ([m (hash-ref res 'meta #f)]) (if (hash? m) (hash-ref m 'profile '()) '())))]
@@ -154,8 +158,14 @@
       (define pr (trace-rule (fsh-profile-rules (car pl)) path #:exact? #t #:slice slice))
       (define pl-loc (and pr (attached-loc pr)))
       (and pl-loc (format " (constrained by profile ~a at ~a)" (fsh-profile-name (car pl)) (loc-text pl-loc at)))))
+  ;; a required element nothing wrote: no rule of the instance writes it, which is why it is at the header
+  (define unwritten
+    (let ([m (regexp-match #px"^[A-Z][A-Za-z]*[.]([a-z][A-Za-z]*)(?:\\[x\\])?$" path)])
+      (if (and (not rule) m (regexp-match? #rx"minimum required" (issue-msg i)))
+          (format " (no rule of ~a writes `~a`)" (fsh-instance-name (car inst)) (cadr m))
+          "")))
   (diagnostic 'fsh 'validate (string->symbol (if (equal? (issue-severity i) "warning") "warning" "error"))
-              (format "instance ~a: ~a: ~a~a" (fsh-instance-name (car inst)) path (issue-msg i) (or prof-note ""))
+              (format "instance ~a: ~a: ~a~a~a" (fsh-instance-name (car inst)) path (issue-msg i) unwritten (or prof-note ""))
               at))
 ;; loc-text : loc loc -> string   where a profile rule is, said from where the problem is: "line 12"
 ;; in the same file, else the file relative to the problem's directory ("profiles.fsh:12:3")
