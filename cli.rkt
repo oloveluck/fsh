@@ -89,7 +89,7 @@
   (define canon (and cfg (with-handlers ([exn:fail? (lambda (_) #f)]) (ig-config-canonical (read-ig-config cfg)))))
   (eprintf "  canonical: ~a\n"
            (if canon (format "~a (~a)" canon cfg)
-               "http://example.org (the default; a sushi-config.yaml's `canonical` sets it)"))
+               "http://example.org (default)"))
   (exit (if (zero? errors) 0 1)))
 
 (define (usage [code 2])                             ; --help: stdout, exit 0

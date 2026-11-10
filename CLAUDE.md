@@ -473,3 +473,7 @@ What an agent working through fhir-mcp needed (the main repo's CLAUDE.md, "Claud
 - **New users, round 15** (2026-11-10): an InstanceOf or Parent not found that a folder beside the
   project defines is said with the flag to add (`` (`IntakePatient` is defined in fsh/intake.fsh: check
   with `--context fsh`) ``; `with-context-hint` in check.rkt, the sibling's .fsh files read as text).
+
+- **New users, round 18** (2026-11-10): `* birthDate = "1940-02-30"` is an error at its rule (the
+  validator checks the calendar now; `tests/calendar-test.rkt`); `raco fsh check`'s default canonical
+  note is `canonical: http://example.org (default)`.
