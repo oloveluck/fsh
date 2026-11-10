@@ -25,4 +25,13 @@
 ;; the project itself is clean, and the whole tree has no duplicate
 (check-equal? (filter (lambda (d) (eq? (diagnostic-severity d) 'error)) (check-report-diagnostics (check-fsh-project (build-path root "fsh")))) '())
 (check-equal? (length (filter (lambda (d) (regexp-match? #rx"already used" (diagnostic-message d))) (check-report-diagnostics (check-fsh-project root)))) 0)
+;; a value the profile does not constrain (a core binding, a date's format) cites no profile rule;
+;; a cardinality the profile sets does (it cited `* birthDate 1..1` for "femme")
+(with-output-to-file (build-path root "bad" "bad.fsh") #:exists 'truncate
+  (lambda () (display "Instance: femme\nInstanceOf: IntakePatient\n* gender = #femme\n* birthDate = \"1950-13-01\"\n")))
+(define ms (map diagnostic-message (filter (lambda (d) (eq? (diagnostic-severity d) 'error))
+                                           (check-report-diagnostics (check-fsh-project (build-path root "bad") #:context (list (build-path root "fsh")))))))
+(check-equal? (length ms) 2)
+(check-false (ormap (lambda (m) (regexp-match? #rx"constrained by profile" m)) ms) (format "~s" ms))
+(check-not-false (regexp-match #rx"constrained by profile IntakePatient" (diagnostic-message (car errors))))
 (delete-directory/files root)

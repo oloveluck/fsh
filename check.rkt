@@ -29,7 +29,8 @@
          (only-in "compile.rkt" rule-path-of instance-id)
          (only-in "parser/ast.rkt" fsh-instance? fsh-instance-name fsh-instance-metadata fsh-instance-rules
                   fsh-profile? fsh-profile-name fsh-profile-metadata fsh-profile-rules
-                  rule-assign? rule-assign-path rule-path? rule-path-path))
+                  rule-assign? rule-assign-path rule-path? rule-path-path
+                  rule-card? rule-add-element? rule-binding? rule-only? rule-contains? rule-obeys?))
 
 (provide
  (struct-out check-report)
@@ -155,7 +156,12 @@
   (define prof-note
     (for*/or ([url (in-list (let ([m (hash-ref res 'meta #f)]) (if (hash? m) (hash-ref m 'profile '()) '())))]
                  [pl (in-value (hash-ref profiles url #f))] #:when pl)
-      (define pr (trace-rule (fsh-profile-rules (car pl)) path #:exact? #t #:slice slice))
+      ;; only the rules that impose the kind of constraint broken: a cardinality for a minimum, a
+      ;; binding for a value set, an assignment for a pattern, an `only` for a type — a bad date
+      ;; or a core binding is not the profile's (it cited `* gender 1..1` for "femme")
+      (define kinds (constraint-kinds (issue-msg i)))
+      (define pr (and kinds (trace-rule (filter (lambda (r) (ormap (lambda (k?) (k? r)) kinds)) (fsh-profile-rules (car pl)))
+                                        path #:exact? #t #:slice slice)))
       (define pl-loc (and pr (attached-loc pr)))
       (and pl-loc (format " (constrained by profile ~a at ~a)" (fsh-profile-name (car pl)) (loc-text pl-loc at)))))
   ;; a required element nothing wrote: no rule of the instance writes it, which is why it is at the header
@@ -167,6 +173,17 @@
   (diagnostic 'fsh 'validate (string->symbol (if (equal? (issue-severity i) "warning") "warning" "error"))
               (format "instance ~a: ~a: ~a~a~a" (fsh-instance-name (car inst)) path (issue-msg i) unwritten (or prof-note ""))
               at))
+;; constraint-kinds : issue-message -> (listof rule-predicate) | #f   the profile rules that could have
+;; imposed what the message says was broken; #f when no profile rule does (a value's format)
+(define (constraint-kinds msg)
+  (cond [(regexp-match? #rx"minimum required|maximum allowed|max allowed|cardinality" msg) (list rule-card? rule-add-element?)]
+        [(regexp-match? #rx"value set|binding" msg) (list rule-binding?)]
+        [(regexp-match? #rx"pattern|fixed value|does not match" msg) (list rule-assign?)]
+        [(regexp-match? #rx"not allowed in slice|is not allowed|type" msg) (list rule-only? rule-contains?)]
+        [(regexp-match? #rx"slice" msg) (list rule-contains? rule-card?)]
+        [(regexp-match? #rx"^[a-z][a-z0-9-]*: " msg) (list rule-obeys?)]       ; an invariant's key
+        [else #f]))
+
 ;; loc-text : loc loc -> string   where a profile rule is, said from where the problem is: "line 12"
 ;; in the same file, else the file relative to the problem's directory ("profiles.fsh:12:3")
 (define (loc-text l from)

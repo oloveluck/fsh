@@ -23,7 +23,8 @@
          (only-in fhir/sd/sd-index sd-index-available?)
          (only-in fsh/project compile-project pack-project! fsh-files project-missing project-diagnostics project-texts
                   project-artifacts project-config project-files)
-         (only-in fsh/ig-config ig-config-id ig-config-version)
+         (only-in fsh/ig-config ig-config-id ig-config-version read-ig-config ig-config-canonical)
+         (only-in fsh/project find-config)
          (only-in fsh/decompile fhir->fsh)
          (only-in racket/match match)
          (only-in fsh/check check-fsh-project check-report-diagnostics check-report-texts
@@ -81,6 +82,12 @@
   (define errors (for/sum ([d (in-list diags)]) (if (eq? (diagnostic-severity d) 'error) 1 0)))
   (eprintf "fsh check: ~a examples, ~a with errors; ~a error(s), ~a warning(s)\n"
            (check-report-examples r) (check-report-invalid r) errors (- (length diags) errors))
+  ;; the canonical base the profiles' urls were made with (a pipeline asks for it by url)
+  (define cfg (find-config dir))
+  (define canon (and cfg (with-handlers ([exn:fail? (lambda (_) #f)]) (ig-config-canonical (read-ig-config cfg)))))
+  (eprintf "  canonical: ~a\n"
+           (if canon (format "~a (~a)" canon cfg)
+               "http://example.org (the default: no sushi-config.yaml sets `canonical`; a profile's url is <canonical>/StructureDefinition/<id>)"))
   (exit (if (zero? errors) 0 1)))
 
 (define (usage [code 2])                             ; --help: stdout, exit 0

@@ -13,7 +13,9 @@ guide is what fhir-mcp serves as `learn://fsh`). This skill is the workflow arou
 
 ## The loop
 1. **Write** the `.fsh` files of one project in a directory (a `sushi-config.yaml` beside them, or
-   in the parent, gives the canonical, FHIR version and dependencies, as SUSHI reads it).
+   in the parent, gives the canonical, FHIR version and dependencies, as SUSHI reads it). Without
+   one the canonical is `http://example.org`, so `Profile: IntakePatient` with `Id: intake-patient`
+   is `http://example.org/StructureDefinition/intake-patient`; `raco fsh check` prints the one in use.
 2. **Check.** `raco fsh check dir/` compiles the project and validates every example instance
    against its base type and the profiles it claims. Each problem is at its rule, and a validation
    problem names the profile rule that constrains it:

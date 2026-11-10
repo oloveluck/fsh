@@ -460,3 +460,7 @@ What an agent working through fhir-mcp needed (the main repo's CLAUDE.md, "Claud
   (`found component[0].valueQuantity = 20 'kPa'`) and `check.rkt` takes the instance rule whose path
   starts with it as written; "found no …" (something missing) stays at the instance. A required element
   no rule of the instance writes says `(no rule of <instance> writes `birthDate`)`.
+
+- **New users, round 9** (2026-11-10): "constrained by profile …" cites a profile rule only when it
+  imposes the kind of constraint broken (`constraint-kinds` in check.rkt); `raco fsh check` prints the
+  canonical in use (the default `http://example.org` when no sushi-config.yaml sets one).
