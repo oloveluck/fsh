@@ -34,4 +34,10 @@
 (check-equal? (length ms) 2)
 (check-false (ormap (lambda (m) (regexp-match? #rx"constrained by profile" m)) ms) (format "~s" ms))
 (check-not-false (regexp-match #rx"constrained by profile IntakePatient" (diagnostic-message (car errors))))
+;; without --context, the folder beside it that defines the profile is named, with the flag to add
+(parameterize ([current-directory root])
+  (define m (for/first ([d (in-list (check-report-diagnostics (check-fsh-project "bad")))]
+                        #:when (regexp-match? #rx"InstanceOf `IntakePatient` not found" (diagnostic-message d)))
+              (diagnostic-message d)))
+  (check-regexp-match #rx"[(]`IntakePatient` is defined in fsh/intake[.]fsh: check with `--context fsh`[)]$" m))
 (delete-directory/files root)

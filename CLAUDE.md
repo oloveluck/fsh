@@ -469,3 +469,7 @@ What an agent working through fhir-mcp needed (the main repo's CLAUDE.md, "Claud
   nearest and lists the defined names; `raco fsh check` names a profile rule's file relative to the
   current directory (absolute when that would climb out); guide.md shows a `#lang fsh` file and the
   error Racket gives without the line.
+
+- **New users, round 15** (2026-11-10): an InstanceOf or Parent not found that a folder beside the
+  project defines is said with the flag to add (`` (`IntakePatient` is defined in fsh/intake.fsh: check
+  with `--context fsh`) ``; `with-context-hint` in check.rkt, the sibling's .fsh files read as text).
