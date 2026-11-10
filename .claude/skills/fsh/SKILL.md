@@ -23,7 +23,7 @@ guide is what fhir-mcp serves as `learn://fsh`). This skill is the workflow arou
    p2/a.fsh:8:3: fsh validate error: instance prelim: Observation.status: value does not match required pattern "final" (constrained by profile Final at line 4)
     8 | * status = #preliminary
       |   ^^^^^^
-   fsh check: 1 examples, 1 with errors; 1 error(s), 0 warning(s)
+   fsh check: 1 example, 1 with errors; 1 error, 0 warnings
    ```
    Exit 1 on an error, 0 otherwise. `--format json` gives the same diagnostics on stdout
    (`source`, `line`, `column`, `message`, `phase`: parse, compile or validate); `--format outcome`

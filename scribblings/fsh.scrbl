@@ -71,7 +71,7 @@ ig/input/fsh/bp.fsh:22:3: fsh validate error: instance reading-1: Observation.st
     not match required pattern "final" (constrained by profile ScreeningBloodPressure at line 7)
  22 | * status = #preliminary
     |   ^^^^^^
-fsh check: 1 examples, 1 with errors; 1 error(s), 0 warning(s)
+fsh check: 1 example, 1 with errors; 1 error, 0 warnings
 }
 
 The error sits on the instance rule that wrote the bad element and names the profile rule it breaks.

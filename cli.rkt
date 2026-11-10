@@ -80,14 +80,16 @@
   (unless (null? diags)
     (emit-diagnostics diags #:format fmt #:text-of (lambda (s) (and s (hash-ref (check-report-texts r) s #f)))))
   (define errors (for/sum ([d (in-list diags)]) (if (eq? (diagnostic-severity d) 'error) 1 0)))
-  (eprintf "fsh check: ~a examples, ~a with errors; ~a error(s), ~a warning(s)\n"
-           (check-report-examples r) (check-report-invalid r) errors (- (length diags) errors))
+  (define (n-of n word) (format "~a ~a~a" n word (if (= n 1) "" "s")))
+  (eprintf "fsh check: ~a, ~a with errors; ~a, ~a\n"
+           (n-of (check-report-examples r) "example") (check-report-invalid r)
+           (n-of errors "error") (n-of (- (length diags) errors) "warning"))
   ;; the canonical base the profiles' urls were made with (a pipeline asks for it by url)
   (define cfg (find-config dir))
   (define canon (and cfg (with-handlers ([exn:fail? (lambda (_) #f)]) (ig-config-canonical (read-ig-config cfg)))))
   (eprintf "  canonical: ~a\n"
            (if canon (format "~a (~a)" canon cfg)
-               "http://example.org (the default: no sushi-config.yaml sets `canonical`; a profile's url is <canonical>/StructureDefinition/<id>)"))
+               "http://example.org (the default; a sushi-config.yaml's `canonical` sets it)"))
   (exit (if (zero? errors) 0 1)))
 
 (define (usage [code 2])                             ; --help: stdout, exit 0
