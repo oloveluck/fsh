@@ -14,6 +14,7 @@
          json
          (only-in fhir/r5/schemas)                     ; register the R5 tower (compile + from-json)
          (only-in fhir/serialize/from-json from-json)
+         (only-in fhir/serialize/fhir-json write-fhir-json)
          (only-in fhir/result/result ok? ok-value)
          (only-in fhir/registry register-resources!)
          (only-in fhir/suggest did-you-mean)
@@ -85,4 +86,4 @@
             (let ([r (from-json j #:lenient? #t)]) (if (ok? r) (ok-value r) j))))
         (provide document compiled resources canonical-of)
         (module+ main
-          (for ([j (in-list compiled)]) (displayln (jsexpr->string j)))))]))
+          (for ([j (in-list compiled)]) (write-fhir-json j #:indent 2) (newline))))]))
