@@ -125,7 +125,8 @@ uses its value sets, a VCL file is a value set beside it.
 - `instance fast: Observation: hr-range: A heart rate is between 20 and 250 /min (found
   valueQuantity = 300 '/min')`: an example breaks a profile's invariant; the problem is at the rule
   that wrote what the invariant found (`* valueQuantity = 300 '/min'`), and quotes it. A failing item
-  of a list is named by its index (`found component[0].valueQuantity = 20 'kPa'`); something missing
+  of a list is named by its index (`found component[0].valueQuantity = 20 'kPa' (= 150 'mm[Hg]')`, the
+  value in the rule's unit when it converts); something missing
   is said so (`found no component matching '8462-4'`), at the instance.
 - `` Parent `X` not found ``: nothing defines the Parent — not a FHIR type, not a profile,
   extension or logical model in the project, not in the packages. Check the name, or add the

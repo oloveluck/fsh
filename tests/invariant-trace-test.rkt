@@ -61,6 +61,6 @@ FSH
              )))
 (define errors2 (filter (lambda (d) (eq? (diagnostic-severity d) 'error)) (check-report-diagnostics (check-fsh-project root))))
 (check-equal? (length errors2) 1)
-(check-regexp-match #rx"[(]found component[[]1[]][.]valueQuantity = 10 'kPa'[)]" (diagnostic-message (car errors2)))
+(check-regexp-match #rx"[(]found component[[]1[]][.]valueQuantity = 10 'kPa' [(]= 75 'mm\\[Hg\\]'[)][)]" (diagnostic-message (car errors2)))
 (check-equal? (loc-line (diagnostic-loc (car errors2))) 18)        ; `* component[1].valueQuantity = 10 'kPa'`
 (delete-directory/files root)
