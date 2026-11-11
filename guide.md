@@ -115,6 +115,9 @@ lists a type's elements. What the FSH defines, the other languages see by canoni
 uses its value sets, a VCL file is a value set beside it.
 
 ## Common problems
+- `Patient.birthDate: minimum required = 1, but found 0 (no rule of bad-patient writes `birthDate`)`:
+  a required element missing from an example is reported at the Instance's first line (no rule wrote
+  it, so there is no rule line to point at); the profile's rule that requires it is named after it.
 - `` `nmae` is not an element of Patient ``: a misspelled path, at its rule. The first step of a
   path must be an element of the Parent.
 - `Observation.status: value does not match required pattern "final" (constrained by profile …)`:
