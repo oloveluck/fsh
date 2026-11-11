@@ -15,6 +15,7 @@
          (only-in fhir/model/schema ftype-tag ftype-type-name ftype-prim-code)
          (only-in fhir/serialize/jsexpr-util drop-false)
          (only-in fhir/sd/sd-index resolve-sd-raw resolve-canonical-raw sd-index-available?)
+         (only-in fhir/registry registered-resource registered-resources)
          "context.rkt")
 (provide
  (contract-out
@@ -24,6 +25,8 @@
   [instance-base (->* (string? hash?) (exact-nonnegative-integer?) (or/c string? #f))]
   ;; a dependency package's profile by name, id or url (a constraint SD), when the SD index has it
   [external-sd (-> string? (or/c hash? #f))]
+  ;; a StructureDefinition a required module registered, by url, id or name
+  [registered-sd (-> string? (or/c hash? #f))]
   ;; an assigned FSH value as the element's JSON, by the element's ftype
   [coerce (-> any/c any/c any/c)]
   ;; what `extension[Name]` may name besides a slice: an alias, a local profile, a url, a packaged Extension
@@ -85,10 +88,16 @@
 ;; external-sd : name|id|url -> StructureDefinition jsexpr | #f   a PROFILE (not a base type) from the
 ;; packages in current-sd-packages — the IG's dependencies, then core
 (define (external-sd n)
-  (and (sd-index-available?)
-       (not (type-registered? (string->symbol n)))
-       (let ([sd (resolve-sd-raw n)])
+  (and (not (type-registered? (string->symbol n)))
+       (let ([sd (or (and (sd-index-available?) (resolve-sd-raw n)) (registered-sd n))])
          (and (hash? sd) (equal? (hash-ref sd 'derivation #f) "constraint") sd))))
+;; registered-sd : name|id|url -> StructureDefinition jsexpr | #f   one a module already required
+;; registered (fhir/registry: a `#lang fsh` module registers what it defines), by url, id or name — so
+;; a file of examples runs after the module of its profiles is required (`InstanceOf: IntakePatient`
+;; in bad/bad.fsh, the profile in profiles/intake.fsh)
+(define (registered-sd n)
+  (or (registered-resource "StructureDefinition" n)
+      (for/first ([r (in-list (registered-resources "StructureDefinition"))] #:when (equal? (hash-ref r 'name #f) n)) r)))
 ;; slice-positions : instance aliases -> (hash (cons field index) -> slice-name)   where each
 ;; top-level named slice the instance mentions (`component[systolic]`) was placed
 (define (slice-positions e aliases)

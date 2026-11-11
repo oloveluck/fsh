@@ -13,7 +13,7 @@ fsh/base
 #:read-syntax fsh-read-syntax
 #:whole-body-readers? #t
 
-(require (only-in fsh/parser/parse parse-fsh-doc)
+(require (only-in fsh/parser/parse parse-fsh-doc/located)
          (only-in fsh/compile compile-doc/diagnostics)
          (only-in fsh/base with-config)
          (only-in fhir/diagnostic raise-diagnostic diagnostic-severity)
@@ -24,11 +24,13 @@ fsh/base
 ;; rule the compiler finds wrong on its own (`* birthdate 1..1`: `birthdate` is not an element of
 ;; Patient), as `raco make` fails on `#lang fml`'s and `#lang cql`'s — it used to build, and every
 ;; valid Patient then failed validation against a constraint on an element nothing has
+;; each form carries its entity's position (a prefab `loc`), so an entity that fails when the module
+;; runs (an InstanceOf another file defines) is reported at its header, not with a stack trace
 (define (fsh-read-syntax src in)
-  (define entities (parse-fsh-doc (port->string in) #:source (source-name src)))
-  (check! src entities)
-  (for/list ([e (in-list entities)])
-    (datum->syntax #f (list 'fsh-entity e))))
+  (define located (parse-fsh-doc/located (port->string in) #:source (source-name src)))
+  (check! src (map car located))
+  (for/list ([p (in-list located)])
+    (datum->syntax #f (list 'fsh-entity (car p) (cdr p)))))
 
 ;; check! : source entities -> void   the first rule-level error, raised at its rule. Only the rule
 ;; checks: what another file defines (a Parent, a RuleSet) is not this file's mistake

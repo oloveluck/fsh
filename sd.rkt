@@ -425,7 +425,7 @@
   (define of (let ([o (assoc-ref (fsh-instance-metadata e) 'instanceOf)]) (and o (resolve-alias o aliases))))
   (unless (or (not of) (unknown-parent-undecidable?)
               (type-registered? (string->symbol (instance-base of profiles)))
-              (resolve-sd-raw of) (r5-resource? of))
+              (resolve-sd-raw of) (registered-sd of) (r5-resource? of))
     (raise (exn:fail (format "InstanceOf `~a` not found: it is not a FHIR type, a profile, extension or logical model in this project, nor a definition in its packages~a"
                              of (did-you-mean of (parent-candidates)))
                      (current-continuation-marks)))))

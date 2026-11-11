@@ -17,6 +17,7 @@
 ;;;   never exits; everything is a fhir/diagnostic (lang 'fsh, phase 'compile | 'validate | 'server)
 
 (require racket/contract racket/list racket/string racket/file racket/path
+         "context-hint.rkt"
          (only-in fhir/diagnostic diagnostic diagnostic-severity diagnostic-message diagnostic-lang diagnostic-phase diagnostic-loc
                   loc-source loc-line loc-column
                   attached-loc)
@@ -59,41 +60,6 @@
                 (length examples)
                 invalid
                 (project-artifacts p)))
-
-;; with-context-hint : diagnostic dir context -> diagnostic   an InstanceOf or Parent not found that a
-;; folder BESIDE the project defines says so, with the --context that brings it in (a new user checked
-;; fsh-invalid/ alone, its profile next door in fsh/, and was told only "not found")
-(define (with-context-hint d dir context)
-  (define m (regexp-match #px"(?:InstanceOf|Parent) `([^`]+)` not found" (diagnostic-message d)))
-  (define where (and m (defined-beside dir context (cadr m))))
-  (if where
-      (diagnostic (diagnostic-lang d) (diagnostic-phase d) (diagnostic-severity d)
-                  (format "~a (`~a` is defined in ~a: check with `--context ~a`)" (diagnostic-message d) (cadr m)
-                          (shown-relative (car where)) (shown-relative (cdr where)))
-                  (diagnostic-loc d))
-      d))
-
-;; defined-beside : dir context name -> (cons file folder) | #f   a sibling folder's .fsh file that
-;; declares a profile, extension, logical model or resource of this name (or Id), read as text
-(define (defined-beside dir context name)
-  (define here (simplify-path (path->complete-path (if (file-exists? dir) (let-values ([(d _n _x) (split-path dir)]) d) dir))))
-  (define parent (simplify-path (build-path here 'up)))
-  (define taken (map (lambda (c) (simplify-path (path->complete-path c))) context))
-  (define rx (pregexp (string-append "(?m:^(?:Profile|Extension|Logical|Resource|Id):\\s*" (regexp-quote name) "\\s*$)")))
-  (for*/first ([sib (in-list (with-handlers ([exn:fail? (lambda (_) '())]) (directory-list parent #:build? #t)))]
-               #:when (directory-exists? sib)
-               #:unless (equal? (simplify-path sib) here)
-               #:unless (member (simplify-path sib) taken)
-               [f (in-directory sib)]
-               #:when (regexp-match? #rx"[.]fsh$" (path->string f))
-               #:when (regexp-match? rx (file->string f)))
-    (cons f sib)))
-
-;; shown-relative : path -> string   relative to the current directory when that is shorter
-(define (shown-relative p)
-  (define full (simplify-path (path->complete-path p)))
-  (define rel (path->string (find-relative-path (simplify-path (current-directory)) full)))
-  (if (< (string-length rel) (string-length (path->string full))) rel (path->string full)))
 
 ;; ---- the project's maps, against its structures ----------------------------------------------------
 ;; check-maps : project examples -> diagnostics   each map (fml/project, loaded on demand) checked in

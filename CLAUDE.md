@@ -481,3 +481,10 @@ What an agent working through fhir-mcp needed (the main repo's CLAUDE.md, "Claud
 - **New users, round 20** (2026-11-10): two instances with one id in two files keep their own problems
   (check.rkt pairs artifacts with instances by order — the k-th artifact with an id is the k-th instance
   with it; `instances` maps an id to every instance); `tests/duplicate-id-test.rkt`.
+
+- **New users, round 28** (2026-11-11): the `#lang fsh` reader gives each `(fsh-entity ast loc)` form its
+  entity's position; the module compiles with `compile-module` (base.rkt), which raises an entity that
+  fails as one positioned line (`raise-diagnostic`) with `context-hint.rkt`'s hint (moved from check.rkt;
+  `#:module? #t` says to require the sibling's module first). `external-sd` and `check-instance-of!`
+  also find a StructureDefinition a required module registered (`registered-sd`, by url, id or name), so
+  `(require "profiles/intake.fsh" "bad/bad.fsh")` builds. `tests/module-context-test.rkt`.

@@ -21,6 +21,8 @@
          (only-in racket/string string-join)
          (only-in fhir/sd/sd-index current-sd-packages)
          (only-in "project.rkt" find-config)
+         (only-in "context-hint.rkt" with-context-hint)
+         (only-in fhir/diagnostic diagnostic raise-diagnostic)
          (only-in "ig-config.rkt" read-ig-config ig-config-canonical ig-config-fhir-version ig-config-dependencies dependency-packages)
          "compile.rkt")
 
@@ -53,15 +55,29 @@
          fsh-entity
          with-config)
 
-;; (fsh-entity ast) yields the prefab entity-AST literal; module-begin collects them.
-(define-syntax-rule (fsh-entity ast) (quote ast))
+;; (fsh-entity ast [loc]) yields the prefab entity-AST literal; module-begin collects them.
+(define-syntax fsh-entity
+  (syntax-rules () [(_ ast) (quote ast)] [(_ ast loc) (quote ast)]))
+
+;; compile-module : entities (listof loc|#f) source -> (listof jsexpr)   the document compiled under the
+;; project's config; an entity that fails (an InstanceOf no required module defines) raises one
+;; positioned line at its header, with where a sibling folder defines the name (no stack trace)
+(define (compile-module document locations src)
+  (define-values (out errors) (with-config src (lambda () (compile-doc/errors document))))
+  (when (pair? errors)
+    (define label (car (car errors)))
+    (define at (for/first ([e (in-list document)] [l (in-list locations)] #:when (equal? (entity-label e) label)) l))
+    (define dir (and (path? src) (let-values ([(d _n _x) (split-path src)]) (and (path? d) d))))
+    (define d (diagnostic 'fsh 'compile 'error (format "~a: ~a" label (exn-message (cdr (car errors)))) at))
+    (raise-diagnostic (if dir (with-context-hint d dir '() #:module? #t) d)))
+  out)
 
 ;; the module body the reader produces: (fsh-entity <entity>) forms, each an FSH entity AST (a
 ;; prefab whose key starts with fsh-) — anything else is a precise error here
 (begin-for-syntax
   (define-syntax-class entity-form
     #:description "an (fsh-entity <entity>) form, as the #lang fsh reader writes it"
-    (pattern ((~datum fsh-entity) ast)
+    (pattern ((~datum fsh-entity) ast (~optional at #:defaults ([at #'#f])))
              #:fail-unless (let ([k (prefab-struct-key (syntax->datum #'ast))])
                              (and (symbol? k) (regexp-match? #rx"^fsh-" (symbol->string k))))
              "not an FSH entity AST")))
@@ -70,9 +86,9 @@
   (syntax-parse stx
     [(_ form:entity-form ...)
      #'(#%module-begin
-        (define document (list form ...))
+        (define document (list 'form.ast ...))
         (define compiled                                  ; (listof FHIR jsexpr)
-          (with-config (variable-reference->module-source (#%variable-reference)) (lambda () (compile-doc document))))
+          (compile-module document (list 'form.at ...) (variable-reference->module-source (#%variable-reference))))
         ;; canonical-of : name|id -> url   a profile's, extension's, value set's or code system's
         (define (canonical-of name)
           (hash-ref (canonicals compiled) name
