@@ -194,8 +194,17 @@
                                      'value (cdr p)))))))
 
 ;; ---- the guide ---------------------------------------------------------------------------------
+;; expansion-parameters : ig-config resources -> Parameters | #f   the guide's pinned versions: the
+;; Parameters resource the file names (ig-config-expansion-parameters) among the project's
+(define expansion-parameters-extension "http://hl7.org/fhir/StructureDefinition/cqf-expansionParameters")
+(define (expansion-parameters c resources)
+  (define id (ig-config-expansion-parameters c))
+  (and id (findf (lambda (r) (and (equal? (hash-ref r 'resourceType #f) "Parameters") (equal? (hash-ref r 'id #f) id))) resources)))
+
 (define (implementation-guide c resources #:fhir-version [fhir-version* #f] #:canonical [canonical* #f] #:labels [labels (hash)])
   (define y (ig-config-yaml c))
+  ;; the pins travel with the guide: contained, and named by CRMI's extension (CRMIImplementationGuide)
+  (define pins (expansion-parameters c resources))
   (define (given k) (str (yref y k)))
   (define versions (let ([vs (ig-config-fhir-versions c)]) (if (pair? vs) vs (list (or fhir-version* "4.0.1")))))
   (define r5? (not (regexp-match? #rx"^4[.]" (car versions))))
@@ -204,6 +213,11 @@
   (drop-absent
    (hasheq 'resourceType "ImplementationGuide"
            'id id
+           'contained (if pins (list (hash-remove (hash-remove pins 'meta) 'text)) '())
+           'extension (if pins
+                          (list (hasheq 'url expansion-parameters-extension
+                                        'valueReference (hasheq 'reference (string-append "#" (hash-ref pins 'id)))))
+                          '())
            'url (or (given "url") (format "~a/ImplementationGuide/~a" canonical id))
            'version (ig-config-version c)
            'name (or (ig-config-name c) (machine-name id))

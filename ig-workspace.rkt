@@ -15,12 +15,13 @@
 (require racket/contract racket/list racket/string racket/file racket/runtime-path
          fhir/lang/workspace
          (only-in fhir/registry registered-by)
+         (only-in fhir/data-source current-data-source data-source-read)
          (only-in fhir/diagnostic diagnostic diagnostic-severity diagnostic->jsexpr loc)
          (only-in fhir/sd/sd-index sd-index-available?)
          (only-in fhir/sd/operations resolve-structure-definition)
          (only-in fhir/operation apply-operation)
          (only-in "yaml.rkt" exn:fail:yaml?)
-         (only-in "ig-config.rkt" parse-ig-config)
+         (only-in "ig-config.rkt" parse-ig-config ig-config-expansion-parameters)
          "ig.rkt")
 
 (provide (contract-out [workspace-support ws-support?]
@@ -42,6 +43,16 @@
 (define (workspace-resources)
   (registered-by (lambda (s) (and (pair? s) (eq? (car s) 'workspace) (pair? (cdr s)) (not (equal? (cadr s) "ig"))))))
 
+;; expansion-parameters : ig-config -> Parameters | #f   the pins the guide names: the Parameters
+;; with that id a workspace file defines, else the one the data holds (its file deleted)
+(define (expansion-parameters c)
+  (define id (ig-config-expansion-parameters c))
+  (define (pins? r) (and (hash? r) (equal? (hash-ref r 'resourceType #f) "Parameters") (equal? (hash-ref r 'id #f) id)))
+  (and id
+       (or (findf pins? (workspace-resources))
+           (let ([stored (with-handlers ([exn:fail? (lambda (_) #f)]) ((data-source-read (current-data-source)) "Parameters" id))])
+             (and (pins? stored) stored)))))
+
 ;; defined? : canonical -> boolean   a profile the data, the workspace's files or the packages
 ;; define (as every resolver looks: fhir/sd/operations); without a package index nothing can be
 ;; said, and nothing is
@@ -54,7 +65,12 @@
 (define (compiled ws f)
   (define c (with-handlers ([exn:fail:yaml? (lambda (_) #f)]) (parse-ig-config (cdr f))))
   (define cfg (workspace-config ws))
-  (and c (implementation-guide c (workspace-resources)
+  ;; what the workspace's files define, and the guide's pins when only the data still holds them
+  (define (listed c)
+    (define mine (workspace-resources))
+    (define pins (expansion-parameters c))
+    (if (and pins (not (memq pins mine))) (append mine (list pins)) mine))
+  (and c (implementation-guide c (listed c)
                                #:fhir-version (ws-config-fhir-version cfg) #:canonical (ws-config-canonical cfg))))
 
 ;; resource-problems : file text guide -> diagnostics   what $validate says of the resource, at the
@@ -71,12 +87,25 @@
                 (format "~a~a" (if where (string-append where ": ") "") (hash-ref i 'diagnostics (hash-ref i 'code "invalid")))
                 (loc (path-string file) (car at) (cdr at) #f #f))))
 
+;; pins-problems : file text -> diagnostics   the expansion parameters the guide names
+;; (`parameters: path-expansion-params: …/Parameters-<id>.json`) that nothing in the workspace
+;; defines: no version is pinned, and the author thinks one is
+(define (pins-problems file text)
+  (define c (with-handlers ([exn:fail:yaml? (lambda (_) #f)]) (parse-ig-config text)))
+  (define id (and c (ig-config-expansion-parameters c)))
+  (if (and id (not (expansion-parameters c)))
+      (let ([at (or (key-line text "path-expansion-params" #:under "parameters") (key-line text "parameters") (cons 1 1))])
+        (list (diagnostic 'ig 'compile 'warning
+                          (format "path-expansion-params names Parameters/~a, which nothing in the workspace defines or the data holds (write an FSH `Instance: ~a` of Parameters, or a JSON file): no version is pinned" id id)
+                          (loc (path-string file) (car at) (cdr at) #f #f))))
+      '()))
+
 (define (artifacts ws files)
   (define f (guide-file-of ws files))
   (cond
     [(not f) (values '() '())]
     [else
-     (define ds (ig-diagnostics (cdr f) (car f) #:defined? defined?))
+     (define ds (append (ig-diagnostics (cdr f) (car f) #:defined? defined?) (pins-problems (car f) (cdr f))))
      (define ig (compiled ws f))
      (values (if ig (list ig) '())
              (append ds (if (and ig (not (ormap (lambda (d) (eq? (diagnostic-severity d) 'error)) ds)))

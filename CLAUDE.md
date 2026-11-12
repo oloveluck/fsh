@@ -530,3 +530,10 @@ dependency, its globals and its parameters again (the Publisher writes each tool
 its code once as a string and once as a code: one entry), and is a fixpoint. fhir-mcp uses it to
 read a workspace's guide from its store and to hand it back as the file (`learn://ig`, "The store
 is the guide; the files are working copies").
+**Pins** (2026-11-12): `implementation-guide` contains the guide's expansion parameters — the
+Parameters resource `parameters: path-expansion-params: …/Parameters-<id>.json` names
+(`ig-config-expansion-parameters`, in the foundation) among the resources it lists — under CRMI's
+`cqf-expansionParameters` extension (`#<id>`). `ig-workspace.rkt` finds that Parameters among the
+workspace's resources, else in the data (`current-data-source`), lists it, and warns at the key
+when nothing defines it. ig-guide.md, "Pinning versions" (its `pins` block is what fhir-mcp's
+pins-test stages).

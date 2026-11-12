@@ -149,6 +149,39 @@ write path=A1c.cql ref=Library/A1c
   staging a definition is refused with the call that hands the guide back; raise its `version` and
   go on.
 
+### Pinning versions
+
+A canonical with no version (`…/StructureDefinition/lab` in a `global` rule, a `meta.profile`, a CQL
+`valueset`) means, among the stored versions, the active one. To mean another — the draft, to try
+it against the data before releasing it; a fixed version of a dependency — pin it. The pins are a
+Parameters resource (HL7 CRMI's *manifest parameters*), written like any resource:
+
+```fsh
+Instance: pins
+InstanceOf: Parameters
+* parameter[0].name = "default-canonical-version"
+* parameter[0].valueCanonical = "http://example.org/clinic/StructureDefinition/lab|0.2.0"
+```
+
+`default-canonical-version` pins any definition; `default-valueset-version` a value set and
+`default-system-version` a code system (`http://loinc.org|2.74`). Two ways to put them in force:
+
+```text
+stage fsh=@reading.fsh keep:=false manifest=@pins.json      (one call: any tool but write and commit takes `manifest`)
+check data:=true manifest=Parameters/pins                    (a Parameters the workspace defines or stores)
+
+parameters:                                                  (in sushi-config.yaml: every call, for everyone)
+  path-expansion-params: input/resources/Parameters-pins.json
+```
+
+The guide names its pins as the IG Publisher is told where they are: the file name's
+`Parameters-<id>.json` is the Parameters with that id — the FSH instance above, or a JSON file. The
+compiled ImplementationGuide carries them (contained, under CRMI's `cqf-expansionParameters`), so
+they hold when the guide is read from the store too. A working copy still comes first: a profile
+a workspace file defines is that file, whatever is pinned. `apply operation=$resolve
+inputs:='{"canonical": "<url>"}'` (CRMI's operation) answers the resource a canonical means: the
+version it names, else the pinned one, else the one in force.
+
 ## Running it
 
 - **Workspace** (fhir-mcp): `write path=sushi-config.yaml text=@sushi-config.yaml` (problems in the
@@ -176,7 +209,8 @@ Each is reported at its line in the file.
 | `StructureDefinition/lab (0.1.0) is active: its content does not change — a new version is required (CRMI 3.1): raise `version` in sushi-config.yaml` | raise `version` (and set `status: draft`) to begin the next version |
 | `… is active: an active artifact does not go back to draft — a new version is required …` | the same: a released version stays released |
 | `definitions are staged as part of the workspace's implementation guide, whose version is theirs: write sushi-config.yaml …` | write the guide file first |
+| `… the guide here is ImplementationGuide/<id> (stored), version 0.1.0, which is active — hand it back as its file and raise `version` to draft the next (write path=sushi-config.yaml ref=…)` | make the call it gives, then raise `version` |
+| `path-expansion-params names Parameters/pins, which nothing in the workspace defines or the data holds …` (a warning) | write the Parameters (an FSH `Instance: pins`), or correct the name |
 
-Not written here: pages, menus and templates (the IG Publisher's website), and version pins for
-dependencies' artifacts. Not staged with the guide yet: a capability app's statement and
-ViewDefinitions.
+Not written here: pages, menus and templates (the IG Publisher's website). Not staged with the
+guide yet: a capability app's statement and ViewDefinitions.
