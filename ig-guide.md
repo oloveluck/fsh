@@ -135,12 +135,16 @@ write path=sushi-config.yaml ref=ImplementationGuide/example.clinic
 write path=A1c.cql ref=Library/A1c
 ```
 
-  A profile, value set or code system is FSH, without the version, status and publisher its guide
-  gives it; a library is its CQL; the guide is `sushi-config.yaml` — the file its commit kept, with
-  your comments, when that is the file of this version, else written from the resource. `ref` is a
+  What comes back is what its commit kept: the lines of the file that defined it — your comments,
+  the RuleSets, Invariants and Aliases it uses, and none of the file's other entities — whether
+  that file was FSH, CQL, VCL or a map; the guide is its `sushi-config.yaml`. (A guide's commit
+  records each resource's own file: `SELECT type, id, source, at FROM trail` says `lab.fsh:1`.) A
+  version no commit here wrote that way — a released version kept beside the next, a definition
+  loaded from elsewhere — is written from the resource: FSH without the version, status and
+  publisher its guide gives it, a library's CQL, the guide's `sushi-config.yaml`. `ref` is a
   canonical (`url`, or `url|version` for one that is not the active one) or a `Type/id`. The text
-  compiles to what is stored: staged unchanged, it is "nothing to commit". (A stored StructureMap
-  is not written back as FML yet.)
+  compiles to what is stored: staged unchanged, it is "nothing to commit". (A StructureMap comes
+  back only as the map text its commit kept: there is no FML writer yet.)
 - **Definitions are staged under a guide being drafted.** With only a released guide in the store,
   staging a definition is refused with the call that hands the guide back; raise its `version` and
   go on.
