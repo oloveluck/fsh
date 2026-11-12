@@ -113,3 +113,60 @@
 
 (check-against-published "IPS 2.0.1" "ips-2.0.1" "hl7.fhir.uv.ips.tgz" 116 94 90)
 (check-against-published "mCODE 4.0.0" "mcode-4.0.0" "hl7.fhir.us.mcode-4.0.0.tgz" 349 348 348)
+
+;; ---- 3. a guide handed back as its file ------------------------------------------------------
+;; The law: the text a published ImplementationGuide is handed back as compiles to that guide again
+;; — its header, every dependency (the Publisher's own included), its globals and its parameters.
+;; (A contact is compared by how it is reached: CRMI's has no name, and the file names the publisher.)
+(define (check-round-trip name package)
+  (define theirs (published-guide package))
+  (define text (implementation-guide->config-text theirs))
+  (define back (implementation-guide (parse-ig-config text) '()))
+  (for ([k (in-list '(id url version name title status date packageId license fhirVersion publisher description copyright jurisdiction global))])
+    (check-equal? (hash-ref back k #f) (hash-ref theirs k #f) (format "~a back from its text: ~a" name k)))
+  (define (reached g) (append* (for/list ([c (in-list (hash-ref g 'contact '()))]) (hash-ref c 'telecom '()))))
+  (check-equal? (reached back) (reached theirs) (format "~a: contact" name))
+  (define (dependency d) (list (hash-ref d 'packageId) (hash-ref d 'version) (hash-ref d 'uri) (hash-ref d 'id)))
+  (check-equal? (map dependency (hash-ref back 'dependsOn '())) (map dependency (hash-ref theirs 'dependsOn '())) (format "~a: dependsOn" name))
+  ;; the parameters, FHIR's own and the tools' (a code given several times is one key in the file:
+  ;; its values stay in order, the keys are compared as a set)
+  (define (parameters g)
+    (define d (hash-ref g 'definition (hasheq)))
+    ;; (the Publisher writes each of the tools' parameters a second time, its code as a `code`)
+    (sort (remove-duplicates
+           (append (for/list ([p (in-list (hash-ref d 'parameter '()))]) (format "~a=~a" (hash-ref p 'code) (hash-ref p 'value)))
+                   (for/list ([e (in-list (hash-ref d 'extension '()))] #:when (regexp-match? #rx"ig-parameter$" (hash-ref e 'url "")))
+                     (format "~a" (map (lambda (x) (or (hash-ref x 'valueString #f) (hash-ref x 'valueCode #f))) (hash-ref e 'extension '()))))))
+          string<?))
+  ;; a guide that lists nothing has no definition in R4, so the parameters are compared through a listed resource
+  (define listed (implementation-guide (parse-ig-config text) (list (hasheq 'resourceType "Patient" 'id "p"))))
+  (check-equal? (parameters listed) (parameters theirs) (format "~a: parameters" name))
+  ;; and the text is a fixpoint: handed back again, it is the same text
+  (check-equal? (implementation-guide->config-text listed) text (format "~a: the text of its own compilation" name)))
+
+(check-round-trip "IPS 2.0.1" "hl7.fhir.uv.ips.tgz")
+(check-round-trip "mCODE 4.0.0" "hl7.fhir.us.mcode-4.0.0.tgz")
+(check-round-trip "CRMI 2.0.0" "hl7.fhir.uv.crmi-2.0.0.tgz")
+
+;; what the text writer must quote or lay out, read back as it was
+(let* ([g (hasheq 'resourceType "ImplementationGuide" 'id "x.guide" 'url "http://x.org/ImplementationGuide/x.guide"
+                  'version "1.0" 'name "X" 'status "draft" 'fhirVersion '("4.0.1" "5.0.0") 'packageId "x.pkg"
+                  'title "Readings: a guide #1" 'description "Two paragraphs.\n\nThe second: with a colon."
+                  'publisher "null" 'copyright "\"quoted\" \\ kept "
+                  'global (list (hasheq 'type "Observation" 'profile "http://x.org/StructureDefinition/a")
+                                (hasheq 'type "Patient" 'profile "http://x.org/StructureDefinition/p")
+                                (hasheq 'type "Observation" 'profile "http://x.org/StructureDefinition/b")))]
+       [text (implementation-guide->config-text g)]
+       [back (implementation-guide (parse-ig-config text) '())])
+  (check-regexp-match #rx"description: [|]-\n  Two paragraphs[.]\n\n  The second" text)      ; a block, to edit
+  (check-regexp-match #rx"title: \"Readings: a guide #1\"" text)
+  (check-regexp-match #rx"fhirVersion:\n  - 4.0.1\n  - 5.0.0" text)
+  (for ([k (in-list '(id url version name title status packageId fhirVersion publisher description copyright))])
+    (check-equal? (hash-ref back k #f) (hash-ref g k #f) (format "~a" k)))
+  (check-equal? (map (lambda (x) (cons (hash-ref x 'type) (hash-ref x 'profile))) (hash-ref back 'global))
+                '(("Observation" . "http://x.org/StructureDefinition/a") ("Observation" . "http://x.org/StructureDefinition/b")
+                  ("Patient" . "http://x.org/StructureDefinition/p"))))
+;; a url that is not <canonical>/ImplementationGuide/<id> is stated as it is
+(let ([g (hasheq 'resourceType "ImplementationGuide" 'id "a" 'url "http://x.org/ImplementationGuide/other" 'name "A" 'status "draft" 'fhirVersion '("4.0.1"))])
+  (check-equal? (hash-ref (implementation-guide (parse-ig-config (implementation-guide->config-text g)) '()) 'url) "http://x.org/ImplementationGuide/other"))
+

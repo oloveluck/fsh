@@ -519,3 +519,14 @@ elements equal, every stated dependency as published, **117/117 and 349/349 reso
 more**, which are examples 117/117 and 349/349; ratcheted: example profiles 116/117 (an instance
 claiming two local profiles is an example of its InstanceOf) and 349/349, names 94 and 348,
 descriptions 90 and 348.
+**Back to the file** (2026-11-12): `implementation-guide->config-text` (ig.rkt) hands an
+ImplementationGuide back as the sushi-config.yaml that states it — SUSHI's keys in its
+documentation's order; `package: version` for a dependency when that compiles back to the entry,
+else its `id`/`uri` too; `global` and `parameters` grouped by key; a multi-line description as a
+`|-` block; a scalar plain when `fhir/yaml` reads it back as the same text, else quoted; what the
+guide lists is not written (it is derived). The law (`tests/ig-test.rkt` 3), on the published IPS
+2.0.1, mCODE 4.0.0 and CRMI 2.0.0 guides: the text compiles to the guide's header, every
+dependency, its globals and its parameters again (the Publisher writes each tool parameter twice,
+its code once as a string and once as a code: one entry), and is a fixpoint. fhir-mcp uses it to
+read a workspace's guide from its store and to hand it back as the file (`learn://ig`, "The store
+is the guide; the files are working copies").

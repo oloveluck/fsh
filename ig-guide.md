@@ -116,8 +116,34 @@ What happens to a definition on the way in follows HL7's CRMI guide:
   the stage, with the rule's message.
 
 `stage path=lab.fsh definitions:=true` stages one file's own definitions (without the flag, its
-instances alone). `describe ref=StructureDefinition/lab as=fsh` hands a stored definition back as
-text.
+instances alone).
+
+### The store is the guide; the files are working copies
+
+What is committed is in the store, so a working file may be deleted — or never have been here.
+
+- **With no `sushi-config.yaml`, the stored ImplementationGuide is the workspace's guide**: its
+  canonical, FHIR version, dependencies and `global` profiles still hold, and `check` says where
+  they are read from (`"guide": "ImplementationGuide/example.clinic-0.1.0 (stored)"`). Of several
+  stored versions it is the active one, as for any canonical.
+- **Any stored definition comes back as the text that states it**, to read or to edit:
+
+```text
+describe ref=http://example.org/clinic/StructureDefinition/lab as=source      (read it)
+write path=lab.fsh ref=http://example.org/clinic/StructureDefinition/lab|0.2.0 (edit it: the file is written)
+write path=sushi-config.yaml ref=ImplementationGuide/example.clinic
+write path=A1c.cql ref=Library/A1c
+```
+
+  A profile, value set or code system is FSH, without the version, status and publisher its guide
+  gives it; a library is its CQL; the guide is `sushi-config.yaml` — the file its commit kept, with
+  your comments, when that is the file of this version, else written from the resource. `ref` is a
+  canonical (`url`, or `url|version` for one that is not the active one) or a `Type/id`. The text
+  compiles to what is stored: staged unchanged, it is "nothing to commit". (A stored StructureMap
+  is not written back as FML yet.)
+- **Definitions are staged under a guide being drafted.** With only a released guide in the store,
+  staging a definition is refused with the call that hands the guide back; raise its `version` and
+  go on.
 
 ## Running it
 

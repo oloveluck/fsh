@@ -33,6 +33,10 @@
   [implementation-guide (->* (ig-config? (listof hash?))
                              (#:fhir-version (or/c string? #f) #:canonical (or/c string? #f) #:labels (hash/c string? list?))
                              hash?)]
+  ;; implementation-guide->config-text : ImplementationGuide -> string   the sushi-config.yaml that
+  ;; states the guide (the compiler's inverse: compiling the text gives the guide's header,
+  ;; dependencies, globals and parameters back; what it lists is derived, not written)
+  [implementation-guide->config-text (-> hash? string?)]
   ;; instance-labels : entities -> (hash id -> (listof (cons title|#f description|#f)))   what FSH
   ;; Instances say of themselves (`Title:`, `Description:`), in document order under each id: the
   ;; name and description of an example in the guide, which the compiled resource has no element for
@@ -218,6 +222,134 @@
            'dependsOn (map depends-on-element (ig-config-depends-on c))
            'global (for/list ([g (in-list (ig-config-globals c))]) (hasheq 'type (car g) 'profile (cdr g)))
            'definition (definition c (resource-elements resources labels r5?) r5?))))
+
+;; ---- back to the file ---------------------------------------------------------------------------
+;; A stored ImplementationGuide is handed back as the text that states it, to edit: SUSHI's keys in
+;; the order its documentation lists them. `definition.resource` is not written — the guide lists
+;; what the project's files define, whatever they are when it is compiled again.
+
+;; A YamlOut is a string | (listof string) | (listof (cons key YamlOut)): a scalar, a list of
+;; scalars, a mapping in order. #f and the empty list are nothing to write.
+
+;; yaml-scalar : string -> string   plain when yaml.rkt reads it back as the same text, else quoted
+(define (yaml-scalar s)
+  (if (and (regexp-match? #px"^[A-Za-z0-9_./][^\n\r\t]*$" s)
+           (not (regexp-match? #px": | #|:$|\\s$" s))
+           (not (member s '("null" "Null" "NULL"))))
+      s
+      (string-append "\""
+                     (regexp-replace* #px"[\\\\\"\n\r\t]" s
+                                      (lambda (c) (match c ["\\" "\\\\"] ["\"" "\\\""] ["\n" "\\n"] ["\r" "\\r"] ["\t" "\\t"])))
+                     "\"")))
+
+;; block-text? : string -> boolean   several lines a `|-` block scalar gives back exactly
+(define (block-text? s)
+  (define lines (string-split s "\n" #:trim? #f))
+  (and (pair? (cdr lines))
+       (not (regexp-match? #px"[\r\t]" s))
+       (not (string=? (car lines) "")) (not (string=? (last lines) ""))
+       (not (regexp-match? #px"^\\s" (car lines)))
+       (for/and ([l (in-list lines)]) (or (string=? l "") (not (regexp-match? #px"^\\s*$|\\s$" l))))))
+
+;; yaml-lines : key YamlOut indent -> (listof string)
+(define (yaml-lines key v [indent ""])
+  (define k (string-append indent (yaml-scalar key) ":"))
+  (match v
+    [(or #f '()) '()]
+    [(? string? s)
+     (if (block-text? s)
+         (cons (string-append k " |-")
+               (for/list ([l (in-list (string-split s "\n" #:trim? #f))]) (if (string=? l "") "" (string-append indent "  " l))))
+         (list (string-append k " " (yaml-scalar s))))]
+    [(list (? string? items) ...)
+     (cons k (for/list ([i (in-list items)]) (string-append indent "  - " (yaml-scalar i))))]
+    [(list (cons (? string? keys) values) ...)
+     (define inner (append* (for/list ([key (in-list keys)] [value (in-list values)]) (yaml-lines key value (string-append indent "  ")))))
+     (if (null? inner) '() (cons k inner))]))
+
+;; one-or-list : (listof string) -> YamlOut   a single value as a scalar, as the file is written
+(define (one-or-list l) (if (and (pair? l) (null? (cdr l))) (car l) l))
+;; grouped : (listof (cons key string)) -> (listof (cons key YamlOut))   repeated keys as one list,
+;; at the key's first place (`global` of one type, a parameter given several times)
+(define (grouped pairs)
+  (for/list ([key (in-list (remove-duplicates (map car pairs)))])
+    (cons key (one-or-list (for/list ([p (in-list pairs)] #:when (equal? (car p) key)) (cdr p))))))
+
+;; coding-text : CodeableConcept -> string | #f   `system#code "display"`, as fsh-coding reads it
+(define (coding-text cc)
+  (match (hash-ref cc 'coding '())
+    [(cons (? hash? c) _)
+     (and (str (hash-ref c 'code #f))
+          (string-append (or (str (hash-ref c 'system #f)) "") "#" (hash-ref c 'code)
+                         (let ([d (str (hash-ref c 'display #f))]) (if d (format " \"~a\"" d) ""))))]
+    [_ #f]))
+
+;; dependency-out : dependsOn -> (cons package YamlOut) | #f   `package: version` when that compiles
+;; back to this entry, else the id and uri it states as well; an entry naming no package or version
+;; has no line in the file
+(define (dependency-out d)
+  (define package (str (hash-ref d 'packageId #f)))
+  (define version (str (hash-ref d 'version #f)))
+  (and package version
+       (let* ([default (depends-on-element (depends-on package version #f #f))]
+              [stated (lambda (k) (let ([v (str (hash-ref d k #f))]) (and v (not (equal? v (hash-ref default k))) v)))]
+              [id (stated 'id)] [uri (stated 'uri)])
+         (cons package (if (or id uri) (list (cons "id" id) (cons "uri" uri) (cons "version" version)) version)))))
+
+;; parameters-out : definition -> (listof (cons code value))   the tools' parameters (the
+;; ig-parameter extensions), then FHIR's own (R4: a code; R5: a Coding), each once
+(define (parameters-out definition)
+  ;; the code is a string as SUSHI writes it and a code as the IG Publisher writes it again: one entry
+  (define (sub e url) (for/first ([x (in-list (hash-ref e 'extension '()))] #:when (equal? (hash-ref x 'url #f) url))
+                        (or (str (hash-ref x 'valueString #f)) (str (hash-ref x 'valueCode #f)))))
+  (remove-duplicates
+   (append (for*/list ([e (in-list (hash-ref definition 'extension '()))]
+                      #:when (equal? (hash-ref e 'url #f) ig-parameter-extension)
+                      [code (in-value (sub e "code"))] [value (in-value (sub e "value"))] #:when (and code value))
+            (cons code value))
+          (for*/list ([p (in-list (hash-ref definition 'parameter '()))]
+                      [code (in-value (match (hash-ref p 'code #f) [(? string? c) c] [(? hash? c) (str (hash-ref c 'code #f))] [_ #f]))]
+                      [value (in-value (str (hash-ref p 'value #f)))] #:when (and code value))
+            (cons code value)))))
+
+(define (implementation-guide->config-text ig)
+  (define (get k) (str (hash-ref ig k #f)))
+  (define id (or (get 'id) (get 'packageId) "ig"))
+  (define url (get 'url))
+  ;; the canonical base the url was made from; a url of another shape is stated as it is
+  (define canonical (and url (match (regexp-match #rx"^(.*)/ImplementationGuide/[^/]*$" url) [(list _ base) base] [_ #f])))
+  (define derived? (and canonical (equal? url (format "~a/ImplementationGuide/~a" canonical id))))
+  (define telecom (match (hash-ref ig 'contact '()) [(cons (? hash? c) _) (hash-ref c 'telecom '())] [_ '()]))
+  (define (reached-by system) (for/first ([t (in-list telecom)] #:when (equal? (hash-ref t 'system #f) system)) (str (hash-ref t 'value #f))))
+  (define publisher
+    (if (or (reached-by "url") (reached-by "email"))
+        (list (cons "name" (get 'publisher)) (cons "url" (reached-by "url")) (cons "email" (reached-by "email")))
+        (get 'publisher)))
+  (define definition (let ([d (hash-ref ig 'definition #f)]) (if (hash? d) d (hasheq))))
+  (define entries
+    (list (cons "id" id)
+          (cons "canonical" canonical)
+          (cons "url" (and (not derived?) url))
+          (cons "packageId" (let ([p (get 'packageId)]) (and p (not (equal? p id)) p)))
+          (cons "name" (get 'name))
+          (cons "title" (get 'title))
+          (cons "description" (get 'description))
+          (cons "status" (get 'status))
+          (cons "version" (get 'version))
+          (cons "fhirVersion" (one-or-list (strings (hash-ref ig 'fhirVersion '()))))
+          (cons "experimental" (and (eq? (hash-ref ig 'experimental #f) #t) "true"))
+          (cons "date" (get 'date))
+          (cons "publisher" publisher)
+          (cons "license" (get 'license))
+          (cons "copyright" (get 'copyright))
+          (cons "jurisdiction" (one-or-list (filter-map coding-text (filter hash? (hash-ref ig 'jurisdiction '())))))
+          (cons "dependencies" (filter-map dependency-out (filter hash? (hash-ref ig 'dependsOn '()))))
+          (cons "global" (grouped (for*/list ([g (in-list (hash-ref ig 'global '()))]
+                                              [type (in-value (str (hash-ref g 'type #f)))] [profile (in-value (str (hash-ref g 'profile #f)))]
+                                              #:when (and type profile))
+                                    (cons type profile))))
+          (cons "parameters" (grouped (parameters-out definition)))))
+  (string-append (string-join (append* (for/list ([e (in-list entries)]) (yaml-lines (car e) (cdr e)))) "\n") "\n"))
 
 ;; ---- problems ----------------------------------------------------------------------------------
 ;; key-line : text key [#:under parent] -> (cons line column) | #f
