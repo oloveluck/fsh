@@ -24,6 +24,8 @@
  (struct-out ig-config)
  (contract-out
   [read-ig-config      (-> path-string? ig-config?)]
+  ;; parse-ig-config : text -> ig-config   (raises exn:fail:yaml on what is not the YAML read here)
+  [parse-ig-config     (-> string? ig-config?)]
   [dependency-packages (-> (listof (cons/c string? string?)) (values (listof path?) (listof (cons/c string? string?))))]
   ;; implicit-packages : fhir-version -> (listof tgz-path)   the packages SUSHI loads without being
   ;; asked — hl7.fhir.uv.extensions and hl7.terminology for the version — when a copy is at hand
@@ -38,8 +40,9 @@
   #:transparent)
 
 ;; read-ig-config : path -> ig-config   the file read as YAML (yaml.rkt); fhirVersion may be a list
-(define (read-ig-config file)
-  (define y (read-yaml-file file))
+(define (read-ig-config file) (parse-ig-config (file->string file)))
+(define (parse-ig-config text)
+  (define y (read-yaml text))
   (define (str key) (let ([v (yref y key)]) (and (string? v) (not (string=? v "")) v)))
   (define fhir-version (match (yref y "fhirVersion") [(? string? v) v] [(cons (? string? v) _) v] [_ #f]))
   (define publisher (match (yref y "publisher")

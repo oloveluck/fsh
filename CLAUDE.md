@@ -488,3 +488,30 @@ What an agent working through fhir-mcp needed (the main repo's CLAUDE.md, "Claud
   `#:module? #t` says to require the sibling's module first). `external-sd` and `check-instance-of!`
   also find a StructureDefinition a required module registered (`registered-sd`, by url, id or name), so
   `(require "profiles/intake.fsh" "bad/bad.fsh")` builds. `tests/module-context-test.rkt`.
+
+## The implementation guide as a language (2026-11-12; the main repo's `docs/store-as-codebase.md`)
+`sushi-config.yaml` is a language of its own here, with SUSHI's syntax: `ig.rkt` compiles it to the
+ImplementationGuide (`implementation-guide config resources #:labels`): id, url, version, name (made
+from the id when absent), title, status (draft when absent), publisher and its contact, jurisdiction
+(`system#code "display"`), packageId, license, fhirVersion, `dependsOn` (the file's uri, else the
+dependency package's own canonical + `/ImplementationGuide/<id>`, else the registry's form),
+`global` (`Type: profile`, a list, or `{type, profile}` items), `definition.resource` — one per
+resource: a resource with a `url` is a definition, any other an example, of the first profile it
+claims that THIS guide defines (R4 exampleBoolean/exampleCanonical, R5 isExample/profile), named
+and described by its FSH Instance's `Title:`/`Description:` (`instance-labels`, the k-th resource
+with an id being the k-th instance with it) — and `definition.parameter` (R4: the ten codes FHIR
+binds; any other as the tools' ig-parameter extension; R5: a Coding). Pages, menus and templates
+are the IG Publisher's and are not written. `ig-diagnostics` positions every problem at its key
+(`key-line`): no id, no canonical, no version (CRMI: every artifact has one), a status that is
+none of FHIR's, a dependency no package at hand provides (a warning: IPS compiles without two of
+its own), a `global` profile nothing defines. `ig-workspace.rkt` is the workspace support (id
+"ig", `composes-workspace`): the guide of the workspace root's file, listing what the hub
+registered for the other languages, its problems and the resource's own ($validate); `run` is its
+facts and one row per listed resource; `ig-guide.md` is `learn://ig`. `ig-config.rkt` gained
+`parse-ig-config` (from text); `yaml.rkt` re-exports `fhir/yaml`, where the reader now lives.
+Oracle (`tests/ig-test.rkt`, with the guide's claims): IPS 2.0.1 and mCODE 4.0.0 from their own
+sushi-config.yaml and FSH against the ImplementationGuide in the published package — header
+elements equal, every stated dependency as published, **117/117 and 349/349 resources listed, none
+more**, which are examples 117/117 and 349/349; ratcheted: example profiles 116/117 (an instance
+claiming two local profiles is an example of its InstanceOf) and 349/349, names 94 and 348,
+descriptions 90 and 348.
