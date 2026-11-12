@@ -84,6 +84,41 @@ The profile's url is `http://example.org/clinic/StructureDefinition/lab` because
 canonical is the workspace's; `Observation/a1c-1` is an example of it because the instance claims
 it. `describe ref=http://example.org/clinic/ImplementationGuide/example.clinic` gives the resource.
 
+## Storing the guide
+
+Staging the guide stages the collection: the ImplementationGuide, every definition the workspace's
+files make (profiles, value sets, code systems, CQL libraries, maps) and their examples, as one
+change that commits or is refused whole.
+
+```text
+stage path=sushi-config.yaml keep:=false     (check only)
+stage path=sushi-config.yaml
+commit stage=latest reason="first draft of the clinic guide"
+```
+
+What happens to a definition on the way in follows HL7's CRMI guide:
+
+- **It takes the guide's facts.** Its `version`, `publisher` and `experimental` flag are the guide's
+  where it states none, and its `status` is the guide's (`draft` when the guide states none). A CQL
+  library that states a version of its own keeps it, and its released state with it.
+- **It is held to CRMI's Shareable profile**: a url, a version, a title, a status, the experimental
+  flag and a description. FSH has `Title:` and `Description:`; the guide file has `title:` and
+  `description:`; a CQL library or a VCL value set gets its title from its name and its description
+  from its leading comment.
+- **Released, it does not change.** `status: active` in the guide releases the collection. After
+  that a definition's content does not change and it does not go back to draft: raise `version`.
+- **A new version keeps the released one.** With `version` raised, the stored active definition
+  stays as an instance of its own (`StructureDefinition/lab-0.1.0`) beside the new draft
+  (`StructureDefinition/lab`). A canonical means the active version; `<url>|0.2.0` names another
+  (`describe ref=<url>|0.2.0`). Data is held to the active one once the working files are gone;
+  while they are there, the working copy is what every check uses.
+- **What a changed rule breaks is said.** A stored example the new rule no longer accepts refuses
+  the stage, with the rule's message.
+
+`stage path=lab.fsh definitions:=true` stages one file's own definitions (without the flag, its
+instances alone). `describe ref=StructureDefinition/lab as=fsh` hands a stored definition back as
+text.
+
 ## Running it
 
 - **Workspace** (fhir-mcp): `write path=sushi-config.yaml text=@sushi-config.yaml` (problems in the
@@ -107,6 +142,11 @@ Each is reported at its line in the file.
 | `package no.such.package 1.0.0 is not at hand: what it defines will not resolve …` (a warning) | put the package's `.tgz` where packages are found, or correct the id and version |
 | `global: nothing defines the profile <url> that every Observation is held to` | define the profile (an FSH `Profile:` with that url), or correct the url |
 | `workspace.yaml: canonical <a> differs from sushi-config.yaml's <b>, which is used` | remove `canonical` from workspace.yaml |
+| `StructureDefinition.description: minimum required = 1, but found 0 (add `Description: "…"` to its FSH)` (staging) | add the keyword; `title:` and `description:` in sushi-config.yaml for the guide itself |
+| `StructureDefinition/lab (0.1.0) is active: its content does not change — a new version is required (CRMI 3.1): raise `version` in sushi-config.yaml` | raise `version` (and set `status: draft`) to begin the next version |
+| `… is active: an active artifact does not go back to draft — a new version is required …` | the same: a released version stays released |
+| `definitions are staged as part of the workspace's implementation guide, whose version is theirs: write sushi-config.yaml …` | write the guide file first |
 
 Not written here: pages, menus and templates (the IG Publisher's website), and version pins for
-dependencies' artifacts.
+dependencies' artifacts. Not staged with the guide yet: a capability app's statement and
+ViewDefinitions.
