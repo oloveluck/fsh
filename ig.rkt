@@ -18,7 +18,7 @@
 ;;; `status` is `draft` when the file gives none (a guide under development), `name` is made from
 ;;; the id when the file gives none (FHIR requires both).
 
-(require racket/contract racket/list racket/string racket/match
+(require racket/contract racket/list racket/string racket/match racket/set
          (only-in fhir/diagnostic diagnostic diagnostic? loc)
          (only-in fhir/package read-package)
          (only-in fhir/suggest did-you-mean)
@@ -66,19 +66,19 @@
      (drop-absent (hasheq 'system (str system) 'code code 'display (str display)))]
     [_ (hasheq 'code s)]))
 
-;; ---- dependencies ------------------------------------------------------------------------------
-;; A Dep is (dep package-id version uri id): what one `dependencies` entry says
-(struct dep (package version uri id) #:transparent)
-(define (dependencies y)
-  (match (yref y "dependencies")
-    [(ymap es)
-     (for*/list ([e (in-list es)]
-                 [v (in-value (cdr e))]
-                 [version (in-value (cond [(string? v) v] [(ymap? v) (str (yref v "version"))] [else #f]))]
-                 #:when version)
-       (dep (car e) version (and (ymap? v) (str (yref v "uri"))) (and (ymap? v) (str (yref v "id")))))]
-    [_ '()]))
+;; Each function below builds one element of the ImplementationGuide, and is named for it.
 
+;; ---- contact -----------------------------------------------------------------------------------
+;; contact : ig-config -> (listof ContactDetail)   the publisher's url and email, under its name
+(define (contact c)
+  (define publisher (match (yref (ig-config-yaml c) "publisher") [(? ymap? m) m] [(cons (? ymap? m) _) m] [_ #f]))
+  (define telecom
+    (for*/list ([system (in-list '("url" "email"))]
+                [value (in-value (and publisher (str (yref publisher system))))] #:when value)
+      (hasheq 'system system 'value value)))
+  (if (null? telecom) '() (list (drop-absent (hasheq 'name (ig-config-publisher c) 'telecom telecom)))))
+
+;; ---- dependsOn ---------------------------------------------------------------------------------
 ;; package-canonical : tgz -> string|#f   the `canonical` of its package.json (read once per file)
 (define canonicals (make-hash))
 (define (package-canonical tgz)
@@ -88,34 +88,26 @@
                  (define-values (manifest _rs _es) (read-package tgz #:select (lambda (_) #f)))
                  (and (hash? manifest) (str (hash-ref manifest 'canonical #f)))))))
 
-;; depends-on : Dep -> jsexpr   the uri is the file's, else the dependency's own guide when its
-;; package is at hand, else the registry's form for a package's guide (as SUSHI writes them)
-(define (depends-on d)
-  (define-values (found _missing) (dependency-packages (list (cons (dep-package d) (dep-version d)))))
+;; depends-on-element : DependsOn -> jsexpr   the uri is the file's, else the dependency's own guide
+;; when its package is at hand, else the registry's form for a package's guide (as SUSHI writes them)
+(define (depends-on-element d)
+  (define package (depends-on-package d))
+  (define-values (found _missing) (dependency-packages (list (cons package (depends-on-version d)))))
   (define base (and (pair? found) (package-canonical (car found))))
-  (hasheq 'id (or (dep-id d) (regexp-replace* #rx"[^A-Za-z0-9]" (dep-package d) "_"))
-          'uri (or (dep-uri d)
-                   (and base (format "~a/ImplementationGuide/~a" (regexp-replace #rx"/+$" base "") (dep-package d)))
-                   (format "http://fhir.org/packages/~a/ImplementationGuide/~a" (dep-package d) (dep-package d)))
-          'packageId (dep-package d)
-          'version (dep-version d)))
+  (hasheq 'id (or (depends-on-id d) (regexp-replace* #rx"[^A-Za-z0-9]" package "_"))
+          'uri (or (depends-on-uri d)
+                   (and base (format "~a/ImplementationGuide/~a" (regexp-replace #rx"/+$" base "") package))
+                   (format "http://fhir.org/packages/~a/ImplementationGuide/~a" package package))
+          'packageId package
+          'version (depends-on-version d)))
 
-;; ---- global ------------------------------------------------------------------------------------
-;; globals : yaml -> (listof (cons type profile))   `Type: profile`, `Type: [profiles]`, or a list of
-;; `{type, profile}`
-(define (globals y)
-  (match (yref y "global")
-    [(ymap es) (for*/list ([e (in-list es)] [p (in-list (strings (cdr e)))]) (cons (car e) p))]
-    [(? list? l) (for*/list ([e (in-list l)]
-                             [t (in-value (str (yref e "type")))] [p (in-value (str (yref e "profile")))]
-                             #:when (and t p))
-                   (cons t p))]
-    [_ '()]))
+;; ---- definition.resource -----------------------------------------------------------------------
+;; A Label is (cons title|#f description|#f): what an FSH Instance says of itself.
+(define no-label (cons #f #f))
 
-;; ---- the resources of the project --------------------------------------------------------------
-;; instance-labels : entities -> (hash id -> (listof (cons title description)))   every instance has
-;; an entry, so the k-th resource with an id is the k-th instance with it (several types may share
-;; an id: IPS's eumfh-39-07-1 is an AllergyIntolerance, a Condition and a Procedure)
+;; instance-labels : entities -> (hash id -> (listof Label))   every instance has an entry, so the
+;; k-th resource with an id is the k-th instance with it (several types may share an id: IPS's
+;; eumfh-39-07-1 is an AllergyIntolerance, a Condition and a Procedure)
 (define (instance-labels entities)
   (for/fold ([h (hash)]) ([e (in-list entities)] #:when (fsh-instance? e))
     (define meta (fsh-instance-metadata e))
@@ -125,35 +117,49 @@
 (define (made-by-instance? r)
   (not (member (hash-ref r 'resourceType #f) '("StructureDefinition" "ValueSet" "CodeSystem"))))
 
-;; resource-entry : resource r5? label -> jsexpr | #f   a resource with a `url` is a definition; any
-;; other is an example, of the first profile it claims when it claims one, named and described as
-;; its FSH Instance says (`label`: (cons title description))
-(define (resource-entry r r5? label local-profile?)
+;; resource-element : resource r5? Label (canonical -> boolean) -> jsexpr | #f
+;; A resource with a `url` is a definition, named and described by itself. Any other is an example,
+;; of the first profile it claims that THIS guide defines (SUSHI: an example of a dependency's
+;; profile is an example, of no profile here), named and described as its FSH Instance says.
+(define (resource-element r r5? label local-profile?)
   (define type (hash-ref r 'resourceType #f))
   (define id (hash-ref r 'id #f))
+  (define definition? (string? (hash-ref r 'url #f)))
+  (define profile
+    (and (not definition?)
+         (for/first ([p (in-list (hash-ref (let ([m (hash-ref r 'meta #f)]) (if (hash? m) m (hasheq))) 'profile '()))]
+                     #:when (and (string? p) (local-profile? p)))
+           p)))
   (and (string? type) (string? id) (not (equal? type "ImplementationGuide"))
-       (let* ([definition? (string? (hash-ref r 'url #f))]
-              ;; the first profile it claims that this guide defines (SUSHI: an example of a
-              ;; dependency's profile is an example, of no profile here)
-              [profile (for/first ([p (in-list (hash-ref (let ([m (hash-ref r 'meta #f)]) (if (hash? m) m (hasheq))) 'profile '()))]
-                                   #:when (and (string? p) (local-profile? p)))
-                         p)]
-              [base (drop-absent
-                     (hasheq 'reference (hasheq 'reference (string-append type "/" id))
-                             ;; an example is named by its Instance (`Title:`), a definition by itself
-                             'name (if definition?
-                                       (or (str (hash-ref r 'title #f)) (str (hash-ref r 'name #f)) (car label) id)
-                                       (or (car label) id))
-                             'description (if definition?
-                                              (or (str (hash-ref r 'description #f)) (cdr label))
-                                              (cdr label))))])
-         (cond [r5? (let ([h (hash-set base 'isExample (not definition?))])
-                      (if (and profile (not definition?)) (hash-set h 'profile (list profile)) h))]
+       (let ([base (drop-absent
+                    (hasheq 'reference (hasheq 'reference (string-append type "/" id))
+                            'name (if definition?
+                                      (or (str (hash-ref r 'title #f)) (str (hash-ref r 'name #f)) id)
+                                      (or (car label) id))
+                            'description (if definition? (str (hash-ref r 'description #f)) (cdr label))))])
+         (cond [r5? (let ([h (hash-set base 'isExample (not definition?))]) (if profile (hash-set h 'profile (list profile)) h))]
                [definition? (hash-set base 'exampleBoolean #f)]
                [profile (hash-set base 'exampleCanonical profile)]
                [else (hash-set base 'exampleBoolean #t)]))))
 
-;; ---- parameters --------------------------------------------------------------------------------
+;; resource-elements : resources labels r5? -> (listof jsexpr)   one per resource, each instance-made
+;; resource taking the next label of its id
+(define (resource-elements resources labels r5?)
+  (define local (for/set ([r (in-list resources)]
+                          #:when (equal? (hash-ref r 'resourceType #f) "StructureDefinition")
+                          #:when (string? (hash-ref r 'url #f)))
+                  (hash-ref r 'url)))
+  (define (local-profile? p) (set-member? local (car (regexp-split #rx"[|]" p))))
+  (define-values (elements _left)
+    (for/fold ([elements '()] [left labels]) ([r (in-list resources)])
+      (define id (hash-ref r 'id #f))
+      (define mine (if (and (string? id) (made-by-instance? r)) (hash-ref left id '()) '()))
+      (define element (resource-element r r5? (if (pair? mine) (car mine) no-label) local-profile?))
+      (values (if element (cons element elements) elements)
+              (if (pair? mine) (hash-set left id (cdr mine)) left))))
+  (reverse elements))
+
+;; ---- definition.parameter ----------------------------------------------------------------------
 ;; R4 binds `definition.parameter.code` to ten codes; any other is the tools' ig-parameter extension
 ;; on `definition`. R5's code is a Coding of the tools' code system.
 (define r4-parameter-codes
@@ -161,54 +167,36 @@
     "generate-xml" "generate-json" "generate-turtle" "html-template"))
 (define ig-parameter-extension "http://hl7.org/fhir/tools/StructureDefinition/ig-parameter")
 (define ig-parameter-system "http://hl7.org/fhir/tools/CodeSystem/ig-parameters")
-;; parameters : yaml -> (listof (cons code value))
-(define (parameters y)
-  (match (yref y "parameters")
+;; parameters : ig-config -> (listof (cons code value))
+(define (parameters c)
+  (match (yref (ig-config-yaml c) "parameters")
     [(ymap es) (for*/list ([e (in-list es)] [v (in-list (strings (cdr e)))]) (cons (car e) v))]
     [_ '()]))
+
+;; definition : ig-config resource-elements r5? -> jsexpr | #f   R4 requires a resource in a
+;; definition: a guide that lists none has no definition yet
+(define (definition c elements r5?)
+  (define-values (bound unbound)
+    (partition (lambda (p) (or r5? (member (car p) r4-parameter-codes))) (parameters c)))
+  (and (or (pair? elements) (and r5? (pair? bound)))
+       (drop-absent
+        (hasheq 'extension (for/list ([p (in-list unbound)])
+                             (hasheq 'url ig-parameter-extension
+                                     'extension (list (hasheq 'url "code" 'valueString (car p))
+                                                      (hasheq 'url "value" 'valueString (cdr p)))))
+                'resource elements
+                'parameter (for/list ([p (in-list bound)])
+                             (hasheq 'code (if r5? (hasheq 'system ig-parameter-system 'code (car p)) (car p))
+                                     'value (cdr p)))))))
 
 ;; ---- the guide ---------------------------------------------------------------------------------
 (define (implementation-guide c resources #:fhir-version [fhir-version* #f] #:canonical [canonical* #f] #:labels [labels (hash)])
   (define y (ig-config-yaml c))
   (define (given k) (str (yref y k)))
-  (define versions (let ([vs (strings (yref y "fhirVersion"))]) (if (pair? vs) vs (list (or fhir-version* "4.0.1")))))
+  (define versions (let ([vs (ig-config-fhir-versions c)]) (if (pair? vs) vs (list (or fhir-version* "4.0.1")))))
   (define r5? (not (regexp-match? #rx"^4[.]" (car versions))))
   (define canonical (regexp-replace #rx"/+$" (or (ig-config-canonical c) canonical* "http://example.org") ""))
   (define id (or (given "id") (given "packageId") "ig"))
-  (define publisher (yref y "publisher"))
-  (define publisher-map (match publisher [(? ymap? m) m] [(cons (? ymap? m) _) m] [_ #f]))
-  (define contact
-    (let ([telecom (append (let ([u (and publisher-map (str (yref publisher-map "url")))]) (if u (list (hasheq 'system "url" 'value u)) '()))
-                           (let ([e (and publisher-map (str (yref publisher-map "email")))]) (if e (list (hasheq 'system "email" 'value e)) '())))])
-      (if (pair? telecom) (list (drop-absent (hasheq 'name (ig-config-publisher c) 'telecom telecom))) '())))
-  (define entries (filter values (let ([seen (make-hash)]         ; id -> how many instance-made resources had it so far
-                                       [local (for/hash ([r (in-list resources)]
-                                                         #:when (equal? (hash-ref r 'resourceType #f) "StructureDefinition")
-                                                         #:when (string? (hash-ref r 'url #f)))
-                                                (values (hash-ref r 'url) #t))])
-                                     (for/list ([r (in-list resources)])
-                                       (define id (hash-ref r 'id #f))
-                                       (define mine (if (and (string? id) (made-by-instance? r)) (hash-ref labels id '()) '()))
-                                       (define k (if (pair? mine) (hash-ref seen id 0) 0))
-                                       (when (pair? mine) (hash-set! seen id (add1 k)))
-                                       (resource-entry r r5? (if (< k (length mine)) (list-ref mine k) (cons #f #f))
-                                                       (lambda (p) (hash-ref local (car (regexp-split #rx"[|]" p)) #f)))))))
-  (define params (parameters y))
-  (define core-params (if r5? params (filter (lambda (p) (member (car p) r4-parameter-codes)) params)))
-  (define other-params (if r5? '() (filter (lambda (p) (not (member (car p) r4-parameter-codes))) params)))
-  (define definition
-    ;; R4 requires a resource in a definition: a guide that lists none has no definition yet
-    (and (or r5? (pair? entries))
-         (or (pair? entries) (pair? params))
-         (drop-absent
-          (hasheq 'extension (for/list ([p (in-list other-params)])
-                               (hasheq 'url ig-parameter-extension
-                                       'extension (list (hasheq 'url "code" 'valueString (car p))
-                                                        (hasheq 'url "value" 'valueString (cdr p)))))
-                  'resource entries
-                  'parameter (for/list ([p (in-list core-params)])
-                               (hasheq 'code (if r5? (hasheq 'system ig-parameter-system 'code (car p)) (car p))
-                                       'value (cdr p)))))))
   (drop-absent
    (hasheq 'resourceType "ImplementationGuide"
            'id id
@@ -217,19 +205,19 @@
            'name (or (ig-config-name c) (machine-name id))
            'title (ig-config-title c)
            'status (or (ig-config-status c) "draft")
-           'experimental (match (yaml-boolean (yref y "experimental")) [#t #t] [_ 'absent])
+           'experimental (if (eq? (ig-config-experimental c) #t) #t 'absent)
            'date (given "date")
            'publisher (ig-config-publisher c)
-           'contact contact
+           'contact (contact c)
            'description (ig-config-description c)
            'jurisdiction (for/list ([j (in-list (strings (yref y "jurisdiction")))]) (hasheq 'coding (list (fsh-coding j))))
            'copyright (given "copyright")
            'packageId (or (given "packageId") id)
            'license (ig-config-license c)
            'fhirVersion versions
-           'dependsOn (map depends-on (dependencies y))
-           'global (for/list ([g (in-list (globals y))]) (hasheq 'type (car g) 'profile (cdr g)))
-           'definition definition)))
+           'dependsOn (map depends-on-element (ig-config-depends-on c))
+           'global (for/list ([g (in-list (ig-config-globals c))]) (hasheq 'type (car g) 'profile (cdr g)))
+           'definition (definition c (resource-elements resources labels r5?) r5?))))
 
 ;; ---- problems ----------------------------------------------------------------------------------
 ;; key-line : text key [#:under parent] -> (cons line column) | #f
@@ -285,7 +273,7 @@
                    (format "package ~a ~a is not at hand: what it defines will not resolve (put ~a-~a.tgz in fhir-spec or on FHIR_PACKAGE_PATH)"
                            (car m) (cdr m) (car m) (cdr m))
                    (or (key-line text (car m) #:under "dependencies") (key-line text "dependencies")))))
-      (for*/list ([g (in-list (globals y))]
+      (for*/list ([g (in-list (ig-config-globals c))]
                   [p (in-value
                       (cond [(and resource-types (not (member (car g) resource-types)))
                              (problem 'error (format "global: `~a` is not a resource type~a" (car g) (did-you-mean (car g) resource-types))

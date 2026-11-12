@@ -507,8 +507,12 @@ none of FHIR's, a dependency no package at hand provides (a warning: IPS compile
 its own), a `global` profile nothing defines. `ig-workspace.rkt` is the workspace support (id
 "ig", `composes-workspace`): the guide of the workspace root's file, listing what the hub
 registered for the other languages, its problems and the resource's own ($validate); `run` is its
-facts and one row per listed resource; `ig-guide.md` is `learn://ig`. `ig-config.rkt` gained
-`parse-ig-config` (from text); `yaml.rkt` re-exports `fhir/yaml`, where the reader now lives.
+facts and one row per listed resource; `ig-guide.md` is `learn://ig`. The reading of the file is
+the foundation's — `fhir/ig-config` (`parse-ig-config`, and what the struct's fields do not hold:
+`ig-config-depends-on`, `ig-config-globals`, `ig-config-experimental`, `ig-config-fhir-versions`)
+and `fhir/yaml` — re-exported here as `fsh/ig-config` and `fsh/yaml`: the workspace reads the guide
+too, and there is ONE reader. ig.rkt builds each element of the resource in a function named for
+it (`contact`, `depends-on-element`, `resource-elements`, `definition`).
 Oracle (`tests/ig-test.rkt`, with the guide's claims): IPS 2.0.1 and mCODE 4.0.0 from their own
 sushi-config.yaml and FSH against the ImplementationGuide in the published package — header
 elements equal, every stated dependency as published, **117/117 and 349/349 resources listed, none

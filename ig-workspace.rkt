@@ -14,9 +14,10 @@
 
 (require racket/contract racket/list racket/string racket/file racket/runtime-path
          fhir/lang/workspace
-         (only-in fhir/registry registered-by registered-resource)
+         (only-in fhir/registry registered-by)
          (only-in fhir/diagnostic diagnostic diagnostic-severity diagnostic->jsexpr loc)
-         (only-in fhir/sd/sd-index resolve-sd-raw sd-index-available?)
+         (only-in fhir/sd/sd-index sd-index-available?)
+         (only-in fhir/sd/operations resolve-structure-definition)
          (only-in fhir/operation apply-operation)
          (only-in "yaml.rkt" exn:fail:yaml?)
          (only-in "ig-config.rkt" parse-ig-config)
@@ -41,12 +42,12 @@
 (define (workspace-resources)
   (registered-by (lambda (s) (and (pair? s) (eq? (car s) 'workspace) (pair? (cdr s)) (not (equal? (cadr s) "ig"))))))
 
-;; defined? : canonical -> boolean   a profile the workspace or its packages define; without a
-;; package index nothing can be said, and nothing is
+;; defined? : canonical -> boolean   a profile the data, the workspace's files or the packages
+;; define (as every resolver looks: fhir/sd/operations); without a package index nothing can be
+;; said, and nothing is
 (define (defined? url)
-  (or (and (registered-resource "StructureDefinition" url) #t)
-      (not (sd-index-available?))
-      (and (with-handlers ([exn:fail? (lambda (_) #f)]) (resolve-sd-raw url)) #t)))
+  (or (not (sd-index-available?))
+      (and (with-handlers ([exn:fail? (lambda (_) #f)]) (resolve-structure-definition url)) #t)))
 
 ;; compiled : workspace (cons path text) -> jsexpr | #f   the ImplementationGuide; #f when the file
 ;; is not YAML
