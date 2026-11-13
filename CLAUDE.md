@@ -28,8 +28,8 @@ makes a `.fsh` file a module providing `document`/`compiled`(jsexpr)/`resources`
 `fsh/print.rkt` (FSH AST → text). `fhir->fsh` (jsexpr) / `node->fsh` (typed node) emit idiomatic rules
 where recognised (card/flag/binding/only-with-targetProfile/obeys/concept/include-exclude) and a
 lossless `^caret` catch-all for everything else; Invariants are **not** emitted standalone (SUSHI-style)
-but re-synthesised from SD constraints so a recompile refills severity/human/expression. `raco fhir
-gofsh <file.json>` is the CLI. Invariants are consumed only as SD constraint sources — `compile-doc`
+but re-synthesised from SD constraints so a recompile refills severity/human/expression. `raco fsh
+--decompile <file.json>` is the CLI. Invariants are consumed only as SD constraint sources — `compile-doc`
 skips standalone `fsh-invariant` output.
 
 ## Real-IG corpus: IPS 2.0.1 (`tests/ig-ips-test.rkt`, `tests/ig-harness.rkt`)
@@ -544,3 +544,9 @@ gives `workspace-files`. The workspace support compiled everything under the roo
 of FSH, or the text export of the store (`export/`, fhir-mcp), was compiled as a second copy and the
 guide listed each definition twice (found by the export's law: put back, it must be "nothing to
 commit"). ig-guide.md: "The store in git: the text export", "What depends on what".
+
+**The editor compiles the project** (2026-11-13): `support.rkt`'s `diagnose` handed the document's
+own path to `compile-project`, so the language server compiled that file alone and reported a Parent,
+InstanceOf or RuleSet of a sibling file as not found (go to definition found it). It compiles
+`project-root` now, with the document's text over its file; a problem in another file is published on
+that file (fhir-lsp groups by uri). Found writing fhir-lsp's manual, which had said so all along.

@@ -17,7 +17,7 @@
 ;; diagnose : text path -> diagnostics   the document's project compiled (sushi-config beside it or
 ;; up to two levels up), with this text standing in for the file on disk
 (define (diagnose text path)
-  (define p (compile-project path #:texts (hash (path-string (simplify-path (path->complete-path path))) (blank-lang-line text))))
+  (define p (compile-project (project-root path) #:texts (hash (path-string (simplify-path (path->complete-path path))) (blank-lang-line text))))
   (project-diagnostics p))
 
 ;; project-files : path -> paths   every .fsh of the document's project
@@ -67,4 +67,9 @@
   (check-equal? (length (project-files (build-path dir "a.fsh"))) 1)
   (define ds (diagnose "Profile: P\nParent: Observation\n* nmae MS\n" (build-path dir "a.fsh")))
   (check-true (pair? ds))
+  ;; a Parent another file of the project defines is found (the document alone used to be compiled,
+  ;; so the editor said "Parent `P2` not found" while go to definition opened it)
+  (with-output-to-file (build-path dir "a.fsh") #:exists 'truncate (lambda () (display "Profile: P2\nParent: Observation\n")))
+  (with-output-to-file (build-path dir "b.fsh") (lambda () (display "Profile: Q\nParent: P2\n")))
+  (check-equal? (diagnose "Profile: Q\nParent: P2\n* status MS\n" (build-path dir "b.fsh")) '())
   (delete-directory/files dir))

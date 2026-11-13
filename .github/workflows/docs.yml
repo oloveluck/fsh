@@ -42,7 +42,7 @@ jobs:
         run: raco test lint.rkt support.rkt support/symbols.rkt support/complete.rkt compile.rkt print.rkt decompile.rkt sd.rkt context.rkt instance.rkt project.rkt check.rkt caret.rkt parser/parse.rkt tests/golden-test.rkt tests/roundtrip-test.rkt tests/features-test.rkt tests/check-r4-test.rkt tests/ig-ips-test.rkt tests/ig-mcode-test.rkt tests/ig-plannet-test.rkt tests/ig-hrex-test.rkt tests/ig-genomics-test.rkt tests/gofsh-ips-test.rkt tests/gofsh-mcode-test.rkt tests/sushi-importer-test.rkt tests/pack-test.rkt
       - name: Build the documentation
         run: |
-          raco scribble +m --html --dest site --dest-name index.html --redirect-main https://docs.racket-lang.org/ scribblings/fsh.scrbl
+          raco scribble +m --html --dest site --dest-name index.html --redirect-main https://docs.racket-lang.org/ ++style scribblings/manual.css scribblings/fsh.scrbl
       # Publish: the built site goes to the gh-pages branch, which GitHub serves as the Pages site
       # (enabled automatically for a public repository; otherwise choose "Deploy from a branch:
       # gh-pages" once under Settings > Pages).
