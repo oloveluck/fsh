@@ -47,7 +47,10 @@
       (and (equal? (hash-ref c 'file) "FSHImporter.Logical.test.ts")                                      ; the missing-short error
            (equal? name "should parse complete add element rules"))
       (regexp-match? #rx"should log a warning when a data type is defined with a flag value" name)       ; "extraneous input" after the flag
-      (regexp-match? #rx"should log a warning for missing targetType with flags and docs" name)))
+      (regexp-match? #rx"should log a warning for missing targetType with flags and docs" name)
+      ;; `Target: http://example.org/target`, unquoted: FSH.g4 is `target: KW_TARGET STRING`, so SUSHI's
+      ;; parser logs "mismatched input … expecting STRING" and recovers; the test looks at the rule only
+      (and (equal? (hash-ref c 'file) "FSHImporter.Mapping.test.ts") (equal? name "should parse a pathRule"))))
 
 ;; expected-line : case -> integer|#f   the line SUSHI's expected error message names
 (define (expected-line c)

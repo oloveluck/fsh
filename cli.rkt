@@ -106,6 +106,45 @@
   ((if (zero? code) printf eprintf) "usage: raco fsh <file.fsh | dir> [-o <outdir>] [--snapshot] [--canonical <url>] [--fhir-version 4.0.1|5.0.0] [--format text|json|outcome] [--pack [out.tgz]]\n       raco fsh --decompile <file.json>...\n       raco fsh check <dir> [--context <dir>]… [--capability <CapabilityStatement id>] [--format text|json|outcome]\n")
   (exit code))
 
+;; ---- arguments ---------------------------------------------------------------------------------
+;; A Command is one of: (list 'help) | (list 'usage) | (list 'decompile files)
+;;   | (list 'check dir capability context)                      context: (listof dir)
+;;   | (list 'compile src out snapshot? canonical fhir-version pack)   pack: #f | #t | "out.tgz"
+;; parse-args : (listof string) -> Command   what the command line asks for; 'usage when it cannot be read
+(define (parse-args args)
+  (match args
+    [(list _ ... (or "-h" "--help") _ ...) '(help)]
+    ['() '(usage)]
+    [(cons "check" rest) (parse-check-args rest)]
+    [(cons "--decompile" files) (if (pair? files) (list 'decompile files) '(usage))]
+    [_ (parse-compile-args args)]))
+;; parse-check-args : (listof string) -> Command   `check <dir> [--context <dir>]… [--capability id]`
+;; --context (repeatable): another folder whose definitions are in context, its instances and its
+;; problems left out — examples meant to fail, checked against the project's profiles
+(define (parse-check-args args)
+  (let loop ([as args] [dir #f] [cs #f] [ctx '()])
+    (match as
+      ['() (if dir (list 'check dir cs (reverse ctx)) '(usage))]
+      [(list* "--capability" c rest) (loop rest dir c ctx)]
+      [(list* "--context" d rest) (loop rest dir cs (cons d ctx))]
+      [(list* d rest) #:when (and (not dir) (not (regexp-match? #rx"^--" d))) (loop rest d cs ctx)]
+      [_ '(usage)])))
+;; parse-compile-args : (listof string) -> Command   `<file|dir> [-o dir] [--snapshot] [--canonical url]
+;; [--fhir-version v] [--pack [out.tgz]]`; `--pack` takes the next argument when it names a .tgz
+(define (parse-compile-args args)
+  (let loop ([as args] [src #f] [out #f] [snapshot? #f] [canonical #f] [fv #f] [pack #f])
+    (match as
+      ['() (if src (list 'compile src out snapshot? canonical fv pack) '(usage))]
+      [(list* "-o" o rest) (loop rest src o snapshot? canonical fv pack)]
+      [(list* "--snapshot" rest) (loop rest src out #t canonical fv pack)]
+      [(list* "--canonical" c rest) (loop rest src out snapshot? c fv pack)]
+      [(list* "--fhir-version" v rest) (loop rest src out snapshot? canonical v pack)]
+      [(list* "--pack" (? (lambda (a) (regexp-match? #rx"[.]tgz$" a)) tgz) rest) (loop rest src out snapshot? canonical fv tgz)]
+      [(list* "--pack" rest) (loop rest src out snapshot? canonical fv #t)]
+      [(list* (regexp #rx"^-") _) '(usage)]
+      [(list* s rest) #:when (not src) (loop rest s out snapshot? canonical fv pack)]
+      [_ '(usage)])))
+
 (module+ main
   (define-values (fmt args) (format-flag (vector->list (current-command-line-arguments))))
   ;; an unreadable input file is a one-line error (exit 2), not a stack trace
@@ -117,34 +156,36 @@
               (eprintf "fsh: cannot read ~a\n" (if m (cadr m) (exn-message e)))
               (exit 2)]
              [else (default e)]))))
-  (cond
-    [(ormap (lambda (a) (member a '("-h" "--help"))) args) (usage 0)]
-    [(equal? (car args) "check")
-     ;; a path that is not there is a usage error (exit 2), not a clean check of nothing
-     (define (existing p) (unless (or (directory-exists? p) (file-exists? p))
-                            (eprintf "fsh check: no such file or directory: ~a\n" p) (exit 2))
-       p)
-     ;; --context <dir> (repeatable): another folder whose definitions are in context, its instances
-     ;; and its problems left out — examples meant to fail, checked against the project's profiles
-     (let loop ([as (cdr args)] [dir #f] [cs #f] [ctx '()])
-       (match as
-         ['() (if dir (check-project (existing dir) cs fmt (reverse ctx)) (usage))]
-         [(list* "--capability" c rest) (loop rest dir c ctx)]
-         [(list* "--context" d rest) (loop rest dir cs (cons (existing d) ctx))]
-         [(list* d rest) #:when (and (not dir) (not (regexp-match? #rx"^--" d))) (loop rest d cs ctx)]
-         [_ (usage)]))]
-    [(null? args) (usage)]
-    [(equal? (car args) "--decompile") (if (pair? (cdr args)) (decompile-files (cdr args)) (usage))]
-    [else
-     (define pack (let ([m (member "--pack" args)])
-                    (and m (if (and (pair? (cdr m)) (regexp-match? #rx"[.]tgz$" (cadr m))) (cadr m) #t))))
-     (let loop ([as (remove* (list "--pack" (and (string? pack) pack)) args)] [src #f] [out #f] [snapshot? #f] [canonical #f] [fv #f])
-       (cond
-         [(null? as) (if src (compile-path src out snapshot? canonical fv #:format fmt #:pack pack) (usage))]
-         [(and (equal? (car as) "-o") (pair? (cdr as))) (loop (cddr as) src (cadr as) snapshot? canonical fv)]
-         [(equal? (car as) "--snapshot") (loop (cdr as) src out #t canonical fv)]
-         [(and (equal? (car as) "--canonical") (pair? (cdr as))) (loop (cddr as) src out snapshot? (cadr as) fv)]
-         [(and (equal? (car as) "--fhir-version") (pair? (cdr as))) (loop (cddr as) src out snapshot? canonical (cadr as))]
-         [(regexp-match? #rx"^-" (car as)) (usage)]
-         [src (usage)]
-         [else (loop (cdr as) (car as) out snapshot? canonical fv)]))]))
+  ;; a path that is not there is a usage error (exit 2), not a clean check of nothing
+  (define (existing p)
+    (unless (or (directory-exists? p) (file-exists? p))
+      (eprintf "fsh check: no such file or directory: ~a\n" p) (exit 2))
+    p)
+  (match (parse-args args)
+    ['(help) (usage 0)]
+    ['(usage) (usage)]
+    [(list 'decompile files) (decompile-files files)]
+    [(list 'check dir capability context) (check-project (existing dir) capability fmt (map existing context))]
+    [(list 'compile src out snapshot? canonical fv pack)
+     (compile-path src out snapshot? canonical fv #:format fmt #:pack pack)]))
+
+(module+ test
+  (require rackunit)
+  ;; no argument at all is the usage (it was `car` of the empty list, a stack trace)
+  (check-equal? (parse-args '()) '(usage))
+  (check-equal? (parse-args '("x.fsh" "--help")) '(help))
+  (check-equal? (parse-args '("--decompile")) '(usage))
+  (check-equal? (parse-args '("--decompile" "a.json" "b.json")) '(decompile ("a.json" "b.json")))
+  (check-equal? (parse-args '("check")) '(usage))
+  (check-equal? (parse-args '("check" "ig" "--context" "a" "--capability" "cs" "--context" "b")) '(check "ig" "cs" ("a" "b")))
+  (check-equal? (parse-args '("check" "ig" "extra")) '(usage))
+  (check-equal? (parse-args '("ig")) '(compile "ig" #f #f #f #f #f))
+  (check-equal? (parse-args '("ig" "-o" "out" "--snapshot" "--canonical" "http://x" "--fhir-version" "4.0.1"))
+                '(compile "ig" "out" #t "http://x" "4.0.1" #f))
+  ;; --pack alone, with its file, before or after the source
+  (check-equal? (parse-args '("ig" "--pack")) '(compile "ig" #f #f #f #f #t))
+  (check-equal? (parse-args '("--pack" "p.tgz" "ig")) '(compile "ig" #f #f #f #f "p.tgz"))
+  (check-equal? (parse-args '("--pack" "ig")) '(compile "ig" #f #f #f #f #t))
+  (check-equal? (parse-args '("ig" "--nope")) '(usage))
+  (check-equal? (parse-args '("ig" "-o")) '(usage))
+  (check-equal? (parse-args '("a" "b")) '(usage)))

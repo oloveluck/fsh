@@ -72,6 +72,7 @@
 (define (lint-entity e l toks)
   (define src (and l (loc-source l)))
   (append (duplicate-metadata toks src)
+          (unquoted-target toks src)
           (operator-spacing e toks src)
           (instance-checks e (or (keyword-loc toks 'KW_USAGE src) l))
           (append* (for/list ([r (in-list (or (entity-rules e) '()))])
@@ -90,6 +91,15 @@
              #:unless (begin0 (not (hash-ref seen (token-struct-type t) #f)) (hash-set! seen (token-struct-type t) #t)))
     (err (token-loc t src) (format "The ~a metadata is declared more than once"
                                (string-trim (regexp-replace #rx":$" (string-trim (token-struct-val t)) ""))))))
+
+;; unquoted-target : tokens source -> (listof diagnostic)   a Mapping's `Target:` is a quoted string
+;; (FSH.g4: `target: KW_TARGET STRING`). The grammar here reads a bare word too, as SUSHI's parser
+;; recovers from one, so that the mistake is said where it is rather than as a failed parse.
+(define (unquoted-target toks src)
+  (for/list ([t (in-list toks)] [next (in-list (if (null? toks) '() (cdr toks)))]
+             #:when (and (eq? (token-struct-type t) 'KW_TARGET) (eq? (token-struct-type next) 'SEQUENCE)))
+    (err (token-loc next src)
+         (format "The Target of a Mapping is a quoted string: write `Target: \"~a\"`" (token-struct-val next)))))
 
 ;; operator-spacing : entity tokens source -> (listof diagnostic)   `=`/`->` need a space on both sides
 ;; (SUSHI's lexer reads `a=b` as one word and its error listener explains the failure this way)
@@ -209,8 +219,12 @@
    (if (and (pair? filters) (null? systems))
        (list (err l "A filter component must name a system (`codes from system SYS where …`)")) '())))
 
-;; piped-reference? : string -> boolean   `Reference(A | B)` (a Canonical's `|` is its version)
-(define (piped-reference? t) (regexp-match? #px"^(?:Codeable)?Reference\\s*\\([^)]*[|]" t))
+;; piped-reference? : string -> boolean   `Reference(A | B)`: a `|` beside whitespace lists targets,
+;; the syntax FSH dropped. A `|` inside a name is its version (`Reference(USCorePatientProfile|7.0.0)`,
+;; as in a Canonical): FSHLexer.g4's REFERENCE holds SEQUENCEs, and a SEQUENCE is any run without
+;; whitespace, so SUSHI reads the pin and reports only the spaced form (its error listener's
+;; "extraneous input '|'"). HRex pins its US Core targets this way.
+(define (piped-reference? t) (regexp-match? #px"^(?:Codeable)?Reference\\s*\\([^)]*(?:\\s[|]|[|]\\s)" t))
 ;; choice? : string -> boolean   `Reference(A or B)` — a choice of targets inside the parentheses
 (define (choice? target) (regexp-match? #px"\\((?:[^)]*\\s)?or\\s[^)]*\\)" target))
 
@@ -299,6 +313,13 @@
   (check-equal? (lint-document (list (list (fsh-mapping "M" '() '()) (loc #f 1 1 0 8)
                                            (list (tok 'STAR "* " 0 3 0 2) (tok 'ARROW "->" 2 3 2 2) (tok 'STRING "x" 5 3 5 3)))))
                 '())
+  ;; a Mapping's Target written bare (FSH.g4 takes a STRING there)
+  (check-equal? (msgs (lint-document (list (list (fsh-mapping "M" '((source . "P") (target . "http://x")) '()) (loc #f 1 1 0 8)
+                                                 (list (tok 'KW_TARGET "Target:" 20 3 0 7) (tok 'SEQUENCE "http://x" 28 3 8 8))))))
+                '("The Target of a Mapping is a quoted string: write `Target: \"http://x\"`"))
+  (check-equal? (msgs (lint-document (list (list (fsh-mapping "M" '((source . "P") (target . "http://x")) '()) (loc #f 1 1 0 8)
+                                                 (list (tok 'KW_TARGET "Target:" 20 3 0 7) (tok 'STRING "http://x" 28 3 8 10))))))
+                '())
   ;; an Instance without InstanceOf, and with an unknown Usage
   (check-equal? (msgs (lint-document (list (list (fsh-instance "I" '((title . "t")) '()) (loc #f 1 1 0 9) '()))))
                 '("Instance I is missing its InstanceOf declaration"))
@@ -357,8 +378,13 @@
   (check-equal? (rule-msgs (fsh-profile "P" '() (list (rule-only "instantiates" '("Canonical(A|1.0 or B|2.0)"))))) '())
   ;; a filter's code value is not a concept of the component
   (check-equal? (rule-msgs (fsh-valueset "VS" '() (list (vs-component #t (list (filt "is-a" (list 'code (code-tok "ZOO#bear")))))))) '())
-  (check-equal? (rule-msgs (fsh-profile "P" '() (list (rule-assign "subject" (fsh-reference "Reference(A|B)" #f) #f))))
+  (check-equal? (rule-msgs (fsh-profile "P" '() (list (rule-assign "subject" (fsh-reference "Reference(A |B)" #f) #f))))
                 (list pipes-message))
+  ;; a `|` with no whitespace beside it pins a version (SUSHI's lexer reads it as part of the name)
+  (check-equal? (rule-msgs (fsh-profile "P" '() (list (rule-only "patient" '("Reference(USCorePatientProfile|7.0.0)"))
+                                                      (rule-only "performer" '("Reference(USCorePatientProfile|7.0.0 or RelatedPerson)"))
+                                                      (rule-assign "subject" (fsh-reference "Reference(A|1.0)" #f) #f))))
+                '())
   (check-equal? (rule-msgs (fsh-valueset "VS" '() (list (rule-caret "mypath" "^publisher" "foo"))))
                 '("A caret rule on a ValueSet takes no path (mypath): write `* ^…` or `* <code> ^…`"))
   (check-equal? (rule-msgs (fsh-valueset "VS" '() (list (rule-caret #f "^publisher" "foo")))) '())
