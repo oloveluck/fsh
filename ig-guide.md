@@ -141,10 +141,10 @@ write path=A1c.cql ref=Library/A1c
   records each resource's own file: `SELECT type, id, source, at FROM trail` says `lab.fsh:1`.) A
   version no commit here wrote that way — a released version kept beside the next, a definition
   loaded from elsewhere — is written from the resource: FSH without the version, status and
-  publisher its guide gives it, a library's CQL, the guide's `sushi-config.yaml`. `ref` is a
+  publisher its guide gives it, a library's CQL, a StructureMap as the mapping language (the
+  specified language: `learn://fml`), the guide's `sushi-config.yaml`. `ref` is a
   canonical (`url`, or `url|version` for one that is not the active one) or a `Type/id`. The text
-  compiles to what is stored: staged unchanged, it is "nothing to commit". (A StructureMap comes
-  back only as the map text its commit kept: there is no FML writer yet.)
+  compiles to what is stored: staged unchanged, it is "nothing to commit".
 - **Definitions are staged under a guide being drafted.** With only a released guide in the store,
   staging a definition is refused with the call that hands the guide back; raise its `version` and
   go on.
