@@ -34,7 +34,8 @@
   [map-files       (-> path-string? (listof path?))]
   [compile-project (->* (path-string?) (#:canonical (or/c string? #f) #:fhir-version (or/c string? #f)
                                         #:snapshot? boolean? #:texts (hash/c string? string?)
-                                        #:packages (listof path-string?) #:context (listof path-string?))
+                                        #:packages (listof path-string?) #:context (listof path-string?)
+                                        #:files (or/c (listof path-string?) #f))
                         project?)]
   [pack-project!   (-> project? path-string? path?)]))
 
@@ -85,8 +86,11 @@
         [else '()]))
 
 ;; #:texts — the text of a file as an editor holds it (by its complete path), in place of the disk
+;; #:files — the project's files, in place of every .fsh and .map under `src` (a workspace knows
+;; which files are its own: not its data, nor a text export of its store)
 (define (compile-project src #:canonical [canonical* #f] #:fhir-version [fhir-version* #f] #:snapshot? [snapshot? #f]
-                         #:texts [overrides (hash)] #:packages [extra-packages '()] #:context [context '()])
+                         #:texts [overrides (hash)] #:packages [extra-packages '()] #:context [context '()]
+                         #:files [given #f])
   (define cfg (let ([f (find-config src)]) (and f (read-ig-config f))))
   (define canonical (or canonical* (and cfg (ig-config-canonical cfg))))
   (define fhir-version (or fhir-version* (and cfg (ig-config-fhir-version cfg)) "5.0.0"))
@@ -100,8 +104,9 @@
       ;; #:packages — packages the caller puts in context (a workspace's), after the declared ones
       (append dep-packages extra-packages (implicit-packages fhir-version) (if core (list core) '()))))
   (dynamic-require (if r4? 'fhir/r4/schemas 'fhir/r5/schemas) #f)
-  (define files (fsh-files src))
-  (define mfiles (map-files src))
+  (define (given-with rx) (filter (lambda (f) (regexp-match? rx (path->string f))) (map (lambda (f) (if (path? f) f (string->path f))) given)))
+  (define files (if given (given-with #rx"[.]fsh$") (fsh-files src)))
+  (define mfiles (if given (given-with #rx"[.](map|fml)$") (map-files src)))
   ;; #:context — other directories whose DEFINITIONS (profiles, extensions, value sets, rule sets,
   ;; aliases…) this project compiles against, without their instances and without reporting on them:
   ;; a folder of examples meant to fail, checked against the project's profiles in another folder

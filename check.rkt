@@ -40,7 +40,8 @@
   [check-fsh-project (->* (path-string?) (#:capability (or/c string? #f) #:canonical (or/c string? #f)
                                           #:fhir-version (or/c string? #f) #:packages (listof path-string?)
                                           #:profiles (hash/c string? (listof string?))
-                                          #:context (listof path-string?))
+                                          #:context (listof path-string?)
+                                          #:files (or/c (listof path-string?) #f))
                           check-report?)]
   [trace-rule        (->* (list? string?) (#:exact? any/c #:slice (or/c string? #f)) (or/c any/c #f))]))
 
@@ -49,8 +50,10 @@
 (struct check-report (diagnostics texts examples invalid artifacts) #:transparent)
 
 (define (check-fsh-project dir #:capability [capability #f] #:canonical [canonical #f] #:fhir-version [fhir-version #f]
-                           #:packages [packages '()] #:profiles [required (hash)] #:context [context '()])
-  (define p (compile-project dir #:canonical canonical #:fhir-version fhir-version #:packages packages #:context context))
+                           #:packages [packages '()] #:profiles [required (hash)] #:context [context '()]
+                           #:files [files #f])
+  (define p (compile-project dir #:canonical canonical #:fhir-version fhir-version #:packages packages #:context context
+                             #:files files))
   (define compile-diags (project-diagnostics p))
   (define-values (examples invalid validation-diags) (validate-examples p required))
   (define map-diags (check-maps p examples))

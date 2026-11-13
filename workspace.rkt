@@ -31,7 +31,9 @@
   (define-values (pkgs _missing) (workspace-packages ws))
   (define cfg (workspace-config ws))
   (check-fsh-project (workspace-root ws) #:canonical (ws-config-canonical cfg) #:fhir-version (ws-config-fhir-version cfg)
-                     #:packages pkgs #:profiles (ws-config-profiles cfg)))
+                     #:packages pkgs #:profiles (ws-config-profiles cfg)
+                     ;; the workspace's own files: not its data directory, nor the text export of its store
+                     #:files (workspace-files ws)))
 
 (define (artifacts ws files)
   (cond [(null? files) (values '() '())]

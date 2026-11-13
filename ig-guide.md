@@ -149,6 +149,50 @@ write path=A1c.cql ref=Library/A1c
   staging a definition is refused with the call that hands the guide back; raise its `version` and
   go on.
 
+### The store in git: the text export
+
+A SQLite file is not something git can diff or merge, so git holds the store's definitions as text.
+`workspace.yaml`'s `export: export/` (what `init` writes) names a directory that every commit of a
+definition rewrites:
+
+- the files the commits kept — `lab.fsh`, `A1c.cql`, `labs.vcl`, `sushi-config.yaml`, a JSON
+  resource: the author's own text, comments included, the newest version of each file that still
+  states something stored;
+- one file for each stored definition no file of the workspace states (staged from text given in a
+  call, or changed since by another source), written from the resource: `StructureDefinition-vital.fsh`,
+  a library as `.cql`, a map as `.map`; and likewise each example the guide lists.
+
+The directory is a mirror: the workspace never reads it back as its sources (it is the store, not
+the working copy), and only files an export wrote are ever removed from it. Put back as a
+workspace's files, the export compiles to what is stored (`stage path=sushi-config.yaml` answers
+"nothing to commit"), which is how a store is rebuilt from git. From the shell:
+
+```text
+raco fhir-mcp export            (write it now; a commit of definitions does this by itself)
+raco fhir-mcp export --check    (CI: exit 1 and `differs lab.fsh`, `missing …`, `stale …` when the directory is not the store's)
+```
+
+### What depends on what
+
+Dependencies are traced as HL7 CRMI lists them, per type: a profile's `baseDefinition`, the types,
+profiles and value sets of its differential; a value set's includes and code systems; a map's
+structures and imports; a library's `relatedArtifact` and `dataRequirement`s; any resource's
+`meta.profile`. FHIR's own definitions are implied and not listed. A CQL library's Library resource
+states its own — each `include`, `codesystem` and `valueset` as a `depends-on` related artifact, each
+retrieve as a `dataRequirement` (the type, and the code or value set it filters by).
+
+```text
+query language=sql text="SELECT type, id, path FROM dependencies WHERE target = 'http://example.org/clinic/ValueSet/labs'"
+apply operation=$data-requirements inputs:='{"url": "http://example.org/clinic/Library/A1c"}'
+```
+
+`dependencies` is a table of the store: one row per stored resource and target (`type, id, url,
+version, path, target, target_version`), so "what depends on this value set" — or "which stored
+data claims this profile" — is a query. `$data-requirements` (CRMI's operation) answers one
+artifact's needs traced to the end, as a module-definition Library: a `depends-on` entry per
+dependency, at the version it resolves to (a working copy has none yet; `artifactVersion:
+["<url>|<version>"]` pins one for the call), and the data its libraries retrieve.
+
 ### Pinning versions
 
 A canonical with no version (`…/StructureDefinition/lab` in a `global` rule, a `meta.profile`, a CQL

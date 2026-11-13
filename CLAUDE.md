@@ -537,3 +537,10 @@ Parameters resource `parameters: path-expansion-params: …/Parameters-<id>.json
 workspace's resources, else in the data (`current-data-source`), lists it, and warns at the key
 when nothing defines it. ig-guide.md, "Pinning versions" (its `pins` block is what fhir-mcp's
 pins-test stages).
+
+**The workspace's own files** (2026-11-13): `compile-project`/`check-fsh-project #:files` — the
+project's `.fsh` and map files given, in place of every one under the directory; `workspace.rkt`
+gives `workspace-files`. The workspace support compiled everything under the root: a data directory
+of FSH, or the text export of the store (`export/`, fhir-mcp), was compiled as a second copy and the
+guide listed each definition twice (found by the export's law: put back, it must be "nothing to
+commit"). ig-guide.md: "The store in git: the text export", "What depends on what".
