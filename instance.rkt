@@ -78,6 +78,12 @@
 ;; cyclic Parent cannot loop
 (define (instance-base type-str profiles [fuel 16])
   (cond [(type-registered? (string->symbol type-str)) type-str]
+        ;; a logical model or custom resource of this document, named by its NAME (or url): the type
+        ;; it was registered as is its url's last step, its id (`InstanceOf: IntakeForm` was "not
+        ;; found" unless it wrote the id, `intake-form`)
+        [(let ([url (hash-ref (current-logicals) type-str #f)])
+           (and url (type-registered? (string->symbol (last-url-seg url))) (last-url-seg url)))
+         => values]
         [(and (> fuel 0) (hash-ref profiles type-str #f))
          => (lambda (p) (instance-base (let ([par (resolve-alias (car p) (current-aliases))])
                                         (if (or (hash-ref profiles par #f) (external-sd par)) par (last-url-seg par)))

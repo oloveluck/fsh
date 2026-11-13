@@ -27,7 +27,7 @@
          (only-in "pack.rkt" pack-package!)
          (only-in "ig-config.rkt" ig-config)
          (only-in "project.rkt" compile-project pack-project! project-artifacts project-diagnostics project-located
-                  project-sd-packages project-config project-texts project-maps)
+                  project-sd-packages project-config project-texts project-maps project-missing)
          (only-in "compile.rkt" rule-path-of instance-id)
          (only-in "parser/ast.rkt" fsh-instance? fsh-instance-name fsh-instance-metadata fsh-instance-rules
                   fsh-profile? fsh-profile-name fsh-profile-metadata fsh-profile-rules
@@ -47,7 +47,9 @@
 
 ;; A check-report: every diagnostic (compile first, then validation, then server), the source texts
 ;; (for excerpts), the counts, and the compiled artifacts.
-(struct check-report (diagnostics texts examples invalid artifacts) #:transparent)
+;; missing : (listof (cons package-id version))   the dependencies sushi-config.yaml names that no
+;; package at hand provides (their profiles do not resolve)
+(struct check-report (diagnostics texts examples invalid artifacts missing) #:transparent)
 
 (define (check-fsh-project dir #:capability [capability #f] #:canonical [canonical #f] #:fhir-version [fhir-version #f]
                            #:packages [packages '()] #:profiles [required (hash)] #:context [context '()]
@@ -62,7 +64,8 @@
                 (project-texts p)
                 (length examples)
                 invalid
-                (project-artifacts p)))
+                (project-artifacts p)
+                (project-missing p)))
 
 ;; ---- the project's maps, against its structures ----------------------------------------------------
 ;; check-maps : project examples -> diagnostics   each map (fml/project, loaded on demand) checked in

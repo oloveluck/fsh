@@ -139,12 +139,36 @@ fsh: wrote 2 artifact(s) to clinic/fsh-generated
 The first file is the profile as FHIR knows it, a @italic{StructureDefinition}. The second is the
 example as an ordinary FHIR record:
 
-@verbatim|{{"code":{"coding":[{"code":"4548-4","system":"http://loinc.org"}]},"id":"ann-hba1c",
- "meta":{"profile":["http://example.org/StructureDefinition/hba1c-result"]},
- "resourceType":"Observation","status":"final","subject":{"reference":"Patient/ann"},
- "valueQuantity":{"code":"%","system":"http://unitsofmeasure.org","unit":"%","value":7.2}}}|
+@verbatim|{{
+  "resourceType": "Observation",
+  "id": "ann-hba1c",
+  "meta": {
+    "profile": [
+      "http://example.org/StructureDefinition/hba1c-result"
+    ]
+  },
+  "status": "final",
+  "code": {
+    "coding": [
+      {
+        "system": "http://loinc.org",
+        "code": "4548-4"
+      }
+    ]
+  },
+  "subject": {
+    "reference": "Patient/ann"
+  },
+  "valueQuantity": {
+    "value": 7.2,
+    "unit": "%",
+    "system": "http://unitsofmeasure.org",
+    "code": "%"
+  }
+}}|
 
-(The file is one line; it is broken here to fit.) Any FHIR server or validator can read both.
+Each resource is written with its fields in the order FHIR gives them. Any FHIR server or validator
+can read both files.
 
 @section[#:tag "writing"]{Writing FSH}
 
@@ -529,8 +553,9 @@ downloaded for you. A dependency @tt{hl7.fhir.us.core: 6.1.0} is looked for as t
 @tt{hl7.fhir.us.core-6.1.0.tgz}, among the packages that come with the tools (US Core 6.1.0 and
 8.0.0, mCODE 4.0.0, Genomics Reporting 2.0.0, CRMI 2.0.0 and CQF Measures 5.0.0) and then in the
 folders named by the environment variable @tt{FHIR_PACKAGE_PATH}. Packages are published at
-@hyperlink["https://packages.fhir.org"]{packages.fhir.org}. When one is missing, @tt{raco fsh} says so
-and goes on, and a parent or type that needed it is then reported as not found:
+@hyperlink["https://packages.fhir.org"]{packages.fhir.org}. When one is missing, or is there in
+another version than the one asked for, @tt{raco fsh} and @tt{raco fsh check} say so and go on, and
+a parent or type that needed it is then reported as not found:
 
 @verbatim|{
 fsh: dependency no.such.package 1.0.0 not found (looked for no.such.package-1.0.0.tgz in fhir-spec); its profiles will not resolve
@@ -542,16 +567,15 @@ fsh: dependency no.such.package 1.0.0 not found (looked for no.such.package-1.0.
 (@litchar{-o} names another folder). If anything fails to compile, the problems are printed and
 nothing is written.
 
-@litchar{--pack} also writes the project as a package, the form in which a guide is handed to
+@litchar{--pack} writes the project as a package instead, the form in which a guide is handed to
 other tools. It needs the guide file, for the package's name and version:
 
 @verbatim|{
 $ raco fsh clinic/ --pack clinic-0.1.0.tgz
 fsh: packed 2 resource(s) into …/clinic-0.1.0.tgz
-  StructureDefinition-hba1c-result.json
-  Observation-ann-hba1c.json
-fsh: wrote 2 artifact(s) to clinic/fsh-generated
 }|
+
+Add @litchar{-o out/} to have the JSON files as well.
 
 Inside the package the definitions are in @tt{package/}, the examples in @tt{package/example/},
 and @tt{package/package.json} carries the name, version and dependencies. Without a file name the
@@ -571,7 +595,7 @@ describes. See @hyperlink["https://oloveluck.github.io/fhir/fhir-server/index.ht
       (list @tt{raco fsh check clinic/ --capability <id>} "also report what a server generated from the guide would not do")
       (list @tt{raco fsh clinic/} @elem{compile every @tt{.fsh} under the folder to @tt{clinic/fsh-generated/<Type>-<id>.json}})
       (list @tt{raco fsh clinic/ -o out/} "the same, into another folder")
-      (list @tt{raco fsh clinic/ --pack [out.tgz]} "also write the package")
+      (list @tt{raco fsh clinic/ --pack [out.tgz]} @elem{write the package (and, with @litchar{-o}, the JSON files too)})
       (list @tt{raco fsh clinic/ --snapshot} "also write each profile's snapshot (see below)")
       (list @tt{raco fsh lab.fsh} "one file")
       (list @tt{raco fsh --decompile a.json b.json} "FHIR JSON to FSH, printed"))]
@@ -702,9 +726,8 @@ checked on every test run, call the checker from a test:
 
 @subsection[#:tag "racket"]{The pieces, from Racket}
 
-The steps the command line does, one at a time. Load a FHIR version's types first
-(@racketmodname[fhir/r5/schemas] or @racketmodname[fhir/r4/schemas]) when you compile text
-yourself; @racket[compile-project] and @racket[check-fsh-project] do that for you.
+The steps the command line does, one at a time. Each loads the FHIR version's types it needs
+(R5 unless a project's guide file says otherwise); a program that has already loaded one keeps it.
 
 @racketblock[
 (require fhir/r5/schemas fsh/compile fsh/project fsh/check fsh/decompile)
@@ -724,8 +747,8 @@ one structure to another (it needs the fml package). Their compiled form joins t
 @tt{check} checks each map against the project's structures, runs it over the examples of its
 source structure and validates the results against its target; findings are placed in the map.
 The structure a map reads is often not FHIR at all but a form or a message, described with
-@tt{Logical:}. An @tt{Instance:} of a logical model is written like any other; name the model by
-its @tt{Id}. The worked project is @tt{fhir-examples/examples/intake-maps}.
+@tt{Logical:}. An @tt{Instance:} of a logical model is written like any other, naming the model by
+its name or its @tt{Id}. The worked project is @tt{fhir-examples/examples/intake-maps}.
 
 @section{In an editor, and for an AI agent}
 
@@ -750,10 +773,11 @@ line.}]
 @itemlist[
 @item{@bold{FHIR versions.} R4 (4.0.1) and R5 (5.0.0).}
 @item{@bold{Codes.} An example's codes are tested against the code sets FHIR itself requires (a
-status, a patient's gender). A binding your own profile adds, whether to a value set of the project
-or of a package, is written into the profile, but @tt{check} does not test an example's code against
-it. Use a terminology service for that
-(@hyperlink["https://oloveluck.github.io/fhir/fhir-tx/index.html"]{fhir-tx}).}
+status, a patient's gender) and against a @italic{required} binding your own profile adds, to a
+value set of the project or of a package. A value set that selects from a code system which is not
+on the machine (SNOMED CT, LOINC) by rule cannot be decided and is passed over; so are bindings
+weaker than required. See
+@hyperlink["https://oloveluck.github.io/fhir/fhir-tx/index.html"]{fhir-tx}.}
 @item{@bold{Links are not followed.} @c{Reference(Patient/ann)} is not checked to lead to a record
 that exists.}
 @item{@bold{Packages are not downloaded.} A dependency must already be on the machine
@@ -854,8 +878,8 @@ Run as a program, it prints the resources as indented JSON.
 @subsection[#:style 'unnumbered]{@tt{fsh/compile}}
 @defmodule[fsh/compile]
 
-@defproc[(fsh->fhir [src string?]) (listof hash?)]{FSH source to its FHIR resources. A FHIR
-version's types must be loaded (@racketmodname[fhir/r5/schemas]).}
+@defproc[(fsh->fhir [src string?]) (listof hash?)]{FSH source to its FHIR resources. With no FHIR
+version's types loaded, it loads R5's (R4's when @racket[fsh-fhir-version] says 4).}
 @defproc[(compile-doc [entities (listof struct?)]) (listof hash?)]{
 A parsed document: aliases resolved, rule sets expanded, each entity compiled. Raises on the first
 entity that fails.}

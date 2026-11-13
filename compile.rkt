@@ -50,7 +50,13 @@
           ;; the element path a profile rule constrains ("component[a].code"), or #f
           [rule-path-of   (-> any/c (or/c string? #f))]))
 ;; FSH source -> (listof FHIR jsexpr)
-(define (fsh->fhir str) (compile-doc (parse-fsh-doc str)))
+;; A program that has loaded no FHIR version gets the one `fsh-fhir-version` names (R5 unless set): the
+;; compiler reads element types from the registered tower, and with none an Instance of a profile in
+;; the same text was "InstanceOf not found". A tower already loaded is left as it is.
+(define (fsh->fhir str)
+  (unless (type-registered? 'Patient)
+    (dynamic-require (if (regexp-match? #rx"^4[.]" (fsh-fhir-version)) 'fhir/r4/schemas 'fhir/r5/schemas) #f))
+  (compile-doc (parse-fsh-doc str)))
 ;; compile a whole document: build alias/ruleset/profile tables, expand inserts, compile each entity
 ;; compile-doc : entities -> (listof jsexpr)   raises on the first entity that fails to compile
 (define (compile-doc entities)

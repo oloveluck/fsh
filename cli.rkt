@@ -28,10 +28,11 @@
          (only-in fsh/decompile fhir->fsh)
          (only-in racket/match match)
          (only-in fsh/check check-fsh-project check-report-diagnostics check-report-texts
-                  check-report-examples check-report-invalid)
-         (only-in fhir/diagnostic emit-diagnostics format-flag diagnostic-severity))
+                  check-report-examples check-report-invalid check-report-missing)
+         (only-in fhir/diagnostic emit-diagnostics format-flag diagnostic-severity)
+         (only-in fhir/serialize/fhir-json write-fhir-json))
 
-(provide compile-path decompile-files)
+(provide compile-path decompile-files artifact-file-names)
 
 ;; compile-path : source out snapshot? canonical fhir-version -> void   compile (fsh/project.rkt),
 ;; report diagnostics (exit 1), optionally pack, write fsh-generated/
@@ -54,16 +55,30 @@
     (define tgz (pack-project! p (if (string? pack) pack
                                      (format "~a-~a.tgz" (or (ig-config-id cfg) "package") (or (ig-config-version cfg) "0.1.0")))))
     (printf "fsh: packed ~a resource(s) into ~a\n" (length artifacts) tgz))
-  (define outdir
-    (or out (build-path (if (directory-exists? src) src (or (path-only (car (project-files p))) (current-directory)))
-                        "fsh-generated")))
-  (make-directory* outdir)
-  (for ([a (in-list artifacts)])
-    (define name (format "~a-~a.json" (hash-ref a 'resourceType "Resource") (hash-ref a 'id "instance")))
-    (call-with-output-file (build-path outdir name) #:exists 'replace
-      (lambda (o) (write-string (jsexpr->string a) o)))
-    (printf "  ~a\n" name))
-  (printf "fsh: wrote ~a artifact(s) to ~a\n" (length artifacts) outdir))
+  ;; the files: always with -o; without it, beside the sources unless the package was what was asked
+  ;; for (`--pack` alone used to leave a fsh-generated/ folder beside the sources as well)
+  (when (or out (not pack))
+    (define outdir
+      (or out (build-path (if (directory-exists? src) src (or (path-only (car (project-files p))) (current-directory)))
+                          "fsh-generated")))
+    (make-directory* outdir)
+    (for ([a (in-list artifacts)] [name (in-list (artifact-file-names artifacts))])
+      ;; as FHIR writes it (resourceType first, each type's elements in its own order), as
+      ;; `racket file.fsh` prints it: the keys were sorted by name here
+      (call-with-output-file (build-path outdir name) #:exists 'replace
+        (lambda (o) (write-fhir-json a o #:indent 2) (newline o)))
+      (printf "  ~a\n" name))
+    (printf "fsh: wrote ~a artifact(s) to ~a\n" (length artifacts) outdir)))
+
+;; artifact-file-names : (listof resource) -> (listof string)   <Type>-<id>.json, one name per
+;; artifact: a second artifact that would take a name already given (two instances of a logical
+;; model, which has no id) gets -2, -3 … instead of overwriting the first
+(define (artifact-file-names artifacts)
+  (for/fold ([names '()] [seen (hash)] #:result (reverse names)) ([a (in-list artifacts)])
+    (define stem (format "~a-~a" (hash-ref a 'resourceType "Resource") (hash-ref a 'id "instance")))
+    (define n (add1 (hash-ref seen stem 0)))
+    (values (cons (if (= n 1) (format "~a.json" stem) (format "~a-~a.json" stem n)) names)
+            (hash-set seen stem n))))
 
 ;; decompile-files : (listof path-string) -> void   print one FSH document for the given FHIR JSON files
 (define (decompile-files files)
@@ -76,6 +91,11 @@
 ;; requirements — every problem positioned in the FSH (fsh/check)
 (define (check-project dir capability fmt [context '()])
   (define r (check-fsh-project dir #:capability capability #:context context))
+  ;; a dependency no package at hand provides, as `raco fsh <dir>` says it: an example of one of
+  ;; its profiles is otherwise "not found" with no word of why
+  (for ([d (in-list (check-report-missing r))])
+    (eprintf "fsh check: dependency ~a ~a not found (looked for ~a-~a.tgz among the installed packages); its profiles will not resolve\n"
+             (car d) (cdr d) (car d) (cdr d)))
   (define diags (check-report-diagnostics r))
   (unless (null? diags)
     (emit-diagnostics diags #:format fmt #:text-of (lambda (s) (and s (hash-ref (check-report-texts r) s #f)))))

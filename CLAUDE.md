@@ -550,3 +550,25 @@ own path to `compile-project`, so the language server compiled that file alone a
 InstanceOf or RuleSet of a sibling file as not found (go to definition found it). It compiles
 `project-root` now, with the document's text over its file; a problem in another file is published on
 that file (fhir-lsp groups by uri). Found writing fhir-lsp's manual, which had said so all along.
+
+**Found writing the manual** (2026-11-13). Each has a test doing what the writer did:
+- A dependency on a version other than the unversioned package at hand (`hl7.fhir.uv.ips: 2.0.1`
+  beside `hl7.fhir.uv.ips.tgz`) crashed with `untar: bad number`: fhir/ig-config had a tar reader of
+  its own that misread any package whose package.json was not its last entry. Packages are found by
+  the foundation's `fhir/package-set` (`find-package`). `raco fsh check` names a dependency nothing
+  provides, as `raco fsh <dir>` did (`check-report-missing`).
+- A profile's OWN required value set is enforced on the examples (`* gender from BinarySex
+  (required)` let `#other` through): the validator now decides a binding from the value sets of the
+  packages in context when the tower has no expansion for it (fhir-validation `context-terminology`).
+  `tests/own-binding-test.rkt`.
+- `InstanceOf` a Logical model by its NAME (it had to be the Id): `instance-base` follows
+  `current-logicals` to the registered type. Two artifacts that would take one file name (two
+  instances of a logical model, which has no id) get `-2`, `-3` (`artifact-file-names`, cli.rkt).
+- The `--context` hint took the project's own folder for a sibling (`.` is "/a/b/", a listed folder
+  "/a/b"): a profile that failed to compile was "defined in" its own file. Folders are compared as
+  directory paths (context-hint.rkt).
+- `raco fsh <dir>` writes each resource as FHIR writes it (`write-fhir-json`, indented; the keys
+  were sorted by name), and `--pack` without `-o` writes the package alone (it left a
+  `fsh-generated/` beside the sources).
+- `fsh->fhir` loads the tower `fsh-fhir-version` names when the program has loaded none (an
+  Instance of a profile in the same text was "InstanceOf not found"). `tests/no-tower-test.rkt`.

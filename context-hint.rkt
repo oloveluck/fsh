@@ -35,14 +35,18 @@
 ;; defined-beside : dir context name -> (cons file folder) | #f   a sibling folder's .fsh file that
 ;; declares a profile, extension, logical model or resource of this name (or Id), read as text
 (define (defined-beside dir context name)
-  (define here (simplify-path (path->complete-path (if (file-exists? dir) (let-values ([(d _n _x) (split-path dir)]) d) dir))))
+  ;; folders compared as directory paths: `.` is "/a/b/" and a listed sibling "/a/b", so the project's
+  ;; own folder was taken for a sibling (a profile that failed to compile there was "defined in" its
+  ;; own file, to be checked "with --context <this folder>")
+  (define (folder p) (path->directory-path (simplify-path (path->complete-path p))))
+  (define here (folder (if (file-exists? dir) (let-values ([(d _n _x) (split-path dir)]) d) dir)))
   (define parent (simplify-path (build-path here 'up)))
-  (define taken (map (lambda (c) (simplify-path (path->complete-path c))) context))
+  (define taken (map folder context))
   (define rx (pregexp (string-append "(?m:^(?:Profile|Extension|Logical|Resource|Id):\\s*" (regexp-quote name) "\\s*$)")))
   (for*/first ([sib (in-list (with-handlers ([exn:fail? (lambda (_) '())]) (directory-list parent #:build? #t)))]
                #:when (directory-exists? sib)
-               #:unless (equal? (simplify-path sib) here)
-               #:unless (member (simplify-path sib) taken)
+               #:unless (equal? (folder sib) here)
+               #:unless (member (folder sib) taken)
                [f (in-directory sib)]
                #:when (regexp-match? #rx"[.]fsh$" (path->string f))
                #:when (regexp-match? rx (file->string f)))
@@ -54,3 +58,18 @@
   (define rel (path->string (find-relative-path (simplify-path (current-directory)) full)))
   (if (< (string-length rel) (string-length (path->string full))) rel (path->string full)))
 
+
+(module+ test
+  (require rackunit)
+  ;; a name the project's OWN folder declares is not "beside" it, however the folder is written;
+  ;; a sibling folder's is
+  (define root (make-temporary-file "fsh-context-hint-~a" 'directory))
+  (for ([d '("project" "next")]) (make-directory (build-path root d)))
+  (with-output-to-file (build-path root "project" "a.fsh") (lambda () (display "Profile: Mine\nParent: Patient\n")))
+  (with-output-to-file (build-path root "next" "b.fsh") (lambda () (display "Profile: Theirs\nParent: Patient\n")))
+  (parameterize ([current-directory (build-path root "project")])
+    (check-false (defined-beside "." '() "Mine"))
+    (check-false (defined-beside (build-path root "project") '() "Mine"))
+    (check-true (pair? (defined-beside "." '() "Theirs")))
+    (check-false (defined-beside "." (list (build-path root "next")) "Theirs") "already in context"))
+  (delete-directory/files root))
