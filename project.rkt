@@ -71,8 +71,9 @@
   (with-handlers ([exn:fail? (lambda (_) #f)]) (dynamic-require 'fml/project name)))
 
 ;; parse-maps : files -> (values (listof (cons path-string map)) diagnostics)
+;; (fml is loaded only when there is a map to parse: a project without maps paid ~0.25 s for it)
 (define (parse-maps files)
-  (define parse (fml-entry 'parse-map-file))
+  (define parse (and (pair? files) (fml-entry 'parse-map-file)))
   (cond
     [(null? files) (values '() '())]
     [(not parse) (values '() (list (diagnostic 'fsh 'compile 'error
@@ -131,7 +132,7 @@
                   (define text (or (hash-ref overrides (path->string (simplify-path (path->complete-path f))) #f) (file->string f)))
                   (values (path->string f) (regexp-replace #px"^#lang[^\n]*" text ""))))
   (define-values (maps map-diags) (parse-maps mfiles))
-  (define structuremaps (let ([to-sm (fml-entry 'map-structuremap)]) (if to-sm (map (lambda (p) (to-sm (cdr p))) maps) '())))
+  (define structuremaps (let ([to-sm (and (pair? maps) (fml-entry 'map-structuremap))]) (if to-sm (map (lambda (p) (to-sm (cdr p))) maps) '())))
   ;; every file's entities that parse, with every parse error and import-level check (fsh/lint)
   (define-values (located parse-errors)
     (for/fold ([located '()] [errors '()] #:result (values located errors))

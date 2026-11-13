@@ -5,7 +5,7 @@
 (require racket/match
          racket/string
          racket/contract
-         (only-in racket/list append-map last index-of take drop)
+         (only-in racket/list append-map last index-of take drop drop-right)
          "parser/ast.rkt"
          "parser/path.rkt"
          (only-in "resolve.rkt" element-fhir-type field-info)
@@ -84,7 +84,11 @@
   ;; `extension[us-core-birthsex]` names the slice typed with that extension; a caret into an
   ;; element's `binding`/`extension` edits what the Parent's element already carries
   (define parent-elements (profile-elements parent))
+  ;; the slices of each path in the order they are declared: the Parent's first (as its snapshot
+  ;; holds them), then this profile's `contains` (fold-sd-rules adds them as it meets them)
   (define slice-declarations (make-hash))
+  (for ([ps (in-list (profile-slices parent))])
+    (unless (hash-has-key? slice-declarations ps) (hash-set! slice-declarations ps (hash-count slice-declarations))))
   (define-values (elems00 order00)
     (parameterize ([current-slice-declarations slice-declarations])
       (fold-sd-rules base-type (rewrite-extension-slices rules parent-elements base-type) invariants self-url
@@ -229,8 +233,9 @@
       [(hash-ref own-slices name #f) => values]
       [(extension-url-of name)
        => (lambda (url)
+            (define rx (pregexp (string-append "^" (regexp-quote (string-append base-type "." field ":")) "([^.]+)$")))
             (or (for/or ([(id el) (in-hash parent-elements)])
-                  (define m (regexp-match (pregexp (string-append "^" (regexp-quote (string-append base-type "." field ":")) "([^.]+)$")) id))
+                  (define m (regexp-match rx id))
                   (and m (let ([ts (hash-ref el 'type '())])
                            (and (pair? ts) (member url (let ([pr (hash-ref (car ts) 'profile '())]) (if (list? pr) pr '()))) (cadr m)))))
                 name))]
@@ -255,16 +260,19 @@
 ;; the element as constrained so far, and the copies have no original to equal
 (define (copy-slice-children elems order)
   (define ids (hash-keys elems))
-  (define (child-slice-of? x id)                        ; `X.name:slice`, directly under X
-    (define m (regexp-match (pregexp (string-append "^" (regexp-quote x) "\\.([^.:]+):([^.]+)$")) id))
-    (and m (cdr m)))
+  ;; child-slice : string -> (id -> (list name slice) | #f)   `X.name:slice`, directly under X (the
+  ;; pattern made once per X: it was compiled again for every pair of ids)
+  (define (child-slice x)
+    (define rx (pregexp (string-append "^" (regexp-quote x) "\\.([^.:]+):([^.]+)$")))
+    (lambda (id) (let ([m (regexp-match rx id)]) (and m (cdr m)))))
   (for*/fold ([es elems] [os order])
              ([sid (in-list ids)]
-              #:when (and (regexp-match? #rx":[^.]+$" sid)                       ; a slice element …
-                          (ormap (lambda (id) (string-prefix? id (string-append sid "."))) ids))   ; … with children
-              [x (in-value (regexp-replace #rx":[^.]+$" sid ""))]
-              [cid (in-list ids)] [m (in-value (child-slice-of? x cid))] #:when m
-              [copy-id (in-value (string-append sid "." (car m) ":" (cadr m)))]
+              #:when (regexp-match? #rx":[^.]+$" sid)                            ; a slice element …
+              [below (in-value (string-append sid "."))]
+              #:when (ormap (lambda (id) (string-prefix? id below)) ids)         ; … with children
+              [child-slice-of (in-value (child-slice (regexp-replace #rx":[^.]+$" sid "")))]
+              [cid (in-list ids)] [m (in-value (child-slice-of cid))] #:when m
+              [copy-id (in-value (string-append below (car m) ":" (cadr m)))]
               #:unless (hash-has-key? es copy-id))
     (define src (hash-ref elems cid))
     (values (hash-set es copy-id (hash-set-present* src 'id copy-id 'path (hash-ref src 'path)))
@@ -314,7 +322,7 @@
     (define p (rule-path-of r))
     (define-values (rid rpath rslice)
       (let-values ([(id path slice) (if (string? p) (element-loc base-type p) (values #f #f #f))])
-        (if id (narrowed-choice elems id path slice) (values id path slice))))
+        (if id (narrowed-choice elems id path slice parent-element) (values id path slice))))
     (define-values (elems* order*)
       (if (and rid (regexp-match? #px"\\[x\\]:[^.]+$" rid))
           (let-values ([(e o) (ensure-choice-parents elems order rid)])
@@ -386,21 +394,29 @@
       [(rule-contains p items)
        (define slice-min (for/sum ([it (in-list items)]) (card-lo (contains-item-card it))))
        (define ext? (regexp-match? #rx"[.](modifierE|e)xtension$" rpath))
+       ;; SUSHI slices extensions by url when `contains` names them — where the element is not sliced
+       ;; yet. The Parent's element may be; and below a datatype (`bodySite.extension`,
+       ;; `telecom.extension`) the element comes from the datatype's own definition, whose
+       ;; `extension` FHIR already slices by url: nothing changes, so nothing is written
+       (define sliced-already?
+         (and ext? (or (let ([pe (parent-element rid)]) (and (hash? pe) (hash-ref pe 'slicing #f)))
+                       (let ([b (base-element base-type rpath)]) (and (hash? b) (hash-ref b 'slicing #f))))))
        (define-values (e1 o1) (upd elems order rid rpath rslice
                                    (lambda (h)
                                      (let* ([h (if (> slice-min 0) (hash-set h 'min slice-min) h)]
-                                            ;; SUSHI slices extensions by url when `contains` names them
-                                            [h (if (and ext? (not (hash-has-key? h 'slicing))) (hash-set h 'slicing url-slicing) h)])
+                                            [h (if (and ext? (not sliced-already?) (not (hash-has-key? h 'slicing)))
+                                                   (hash-set h 'slicing url-slicing)
+                                                   h)])
                                        h))))
        (for/fold ([elems e1] [order o1]) ([it (in-list items)])
          (define sn (or (contains-item-named-as it) (contains-item-name it)))
-         ;; the declaration order of the slices of this path, for the differential's order
-         (let ([decl (current-slice-declarations)])
-           (when (and decl (not (hash-has-key? decl (cons rid sn))))
-             (hash-set! decl (cons rid sn) (hash-count decl))))
          ;; reslicing: when the contains target is itself a slice, sub-slice ids join with "/"
          (define sub-id (if rslice (string-append rid "/" sn) (string-append rid ":" sn)))
          (define sub-name (if rslice (string-append rslice "/" sn) sn))
+         ;; the declaration order of the slices of this path, for the differential's order
+         (let ([decl (current-slice-declarations)])
+           (when (and decl (not (hash-has-key? decl (cons rpath sub-name))))
+             (hash-set! decl (cons rpath sub-name) (hash-count decl))))
          ;; `extension contains <ext> named <slice>`: the slice is typed Extension, profiled by that
          ;; extension's canonical (a local Extension's url, an alias, or a url as written)
          (define ext-profile
@@ -491,16 +507,20 @@
      (values (string-append base-type "." (string-join id-segs "."))
              (string-append base-type "." (string-join path-segs "."))
              last-slice)]))
-;; narrowed-choice : elems id path slice -> id path slice
-;; once the profile has narrowed `value[x]` to exactly one type (`only Quantity`), `valueQuantity`
+;; narrowed-choice : elems id path slice [parent-element] -> id path slice
+;; once `value[x]` is narrowed to exactly one type — by this profile (`only Quantity`) or already by
+;; its Parent (Genomics Reporting's report has `effective[x]` as dateTime alone) — `valueQuantity`
 ;; addresses `value[x]` itself (SUSHI): no type slice
-(define (narrowed-choice elems id path slice)
+(define (narrowed-choice elems id path slice [parent-element (lambda (_) #f)])
   (define segs (string-split id "."))
+  (define (types-of choice-id)
+    (or (hash-ref (hash-ref elems choice-id (hash)) 'type #f)
+        (let ([pe (parent-element choice-id)]) (and (hash? pe) (hash-ref pe 'type #f)))))
   (define-values (out last-collapsed?)
     (for/fold ([acc '()] [collapsed? #f] #:result (values (reverse acc) collapsed?)) ([seg (in-list segs)])
       (define m (regexp-match #px"^(.*\\[x\\]):([A-Za-z]+)$" seg))
       (define choice-id (and m (string-join (reverse (cons (cadr m) acc)) ".")))
-      (define types (and choice-id (hash-ref (hash-ref elems choice-id (hash)) 'type #f)))
+      (define types (and choice-id (types-of choice-id)))
       (define base (and m (regexp-replace #rx"\\[x\\]$" (cadr m) "")))
       (if (and m (list? types) (= 1 (length types))
                (string-ci=? (string-append base (hash-ref (car types) 'code "")) (caddr m)))
@@ -560,6 +580,75 @@
     (define pid (substring id 0 (+ (car m) 3)))
     (define ppath (regexp-replace* #px":[^.]+" pid ""))
     (upd elems order pid ppath #f (lambda (h) (if (hash-has-key? h 'slicing) h (hash-set h 'slicing type-slicing))))))
+;; ---- the differential's order ----------------------------------------------------------------
+;; current-slice-declarations : (parameter (or #f (mutable-hash (cons path slice) -> index)))   the
+;; order in which each slice of an element path is DECLARED — by the Parent, then by the rules'
+;; `contains`; the differential follows it (SUSHI's order), not the first rule that happens to
+;; mention a slice. The path is the element's (no slice names in it), the slice its full name.
+(define current-slice-declarations (make-parameter #f))
+;; snapshot-order : base-type (listof element) -> same elements, in the base definition's order.
+;; SUSHI emits a differential in snapshot order, not rule order. Elements are compared segment by
+;; segment on their ids (`Observation.component:systolic.code`): first the position of the path
+;; prefix — in the base snapshot, else (below a datatype: `telecom.system`, `bodySite.extension`) in
+;; the datatype's own definition, so an element's extensions come before its other children as they
+;; do there; then the slice (the unsliced element before its slices, slices in declaration order,
+;; then first appearance); ties keep rule order. Without a core package to read (no SD index) the
+;; rule order is kept.
+(define (snapshot-order base-type elements)
+  (define snap (snapshot-elements base-type))
+  (cond
+    [(not snap) elements]
+    [else
+     (define pos (for/hash ([e (in-list snap)] [i (in-naturals)] #:when (hash-ref e 'path #f))
+                   (values (hash-ref e 'path) i)))
+     (define below-datatype (make-hash))                    ; path -> position (asked once per path)
+     (define (position path)
+       (hash-ref pos path
+                 (lambda () (hash-ref! below-datatype path
+                                       (lambda () (cond [(datatype-position base-type path) => (lambda (i) (+ 500000 i))]
+                                                        [else 1000000]))))))
+     (define declared (or (current-slice-declarations) (hash)))
+     (define slice-rank (make-hash))                       ; (path-prefix . slice) -> first appearance
+     (define (segments id)                                  ; "A.b:s.c" -> '(("A" #f) ("b" "s") ("c" #f))
+       (for/list ([seg (in-list (string-split id "."))])
+         (match (regexp-match #px"^([^:]+)(?::(.+))?$" seg) [(list _ n sl) (list n sl)] [#f (list seg #f)])))
+     (define (key id)
+       (let loop ([segs (segments id)] [prefix ""] [acc '()])
+         (cond
+           [(null? segs) (reverse acc)]
+           [else
+            (match-define (list n sl) (car segs))
+            (define path (if (string=? prefix "") n (string-append prefix "." n)))
+            (define p (position path))
+            (define r (if sl
+                          (hash-ref declared (cons path sl)
+                                    (lambda () (+ 100000 (hash-ref! slice-rank (cons path sl) (lambda () (hash-count slice-rank))))))
+                          -1))
+            (loop (cdr segs) path (list* r p acc))])))
+     (define keyed (for/list ([e (in-list elements)] [i (in-naturals)]) (list (key (hash-ref e 'id "")) i e)))
+     (map caddr (sort keyed (lambda (a b) (key<? (car a) (car b) (cadr a) (cadr b)))))]))
+;; key<? : (listof integer) (listof integer) index index -> boolean   lexicographic; a prefix sorts
+;; first; ties fall back to rule order
+(define (key<? a b ia ib)
+  (cond [(and (null? a) (null? b)) (< ia ib)]
+        [(null? a) #t] [(null? b) #f]
+        [(< (car a) (car b)) #t] [(> (car a) (car b)) #f]
+        [else (key<? (cdr a) (cdr b) ia ib)]))
+;; snapshot-elements : type -> (listof element) | #f   a type's snapshot, when the packages have it
+(define (snapshot-elements type)
+  (define sd (and (sd-index-available?) (resolve-sd-raw type)))
+  (define els (and (hash? sd) (let ([sn (hash-ref sd 'snapshot #f)]) (and (hash? sn) (hash-ref sn 'element #f)))))
+  (and (list? els) els))
+;; datatype-position : base-type path -> index | #f   where an element the base snapshot does not
+;; list stands in the definition of its parent's one datatype (`Location.telecom.system` is
+;; ContactPoint.system; `Extension.extension.url` is Extension.url)
+(define (datatype-position base-type path)
+  (define segs (string-split path "."))
+  (define parent (and (> (length segs) 2) (base-element base-type (string-join (drop-right segs 1) "."))))
+  (define types (if parent (hash-ref parent 'type '()) '()))
+  (define type (and (list? types) (= 1 (length types)) (hash-ref (car types) 'code #f)))
+  (define els (and (string? type) (snapshot-elements type)))
+  (and els (index-of (map (lambda (e) (hash-ref e 'path #f)) els) (string-append type "." (last segs)))))
 ;; the path field of any SD rule (or #f for path-less SD-level caret / root obeys)
 (define (rule-path-of r)
   (match r

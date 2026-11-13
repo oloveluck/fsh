@@ -6,6 +6,12 @@
          racket/string
          (only-in racket/list last)
          "parser/ast.rkt"
+         ;; for effect: FHIR's primitive types (string, dateTime, code …) are registered as types by
+         ;; this module, not by a tower. The compiler asks `type-registered?` of every type name it
+         ;; meets, and without them `* effective[x] only dateTime` was read as a PROFILE named dateTime
+         ;; (type code dateTime, profile …/StructureDefinition/dateTime) — unless something else in the
+         ;; process happened to have loaded them (fhirpath, the validator, fml)
+         (only-in fhir/primitives/primitives)
          (only-in fhir/sd/sd-index resolve-canonical-raw sd-index-available?))
 (provide assoc-ref canonical-base fsh-config-status fsh-config-version capitalize code-text* current-aliases current-contained current-instance-ref current-instance-resolver current-local-canonical current-logicals current-profile-sd current-profiles current-rule-diagnostics current-slice-orders emit-snapshot? external-canonical fsh-fhir-version last-url-seg resolve resolve-alias sd-url split-code strip#)
 ;; the IG canonical URL base (SUSHI default in the golden corpus is http://example.org)

@@ -1,5 +1,9 @@
 # fsh — FHIR Shorthand
 
+> Part of [fhir](https://github.com/oloveluck/fhir), a FHIR implementation designed to be used by
+> AI agents: one line per problem, at its place, with what would fix it; a guide written for an
+> agent to read; the same language inside the `fhir-mcp` workspace.
+
 [FHIR Shorthand](https://hl7.org/fhir/uv/shorthand/) (FSH) is the language people write FHIR
 *profiles* in: the rules that say what valid health data looks like in one setting, with the code
 sets they use and examples of the data. This package compiles FSH to the FHIR resources it stands
@@ -37,9 +41,9 @@ them. With Racket, `raco fsh` is the same command.
 **[oloveluck.github.io/fsh](https://oloveluck.github.io/fsh/)**: a first example explained line by
 line, writing profiles and examples, projects and packages, and the reference.
 
-- How well it works (five published guides compiled and compared with HL7's): [TESTING.md](TESTING.md).
-- For AI agents: [guide.md](guide.md) and [ig-guide.md](ig-guide.md), cheat sheets with tested
+- For agents: [guide.md](guide.md) and [ig-guide.md](ig-guide.md), cheat sheets with tested
   examples, and the [fsh skill](.claude/skills/fsh/SKILL.md).
+- How well it works (five published guides compiled and compared with HL7's): [TESTING.md](TESTING.md).
 - How it is built: [CLAUDE.md](CLAUDE.md).
 
-Part of the [fhir](https://github.com/oloveluck/fhir) family. License: MIT.
+License: MIT.

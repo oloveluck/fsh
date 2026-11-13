@@ -243,37 +243,74 @@
     [(rule-code-insert cs ref) (rule-code-insert (jc cs) ref)]
     [_ (map-rule-path (lambda (p) (join-path ctx p)) r)]))
 
+;; ---- the parse, remembered by its shape ----------------------------------------------------------
+;; A context-free parse is decided by the token TYPES alone: the values only ride along to the leaves
+;; of the tree. So the tree of one type sequence is parsed once, with each value replaced by its
+;; token's index (a Template: brag's datum whose every non-symbol leaf is a slot index), and every
+;; later token list of the same types is that tree with its own values filled in. brag's parser costs
+;; ~70 µs a token; a guide repeats a few hundred rule shapes thousands of times (`* path 1..1 MS`
+;; under one header; a parameterized RuleSet's body at each of its inserts — mCODE: 716 instantiations,
+;; 30% of its compile), and those are now a table lookup.
+;; A sequence that does not parse is not remembered: the tokens themselves are parsed again, so the
+;; error is brag's own, at their positions.
+(define templates (make-hash))                         ; (listof token-type) -> Template
+(define templates-limit 20000)                         ; shapes kept (an editor session makes new ones)
+;; parse-tokens : (listof token-struct) -> datum   g:parse-to-datum, by way of the shape's template
+(define (parse-tokens toks)
+  (define shape (map token-struct-type toks))
+  (define template
+    (or (hash-ref templates shape #f)
+        (let ([t (with-handlers ([exn:fail? (lambda (_) #f)]) (g:parse-to-datum (slotted toks)))])
+          (when t
+            (when (>= (hash-count templates) templates-limit) (hash-clear! templates))
+            (hash-set! templates shape t))
+          t)))
+  (if template
+      (fill-template template (for/vector #:length (length toks) ([t (in-list toks)]) (token-struct-val t)))
+      (g:parse-to-datum toks)))
+;; slotted : (listof token-struct) -> (listof token-struct)   the tokens, each value its index
+(define (slotted toks)
+  (for/list ([t (in-list toks)] [i (in-naturals)])
+    (token-struct (token-struct-type t) i (token-struct-offset t) (token-struct-line t)
+                  (token-struct-column t) (token-struct-span t) #f)))
+;; fill-template : Template (vectorof value) -> datum   each slot index replaced by that token's value
+(define (fill-template template vals)
+  (let fill ([d template])
+    (cond [(pair? d) (cons (fill (car d)) (fill (cdr d)))]
+          [(exact-nonnegative-integer? d) (vector-ref vals d)]
+          [else d])))
+
 ;; parse-reals : entity tokens -> its datum (entity (<kind> header-item … rule …))
 ;; brag's CFG parser is superlinear in input length, and real IGs have entities with hundreds of rules
-;; (IPS's Composition profile: 105 s as one parse). A long entity is therefore parsed RULE BY RULE:
-;; the header alone, then header + each `*` rule group, keeping the rule nodes each parse adds.
-;; Same tree, linear cost.
-(define rules-per-parse 16)
+;; (IPS's Composition profile: 105 s as one parse). An entity is therefore parsed RULE BY RULE: the
+;; header alone, then header + each `*` rule, keeping the rule node each parse adds. Same tree,
+;; linear cost — and the shapes repeat (one header, the same few kinds of rule), so most of these
+;; parses are a template already made (parse-tokens). Entities of every length go this way: held to
+;; the corpora's entities, rule positions and diagnostics, which are the same as parsed whole.
 (define (parse-reals reals)
-  (define groups (star-groups reals))
+  (match-define (cons header groups) (star-groups reals))
   (cond
-    [(<= (length (cdr groups)) rules-per-parse) (g:parse-to-datum reals)]
+    [(null? groups) (parse-tokens reals)]
     [else
-     (define header (car groups))
      ;; a RuleSet's header alone (`RuleSet: Name`) is not a valid parse — the grammar wants a rule —
      ;; so its header items are counted from header + the first rule, which adds one rule node
      (define-values (inner n)
        (with-handlers ([exn:fail? (lambda (_)
-                                    (match-define (list 'entity one) (g:parse-to-datum (append header (cadr groups))))
+                                    (match-define (list 'entity one) (parse-tokens (append header (car groups))))
                                     (values (take one (sub1 (length one))) (sub1 (length one))))])
-         (match-define (list 'entity inner) (g:parse-to-datum header))
+         (match-define (list 'entity inner) (parse-tokens header))
          (values inner (length inner))))
      (list 'entity
            (append inner
-                   (append* (for/list ([grp (in-list (cdr groups))])
-                              (match-define (list 'entity one) (g:parse-to-datum (append header grp)))
+                   (append* (for/list ([grp (in-list groups)])
+                              (match-define (list 'entity one) (parse-tokens (append header grp)))
                               (list-tail one n)))))]))
 
 ;; star-groups : tokens -> (cons header-tokens (listof rule-token-group)), split at STAR tokens
 (define (star-groups reals)
   (let loop ([ts reals] [cur '()] [groups '()])
     (cond
-      [(null? ts) (let ([all (reverse (cons (reverse cur) groups))]) all)]
+      [(null? ts) (reverse (cons (reverse cur) groups))]
       [(eq? (ttype (car ts)) 'STAR) (loop (cdr ts) (list (car ts)) (cons (reverse cur) groups))]
       [else (loop (cdr ts) (cons (car ts) cur) groups)])))
 

@@ -120,9 +120,10 @@
 (define (scan-base-element-names type)
   (define sd (and (sd-index-available?) (resolve-sd-raw type)))
   (define els (and (hash? sd) (hash-ref (hash-ref sd 'snapshot (hash)) 'element #f)))
+  (define rx (pregexp (string-append "^" (regexp-quote type) "[.]([^.:]+)$")))
   (and (list? els)
        (for*/list ([el (in-list els)]
-                   [m (in-value (regexp-match (pregexp (string-append "^" (regexp-quote type) "[.]([^.:]+)$")) (hash-ref el 'path "")))]
+                   [m (in-value (regexp-match rx (hash-ref el 'path "")))]
                    #:when m)
          (cadr m))))
 ;; known-element? : names name -> boolean   directly, as a choice ("value[x]"), or a choice spelled

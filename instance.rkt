@@ -32,7 +32,9 @@
   ;; what `extension[Name]` may name besides a slice: an alias, a local profile, a url, a packaged Extension
   [extension-url-of (-> string? (or/c string? #f))]
   ;; the constraints an Instance of a profile inherits, by element id (local chain over snapshots)
-  [profile-elements (->* (string?) (exact-nonnegative-integer?) hash?)]))
+  [profile-elements (->* (string?) (exact-nonnegative-integer?) hash?)]
+  ;; the slices the profile's elements declare, as (element-path . slice-name), in snapshot order
+  [profile-slices (->* (string?) (exact-nonnegative-integer?) (listof pair?))]))
 ;; ---- Instance -> a plain resource ----------------------------------------------------------
 (define (compile-instance e aliases profiles)
   (define meta (fsh-instance-metadata e))
@@ -418,6 +420,24 @@
           (for/hash ([e (in-list (hash-ref (hash-ref sd 'snapshot (hash)) 'element '()))] #:when (hash-ref e 'id #f))
             (values (hash-ref e 'id) e)))]
     [else (hash)]))
+;; profile-slices : profile-name|id|url -> (listof (cons element-path slice-name))   the slices that
+;; profile's elements declare, in the order its snapshot holds them: a dependency profile's snapshot;
+;; for a profile of this document its Parent's, then its own differential's (which is in snapshot
+;; order). A base type declares none.
+(define (profile-slices key [fuel 16])
+  (define k (resolve-alias key (current-aliases)))
+  (define (slices-in elements)
+    (for/list ([e (in-list elements)] #:when (and (hash-ref e 'sliceName #f) (hash-ref e 'path #f)))
+      (cons (hash-ref e 'path) (hash-ref e 'sliceName))))
+  (cond
+    [(or (<= fuel 0) (type-registered? (string->symbol k))) '()]
+    [((current-profile-sd) k)
+     => (lambda (sd)
+          (define parent (let ([p (hash-ref (current-profiles) k #f)]) (and p (car p))))
+          (append (if parent (profile-slices parent (sub1 fuel)) '())
+                  (slices-in (hash-ref (hash-ref sd 'differential (hash)) 'element '()))))]
+    [(external-sd k) => (lambda (sd) (slices-in (hash-ref (hash-ref sd 'snapshot (hash)) 'element '())))]
+    [else '()]))
 ;; assign-required : jsexpr (hash id -> element) -> jsexpr
 ;; SUSHI assigns what the InstanceOf profile REQUIRES and the instance leaves out: a required element
 ;; (min >= 1) gets its `required-entry` (its fixed[x]/pattern[x], completed by its required children,
@@ -474,9 +494,9 @@
        (define named-url (and extension-field? (not (hash-ref elements slice-id #f)) (extension-url-of slice)))
        (define slice-el (or (hash-ref elements slice-id #f)
                             (and named-url
-                                 (for/or ([(id el) (in-hash elements)])
-                                   (and (regexp-match? (pregexp (string-append "^" (regexp-quote (string-append type "." (car pos) ":")) "[^.]+$")) id)
-                                        (member named-url (extension-profile el)) el)))))
+                                 (let ([rx (pregexp (string-append "^" (regexp-quote (string-append type "." (car pos) ":")) "[^.]+$"))])
+                                   (for/or ([(id el) (in-hash elements)])
+                                     (and (regexp-match? rx id) (member named-url (extension-profile el)) el))))))
        ;; an extension slice's url is the canonical of the Extension it is typed with
        (define ext-url (and extension-field?
                             (or (and slice-el (let ([pr (extension-profile slice-el)]) (and (pair? pr) (car pr))))
