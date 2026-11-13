@@ -42,23 +42,27 @@
 
 ;; duplicate-names : (listof Located) -> (listof diagnostic)   a second entity of a kind with a name
 (define (duplicate-names items)
-  (define seen (make-hash))
-  (for*/list ([it (in-list items)]
-              [kind (in-value (entity-kind (car it)))] #:when kind
-              [name (in-value (entity-name (car it)))] #:when name
-              #:unless (begin0 (not (hash-ref seen (cons kind name) #f)) (hash-set! seen (cons kind name) #t)))
-    (err (cadr it) (format "~a named ~a already exists" kind name))))
+  (for/fold ([seen (hash)] [found '()] #:result (reverse found)) ([it (in-list items)])
+    (define kind (entity-kind (car it)))
+    (define name (entity-name (car it)))
+    (cond [(not (and kind name)) (values seen found)]
+          [(hash-ref seen (cons kind name) #f)
+           (values seen (cons (err (cadr it) (format "~a named ~a already exists" kind name)) found))]
+          [else (values (hash-set seen (cons kind name) #t) found)])))
 
 ;; alias-redefinitions : (listof Located) -> (listof diagnostic)   the same alias with another value
+;; (the first definition stands; each later one that differs from it is reported)
 (define (alias-redefinitions items)
-  (define values-of (make-hash))
-  (for*/list ([it (in-list items)] #:when (fsh-alias? (car it))
-              [a (in-value (car it))]
-              [prior (in-value (hash-ref values-of (fsh-alias-name a) #f))]
-              #:unless (begin0 (or (not prior) (equal? prior (fsh-alias-value a)))
-                               (unless prior (hash-set! values-of (fsh-alias-name a) (fsh-alias-value a)))))
-    (err (cadr it) (format "Alias ~a cannot be redefined to ~a; it is already defined as ~a"
-                           (fsh-alias-name a) (fsh-alias-value a) prior))))
+  (for/fold ([defined (hash)] [found '()] #:result (reverse found))
+            ([it (in-list items)] #:when (fsh-alias? (car it)))
+    (define a (car it))
+    (define prior (hash-ref defined (fsh-alias-name a) #f))
+    (cond [(not prior) (values (hash-set defined (fsh-alias-name a) (fsh-alias-value a)) found)]
+          [(equal? prior (fsh-alias-value a)) (values defined found)]
+          [else (values defined
+                        (cons (err (cadr it) (format "Alias ~a cannot be redefined to ~a; it is already defined as ~a"
+                                                     (fsh-alias-name a) (fsh-alias-value a) prior))
+                              found))])))
 
 ;; ---- one entity --------------------------------------------------------------------------------
 ;; lint-entity : entity loc tokens -> (listof diagnostic)
@@ -66,6 +70,7 @@
   (define src (and l (loc-source l)))
   (append (duplicate-metadata toks src)
           (unquoted-target toks src)
+          (bare-characteristics toks src)
           (operator-spacing e toks src)
           (instance-checks e (or (keyword-loc toks 'KW_USAGE src) l))
           (append* (for/list ([r (in-list (or (entity-rules e) '()))])
@@ -78,12 +83,13 @@
 (define (duplicate-metadata toks src)
   (define header (let loop ([ts toks]) (cond [(null? ts) '()] [(eq? (token-struct-type (car ts)) 'STAR) '()]
                                              [else (cons (car ts) (loop (cdr ts)))])))
-  (define seen (make-hasheq))
-  (for/list ([t (in-list header)]
-             #:when (memq (token-struct-type t) metadata-keywords)
-             #:unless (begin0 (not (hash-ref seen (token-struct-type t) #f)) (hash-set! seen (token-struct-type t) #t)))
-    (err (token-loc t src) (format "The ~a metadata is declared more than once"
-                               (string-trim (regexp-replace #rx":$" (string-trim (token-struct-val t)) ""))))))
+  (for/fold ([seen '()] [found '()] #:result (reverse found))
+            ([t (in-list header)] #:when (memq (token-struct-type t) metadata-keywords))
+    (if (memq (token-struct-type t) seen)
+        (values seen (cons (err (token-loc t src) (format "The ~a metadata is declared more than once"
+                                                          (string-trim (regexp-replace #rx":$" (string-trim (token-struct-val t)) ""))))
+                           found))
+        (values (cons (token-struct-type t) seen) found))))
 
 ;; unquoted-target : tokens source -> (listof diagnostic)   a Mapping's `Target:` is a quoted string
 ;; (FSH.g4: `target: KW_TARGET STRING`). The grammar here reads a bare word too, as SUSHI's parser
@@ -93,6 +99,16 @@
              #:when (and (eq? (token-struct-type t) 'KW_TARGET) (eq? (token-struct-type next) 'SEQUENCE)))
     (err (token-loc next src)
          (format "The Target of a Mapping is a quoted string: write `Target: \"~a\"`" (token-struct-val next)))))
+
+;; bare-characteristics : tokens source -> (listof diagnostic)   `Characteristics:` lists codes
+;; (FSHLexer.g4: CODE_ITEM / LAST_CODE_ITEM are CODEs); a word without its `#` is read here, to be
+;; said where it is (SUSHI's lexer does not recognise it)
+(define (bare-characteristics toks src)
+  (for/list ([t (in-list toks)]
+             #:when (memq (token-struct-type t) '(CODE_ITEM LAST_CODE_ITEM))
+             #:unless (regexp-match? #rx"#" (token-struct-val t)))
+    (define word (string-trim (regexp-replace #px"\\s*,\\s*$" (token-struct-val t) "")))
+    (err (token-loc t src) (format "A characteristic is a code: write `#~a`" word))))
 
 ;; operator-spacing : entity tokens source -> (listof diagnostic)   `=`/`->` need a space on both sides
 ;; (SUSHI's lexer reads `a=b` as one word and its error listener explains the failure this way)
@@ -306,6 +322,11 @@
   (check-equal? (lint-document (list (list (fsh-mapping "M" '() '()) (loc #f 1 1 0 8)
                                            (list (tok 'STAR "* " 0 3 0 2) (tok 'ARROW "->" 2 3 2 2) (tok 'STRING "x" 5 3 5 3)))))
                 '())
+  ;; a characteristic written without its `#`
+  (check-equal? (msgs (lint-document (list (list (fsh-logical "L" '((characteristics "can-bind," "#has-size")) '()) (loc #f 1 1 0 8)
+                                                 (list (tok 'KW_CHARACTERISTICS "Characteristics:" 12 2 0 16)
+                                                       (tok 'CODE_ITEM "can-bind," 29 2 17 9) (tok 'LAST_CODE_ITEM "#has-size" 39 2 27 9))))))
+                '("A characteristic is a code: write `#can-bind`"))
   ;; a Mapping's Target written bare (FSH.g4 takes a STRING there)
   (check-equal? (msgs (lint-document (list (list (fsh-mapping "M" '((source . "P") (target . "http://x")) '()) (loc #f 1 1 0 8)
                                                  (list (tok 'KW_TARGET "Target:" 20 3 0 7) (tok 'SEQUENCE "http://x" 28 3 8 8))))))

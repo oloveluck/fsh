@@ -54,6 +54,6 @@
    (check-equal? (remove-duplicates (map car (ig-fsh-report-published-unmatched r)))
                  '("Basic" "Binary" "ImplementationGuide" "StructureDefinition"))
    (check-true (>= (ig-fsh-report-pairs r) 46))
-   (check-true (>= (ig-fsh-report-exact r) 31) "fewer exact resources than the floor")
+   (check-true (>= (ig-fsh-report-exact r) 46) "fewer exact resources than the floor")
    (check-true (>= (ig-fsh-report-contained r) 46) "fewer fully-matching resources than the floor")
    (check-true (>= (ig-fsh-report-elements-ok r) 138) "fewer matching differential elements than the floor")])

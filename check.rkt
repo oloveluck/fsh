@@ -18,14 +18,12 @@
 
 (require racket/contract racket/list racket/string racket/file racket/path
          "context-hint.rkt"
-         (only-in fhir/diagnostic diagnostic diagnostic-severity diagnostic-message diagnostic-lang diagnostic-phase diagnostic-loc
-                  loc-source loc-line loc-column
-                  attached-loc)
+         (only-in fhir/diagnostic diagnostic diagnostic-severity loc-source loc-line loc-column attached-loc)
          (only-in fhir/sd/sd-index current-sd-packages)
          (only-in fhir/conformance/validate validate-issues issue-severity issue-path issue-msg)
          (only-in fhir/serialize/read-json strip-jnum)
          (only-in "pack.rkt" pack-package!)
-         (only-in "ig-config.rkt" ig-config)
+         (only-in "ig-config.rkt" parse-ig-config)
          (only-in "project.rkt" compile-project pack-project! project-artifacts project-diagnostics project-located
                   project-sd-packages project-config project-texts project-maps project-missing)
          (only-in "compile.rkt" rule-path-of instance-id)
@@ -110,21 +108,22 @@
       (values k l)))
   ;; the FSH instance an artifact came from: by id; an instance of a logical model carries no id,
   ;; so it is matched by the model it is an InstanceOf (its resourceType)
+  (define (logical-instance-of a)
+    (for/first ([l (in-list located)]
+                #:when (and (fsh-instance? (car l))
+                            (let ([io (assoc 'instanceOf (fsh-instance-metadata (car l)))])
+                              (and io (equal? (cdr io) (hash-ref a 'resourceType #f))))))
+      l))
   ;; two instances with one id (a duplicate, reported apart) are told apart by order: the k-th
   ;; artifact with an id is the k-th instance with it (both instances' errors went to the later file)
-  (define seen (make-hash))
-  (define (instance-for* a)
-    (or (let* ([id (hash-ref a 'id #f)] [ls (and id (hash-ref instances id #f))])
-          (and ls (let ([k (hash-ref seen id 0)])
-                    (hash-set! seen id (add1 k))
-                    (list-ref ls (min k (sub1 (length ls)))))))
-        (for/first ([l (in-list located)]
-                    #:when (and (fsh-instance? (car l))
-                                (let ([io (assoc 'instanceOf (fsh-instance-metadata (car l)))])
-                                  (and io (equal? (cdr io) (hash-ref a 'resourceType #f))))))
-          l)))
   (define pairs                                      ; (artifact . (entity . loc)), each artifact once
-    (for*/list ([a (in-list artifacts)] [l (in-value (instance-for* a))] #:when l) (cons a l)))
+    (for/fold ([pairs '()] [seen (hash)] #:result (reverse pairs)) ([a (in-list artifacts)])
+      (define id (hash-ref a 'id #f))
+      (define ls (and id (hash-ref instances id #f)))
+      (cond [ls (define k (hash-ref seen id 0))
+                (values (cons (cons a (list-ref ls (min k (sub1 (length ls))))) pairs) (hash-set seen id (add1 k)))]
+            [(logical-instance-of a) => (lambda (l) (values (cons (cons a l) pairs) seen))]
+            [else (values pairs seen)])))
   (define (instance-for a) (cond [(assq a pairs) => cdr] [else #f]))
   (define examples
     (for/list ([pr (in-list pairs)]
@@ -247,13 +246,12 @@
 
 ;; a validator path is rooted at the resource type for the resource's own elements; at a datatype
 ;; (`Timing`, `Quantity`) when it recurses into one
-(define resource-like-cache (make-hash))
-(define (resource-like? t)
-  (hash-ref! resource-like-cache t
-             (lambda () (not (member t '("Timing" "Quantity" "CodeableConcept" "Coding" "Identifier" "Reference"
-                                         "Period" "Range" "Ratio" "HumanName" "Address" "ContactPoint" "Annotation"
-                                         "Attachment" "Dosage" "Meta" "Narrative" "Extension" "SampledData"
-                                         "Money" "Duration" "Age" "Count" "Distance" "Signature"))))))
+(define datatype-roots
+  '("Timing" "Quantity" "CodeableConcept" "Coding" "Identifier" "Reference" "Period" "Range" "Ratio"
+    "HumanName" "Address" "ContactPoint" "Annotation" "Attachment" "Dosage" "Meta" "Narrative"
+    "Extension" "SampledData" "Money" "Duration" "Age" "Count" "Distance" "Signature"))
+;; resource-like? : string -> boolean   the first step of a validator path names a resource
+(define (resource-like? t) (not (member t datatype-roots)))
 
 (define (rule-path-string r)
   (cond [(rule-assign? r) (rule-assign-path r)]
@@ -281,7 +279,9 @@
 ;; index reads (its own profiles and extensions resolve before any dependency's)
 (define (artifacts-package! dir cfg artifacts)
   (define out (build-path dir "project.tgz"))
-  (pack-package! out (or cfg (ig-config #f #f '() #f #f #f #f #f #f #f #f #f)) artifacts (hash))
+  ;; (no guide file: the config of an empty one — a positional `ig-config` here broke each time the
+  ;; struct grew a field)
+  (pack-package! out (or cfg (parse-ig-config "")) artifacts (hash))
   out)
 
 ;; ---- the server generated from the packed project -------------------------------------------------

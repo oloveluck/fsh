@@ -21,9 +21,8 @@
          (only-in "context.rkt" fsh-config-status fsh-config-version)
          (only-in "yaml.rkt" yref yaml-boolean)
          (only-in "parser/parse.rkt" parse-fsh-doc/diagnostics)
-         (only-in "parser/ast.rkt" fsh-instance? fsh-instance-metadata
-                  fsh-profile fsh-profile? fsh-extension fsh-extension? fsh-logical fsh-logical? fsh-resource fsh-resource?
-                  fsh-valueset fsh-valueset? fsh-codesystem fsh-codesystem?)
+         (only-in "parser/ast.rkt" fsh-instance? fsh-instance-metadata entity-name entity-metadata
+                  fsh-profile? fsh-extension? fsh-logical? fsh-resource? fsh-valueset? fsh-codesystem?)
          "ig-config.rkt" "pack.rkt")
 
 (provide
@@ -180,10 +179,9 @@
           [(fsh-valueset? e) "ValueSet"] [(fsh-codesystem? e) "CodeSystem"]
           [(fsh-instance? e) (instance-kind e)] [else #f]))
   (define (id-of e)
-    (match e
-      [(? fsh-instance?) (instance-id e)]
-      [(or (fsh-profile n m _) (fsh-extension n m _) (fsh-logical n m _) (fsh-resource n m _) (fsh-valueset n m _) (fsh-codesystem n m _))
-       (let ([i (assoc 'id m)]) (if i (cdr i) n))]))
+    (if (fsh-instance? e)
+        (instance-id e)
+        (let ([i (assoc 'id (entity-metadata e))]) (if i (cdr i) (entity-name e)))))
   (let loop ([ls located] [seen (hash)] [out '()])
     (match ls
       ['() (reverse out)]

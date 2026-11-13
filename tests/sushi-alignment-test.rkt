@@ -6,7 +6,8 @@
 ;;;
 ;;; The differential holds what CHANGES, in the base definition's order:
 ;;;   * a cardinality or type equal to the definition an element starts from is not written, also
-;;;     below a datatype (`name.family 0..1`) and inside a slice (`component[x].value[x] 0..1`);
+;;;     below a datatype (`name.family 0..1`) and inside a slice (`component[x].value[x] 0..1`, or
+;;;     what the profile already said of the element outside the slices);
 ;;;   * `extension contains …` on a datatype's extension adds no slicing (FHIR slices it already);
 ;;;   * a type-specific choice path addresses the choice itself once the Parent narrowed it to one type;
 ;;;   * an element's children follow its datatype's own order (`telecom.extension` before
@@ -59,7 +60,19 @@
      (check-equal? (element obs "Observation.component:a")
                    (hasheq 'id "Observation.component:a" 'path "Observation.component" 'sliceName "a" 'min 0 'max "1"))
      (check-equal? (element obs "Observation.component:a.value[x]")
-                   (hasheq 'id "Observation.component:a.value[x]" 'path "Observation.component.value[x]" 'min 1)))
+                   (hasheq 'id "Observation.component:a.value[x]" 'path "Observation.component.value[x]" 'min 1))
+     ;; … and a slice's child starts from what the profile already said of the element outside the
+     ;; slices: `section.title 1..1 MS` said again inside a slice writes nothing there
+     (define doc (car (compiled "Profile: Doc" "Parent: Composition"
+                                "* section.title 1..1 MS"
+                                "* section ^slicing.discriminator.type = #pattern"
+                                "* section ^slicing.discriminator.path = \"code\""
+                                "* section ^slicing.rules = #open"
+                                "* section contains a 0..1"
+                                "* section[a].title 1..1 MS"
+                                "* section[a].code 1..1")))
+     (check-equal? (ids doc) '("Composition.section" "Composition.section.title"
+                               "Composition.section:a" "Composition.section:a.code")))
 
    (test-case "`contains` on a datatype's extension writes no slicing; on a resource's it does"
      (define c (cadr (compiled "Extension: Side" "Id: side" "* value[x] only code"

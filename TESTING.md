@@ -10,18 +10,18 @@ adds (narratives, snapshots, dates, OIDs). Floors only rise.
 
 | IG | Compile errors | Resources paired | Identical | With all published content | Differential elements |
 |---|---|---|---|---|---|
-| International Patient Summary 2.0.1 | 0 | 114 | 94 | 108 | 438/438 |
-| mCODE 4.0.0 (with US Core 6.1.0 and Genomics Reporting 2.0.0) | 0 | 349 | 311 | 339 | 472/473 |
-| Da Vinci Plan-Net 1.2.0 | 0 | 109 | 84 | 99 | 321/321 |
-| Da Vinci HRex 1.1.0 | 0 | 46 | 31 | 46 | 138/138 |
-| Genomics Reporting 2.0.0 | 0 | 141 | 121 | 129 | 254/259 |
+| International Patient Summary 2.0.1 | 0 | 114 | 108 | 111 | 438/438 |
+| mCODE 4.0.0 (with US Core 6.1.0 and Genomics Reporting 2.0.0) | 0 | 349 | 338 | 347 | 472/473 |
+| Da Vinci Plan-Net 1.2.0 | 0 | 109 | 104 | 105 | 321/321 |
+| Da Vinci HRex 1.1.0 | 0 | 46 | 46 | 46 | 138/138 |
+| Genomics Reporting 2.0.0 | 0 | 141 | 134 | 137 | 254/259 |
 
 **Decompiling the published packages** (FHIR → FSH → FHIR, compared the same way)
 
 | Package | Paired | Identical | With all published content |
 |---|---|---|---|
 | IPS 2.0.1 | 117 | 117 | 117 |
-| mCODE 4.0.0 | 349 | 341 | 345 |
+| mCODE 4.0.0 | 349 | 348 | 348 |
 
 **The parser's diagnostics against SUSHI's own importer tests** (515 FSH texts from SUSHI 3.21.0,
 111 with the error or warning SUSHI logs): 514 of 515 verdicts agree, 95 of them on SUSHI's own line;
@@ -39,10 +39,13 @@ broken reference to its own sections or `fsh/…` bindings.
 ## What the remaining differences are
 
 `tests/ig-harness.rkt` classifies every difference by kind, largest first, and the tests print the
-classes. The largest: profiles whose differential lacks elements SUSHI writes (mostly mCODE's genomics
-and performance-status profiles), a few instance details, Bundle narratives, and in Genomics
-Reporting the SUSHI 2 shape of a type-specific choice path, which SUSHI 3 and this compiler write as
-a type slice. `CLAUDE.md` lists them in full.
+classes: what the published resource has and ours lacks or has otherwise (`missing`, `differs`), and
+what ours writes that the published one does not (`surplus`, `extra`). What is left: a quantity's
+`unit` (written here from the UCUM code when the rule gives no display; SUSHI writes none — about
+twenty examples across the guides); four Plan-Net profiles with an element SUSHI leaves out; an empty `^comment = ""` (two mCODE profiles); IPS's Bundle narratives; one mCODE
+example whose published JSON is not what its FSH says; and in Genomics Reporting the SUSHI 2 shape
+of a type-specific choice path, which SUSHI 3 and this compiler write as a type slice, and
+OperationDefinitions that changed after publication. `CLAUDE.md` lists them in full.
 
 ## Running them
 
@@ -52,6 +55,7 @@ raco test tests/ig-ips-test.rkt          # one IG (also ig-mcode, ig-genomics, g
 raco test tests/sushi-importer-test.rkt  # the importer oracle
 raco test tests/golden-test.rkt tests/roundtrip-test.rkt
 raco test tests/guide-test.rkt tests/docs-test.rkt   # the guide and the manual
+raco test tests/sushi-alignment-test.rkt tests/cli-test.rkt   # SUSHI's behaviours, case by case; the command line
 ```
 
 `tests/ig-plannet-test.rkt` and `tests/ig-hrex-test.rkt` fetch their packages from

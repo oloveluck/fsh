@@ -792,6 +792,9 @@ differential.}
 most resources come out identical to the published ones and a minority differ in details
 (@secref["tested"]). An R5-only resource used in an R4 project is accepted and left as it is; the
 IG Publisher would convert it.}
+@item{@bold{A quantity's unit.} @tt{* valueQuantity = 7.1 '%'} writes the UCUM code as the
+quantity's @tt{unit} too (@tt{"unit": "%"}). SUSHI writes a @tt{unit} only when the rule gives one
+(@tt{7.1 '%' "percent"}); write it that way when the two must agree.}
 @item{@bold{The decompiler writes plain FSH.} It does not gather repeated addresses into aliases or
 repeated rules into rule sets, and it writes a profile's fixed values as @tt{^} rules.}
 @item{@bold{Building a module is not checking it.} Requiring a @tt{#lang fsh} file compiles it and
@@ -841,11 +844,11 @@ SUSHI and the IG Publisher), leaving aside what only the Publisher adds.
 
 @itemlist[
 @item{Five guides compile from their own FSH with no errors. Of the resources that can be paired
-with the published ones: International Patient Summary 2.0.1, 94 of 114 identical and 108 with all
-the published content; mCODE 4.0.0, 311 of 349 and 339; Da Vinci Plan-Net 1.2.0, 84 of 109 and 99;
-Da Vinci HRex 1.1.0, 31 of 46 and 46; Genomics Reporting 2.0.0, 121 of 141 and 129.}
+with the published ones: International Patient Summary 2.0.1, 108 of 114 identical and 111 with all
+the published content; mCODE 4.0.0, 338 of 349 and 347; Da Vinci Plan-Net 1.2.0, 104 of 109 and 105;
+Da Vinci HRex 1.1.0, all 46; Genomics Reporting 2.0.0, 134 of 141 and 137.}
 @item{The other direction: the published IPS and mCODE packages decompiled to FSH and compiled
-back. All 117 IPS resources come back identical, and 341 of mCODE's 349.}
+back. All 117 IPS resources come back identical, and 348 of mCODE's 349.}
 @item{The parser's verdicts against SUSHI's own test suite of 515 FSH texts: 514 agree, with no
 error missed and none reported where SUSHI reports none.}
 @item{SUSHI's 22 hand-written pairs of FSH and JSON all compile to their JSON and survive the round

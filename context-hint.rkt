@@ -4,6 +4,7 @@
 ;;; a `#lang fsh` module (which registers what it defines). Read as text: no compile of the sibling.
 
 (require racket/contract racket/file racket/path
+         (only-in "project.rkt" fsh-files)
          (only-in fhir/diagnostic diagnostic diagnostic-lang diagnostic-phase diagnostic-severity diagnostic-message diagnostic-loc))
 
 (provide
@@ -47,9 +48,7 @@
                #:when (directory-exists? sib)
                #:unless (equal? (folder sib) here)
                #:unless (member (folder sib) taken)
-               [f (in-directory sib)]
-               #:when (regexp-match? #rx"[.]fsh$" (path->string f))
-               #:when (file-exists? f)                       ; not an editor's lock file (a link to nothing)
+               [f (in-list (fsh-files sib))]                 ; as a project finds them: no lock file, no dot folder
                #:when (regexp-match? rx (file->string f)))
     (cons f sib)))
 

@@ -22,7 +22,7 @@
          "parser/ast.rkt"
          "parser/path.rkt"
          (only-in "parser/parse.rkt" parse-fsh-doc)
-         (only-in fhir/diagnostic diagnostic attached-loc)
+         (only-in fhir/diagnostic diagnostic attached-loc attach-loc!)
          (only-in fhir/model/registry type-registered?)
          (only-in fhir/suggest did-you-mean)
          (only-in fhir/serialize/jsexpr-util drop-false)
@@ -139,10 +139,6 @@
 ;; compile-doc/errors : entities -> (values (listof jsexpr) (listof (cons entity-label exn)))
 ;; Like SUSHI, a failing entity is reported and the rest of the document still compiles.
 (define (compile-doc/errors entities)
-  ;; one document's RuleSet instantiations are parsed once per distinct text (see instantiate-ruleset)
-  (parameterize ([current-instantiations (make-hash)])
-    (compile-doc/errors* entities)))
-(define (compile-doc/errors* entities)
   (define aliases (alias-table entities))
   (define rulesets (ruleset-table entities))
   (define param-rulesets (param-ruleset-table entities))
@@ -335,7 +331,8 @@
           [(not pr) (unknown-ruleset! r (car ref)) (list r)]
           [else
            (define args (filter-map param-arg (cdr ref)))
-           (under (rule-insert-path r) (expand-rules (instantiate-ruleset (car pr) (cdr pr) args) rulesets param-rulesets))])]
+           (under (rule-insert-path r)
+                  (expand-rules (instantiate-ruleset (car pr) (cdr pr) args #:at (attached-loc r)) rulesets param-rulesets))])]
        [else (list r)]))
    rules))
 ;; under : path|#f rules -> rules   `* sectionProblems insert M` (or an insert indented under a rule)
@@ -345,8 +342,12 @@
   (if (and (string? prefix) (not (member prefix '("" "."))))
       (map (lambda (r) (prefix-rule prefix r)) rules)
       rules))
+;; prefix-rule : path rule -> rule   the rule under the path, still known to be written where it was
 (define (prefix-rule prefix r)
-  (map-rule-path (lambda (p) (if (or (not p) (equal? p "") (equal? p ".")) prefix (string-append prefix "." p))) r))
+  (define r* (map-rule-path (lambda (p) (if (or (not p) (equal? p "") (equal? p ".")) prefix (string-append prefix "." p))) r))
+  (define l (attached-loc r))
+  (when (and l (not (eq? r* r))) (attach-loc! r* l))
+  r*)
 ;; a (parameter|lastParameter "v,") token -> its cleaned argument value
 (define (param-arg x)
   (match x
@@ -360,12 +361,13 @@
 ;; unescape-param : string -> string   a `)` or `,` inside an argument is written `\)` / `\,` (and a
 ;; backslash `\\`): the backslash goes, the character stays
 (define (unescape-param s) (regexp-replace* #px"\\\\([),\\\\])" s "\\1"))
-;; instantiate-ruleset : params body-tokens args -> rules
-;; a parameterized RuleSet instantiated: {param}->arg substituted in the raw body, re-parsed to rules.
-;; The rules depend only on the substituted text, so within one document (current-instantiations) a
-;; text is parsed once however many inserts produce it (mCODE: thousands of inserts, 30% of its time).
-(define current-instantiations (make-parameter #f))
-(define (instantiate-ruleset params body args)
+;; instantiate-ruleset : params body-tokens args [#:at loc] -> rules
+;; a parameterized RuleSet instantiated: {param}->arg substituted in the raw body, the text read as
+;; rules again (lexed; the parse itself is a template the parser remembers by token shape, so the
+;; thousands of inserts of a guide — mCODE: 866 — cost a lexing each).
+;; Each rule is located at the INSERT (#:at): its own position is in a text nobody can open, and a
+;; problem in it (`* insert Req(nmae)`: no element `nmae`) is fixed where the argument is written.
+(define (instantiate-ruleset params body args #:at [at #f])
   (define subst (substitution params args))
   ;; a STAR token carries its own leading "\n* " (starts a rule line); other tokens get a space.
   ;; padding a STAR would let the WS lexer eat the newline the STAR rule needs.
@@ -374,11 +376,9 @@
                         (define raw (let ([x (cdr t)]) (if (code-tok? x) (code-tok-text x) x)))
                         (define v (requote (car t) (substitute raw subst)))
                         (if (eq? (car t) 'STAR) v (string-append " " v)))))
-  (define (parse)
-    (define ds (parse-fsh-doc text))
-    (if (and (pair? ds) (fsh-ruleset? (car ds))) (fsh-ruleset-rules (car ds)) '()))
-  (define memo (current-instantiations))
-  (if memo (hash-ref! memo text parse) (parse)))
+  (define rules (match (parse-fsh-doc text) [(cons (? fsh-ruleset? rs) _) (fsh-ruleset-rules rs)] [_ '()]))
+  (when at (for ([r (in-list rules)]) (attach-loc! r at)))
+  rules)
 ;; requote : token-type string -> string   a body token's value back as source text: the lexer
 ;; strips the quotes of strings and units (`"Not used in this profile"` re-lexed bare would be words)
 (define (requote type v)
@@ -429,7 +429,7 @@
 
 ;; ---- living examples ------------------------------------------------------------------------
 (module+ test
-  (require rackunit (only-in fhir/r5/schemas) (only-in fhir/diagnostic diagnostic-severity diagnostic-message))
+  (require rackunit (only-in fhir/r5/schemas) (only-in fhir/diagnostic diagnostic-severity diagnostic-message diagnostic->string))
   ;; parameter values: `\)` and `\,` are the characters; an argument is inserted verbatim
   (check-equal? (unescape-param "Aortic structure (body structure\\)") "Aortic structure (body structure)")
   (check-equal? (param-arg '(parameter "Canonical(TG263CS\\),")) "Canonical(TG263CS)")   ; the escaped paren survives
@@ -459,6 +459,14 @@
   (define code-el (findf (lambda (e) (equal? (hash-ref e 'id) "Observation.code")) (hash-ref (hash-ref under-path 'differential) 'element)))
   (check-equal? (hash-ref code-el 'comment #f) "mandatory")
   (check-equal? (hash-ref code-el 'short #f) "m")
+  ;; a problem in a rule a parameterized RuleSet makes is at the insert that made it — where the
+  ;; argument is written — not at its place in the instantiated text (`<input>:2:5`, a file nobody has)
+  (let-values ([(_out _errs ds)
+                (compile-doc/diagnostics
+                 (parse-fsh-doc "RuleSet: Req(path)\n* {path} 1..1 MS\n\nProfile: P\nParent: Patient\n* gender 1..1\n* insert Req(nmae)\n"
+                                #:source "req.fsh"))])
+    (check-equal? (map diagnostic->string ds)
+                  '("req.fsh:7:3: fsh compile error: profile: P: `nmae` is not an element of Patient (did you mean `name`?)")))
   ;; a Mapping's rules may come from a RuleSet (its inserts were left unexpanded, the rules lost)
   (define mapped (car (fsh->fhir (string-append
                                   "RuleSet: NameMap\n* name -> \"PID-5\"\n\n"

@@ -89,15 +89,17 @@
   (define slice-declarations (make-hash))
   (for ([ps (in-list (profile-slices parent))])
     (unless (hash-has-key? slice-declarations ps) (hash-set! slice-declarations ps (hash-count slice-declarations))))
+  (define slice-origins (make-hash))
   (define-values (elems00 order00)
-    (parameterize ([current-slice-declarations slice-declarations])
+    (parameterize ([current-slice-declarations slice-declarations] [current-slice-origins slice-origins])
       (fold-sd-rules base-type (rewrite-extension-slices rules parent-elements base-type) invariants self-url
                      #:parent-types parent-types #:parent-element (lambda (id) (hash-ref parent-elements id #f)))))
   (define-values (elems0 order0) (let-values ([(e o) (add-slice-parents elems00 order00)]) (copy-slice-children e o)))
   ;; SUSHI writes what CHANGES: a property equal to the Parent's element's is not in the
   ;; differential, and an element left with nothing but its id and path is not either (a slice
   ;; stays, bare, so its children have a home)
-  (define-values (elems1 order1) (drop-unchanged elems0 order0 (inherited-element base-type (lambda (id) (hash-ref parent-elements id #f)))))
+  (define-values (elems1 order1)
+    (drop-unchanged elems0 order0 (inherited-element base-type (lambda (id) (hash-ref parent-elements id #f)) slice-origins)))
   (define-values (elems order)
     (if ext? (add-extension-scaffold elems1 order1 self-url meta) (values elems1 order1)))
   (define diff (parameterize ([current-slice-declarations slice-declarations])
@@ -135,19 +137,24 @@
                              base)])
                   (if (hash-ref b 'context #f) b (hash-remove b 'context))))
   (maybe-snapshot (apply-carets (hash-set base* 'abstract #f) rules)))
-;; inherited-element : base-type (id -> element|#f) -> (element -> element|#f)   the definition an
-;; element of the differential starts from, which SUSHI diffs it against: the Parent's element of
-;; that id; else — for an element that is not itself a slice — the Parent's element outside the
-;; slices (`component:gene-studied.value[x]` unfolds from `component.value[x]`), else the base
-;; definition at its path, through the datatypes (`Patient.name.family` is HumanName.family, 0..1).
+;; inherited-element : base-type (id -> element|#f) [origins] -> (element -> element|#f)   the
+;; definition an element of the differential starts from, which SUSHI diffs it against: the Parent's
+;; element of that id; else — for an element that is not itself a slice — the Parent's element
+;; outside the slices (`component:gene-studied.value[x]` unfolds from `component.value[x]`), else the
+;; base definition at its path, through the datatypes (`Patient.name.family` is HumanName.family,
+;; 0..1) — under what this profile had said of the element outside the slices by then (origins).
 ;; A new slice has no original: SUSHI writes its min and max whatever they are.
-(define ((inherited-element base-type parent-element) e)
+(define ((inherited-element base-type parent-element [origins (hash)]) e)
   (define id (hash-ref e 'id))
   (or (parent-element id)
       (and (not (hash-ref e 'sliceName #f))
-           (let ([unsliced (regexp-replace* #rx":[^.]+" id "")])
-             (or (and (not (equal? unsliced id)) (parent-element unsliced))
-                 (base-element base-type (hash-ref e 'path)))))))
+           (let* ([unsliced (regexp-replace* #rx":[^.]+" id "")]
+                  [definition (or (and (not (equal? unsliced id)) (parent-element unsliced))
+                                  (base-element base-type (hash-ref e 'path)))]
+                  [own (hash-ref origins id #f)])
+             (if (and own (hash? definition))
+                 (for/fold ([h definition]) ([(k v) (in-hash own)]) (hash-set h k v))
+                 (or own definition))))))
 ;; drop-unchanged : elems order (element -> element|#f) -> (values elems order)   each element minus
 ;; the properties the element it starts from already has with the same value; an element reduced to
 ;; id/path (no sliceName) is dropped with its place in `order`
@@ -320,6 +327,9 @@
      (hash-set h 'binding (if (null? exts) (hash-remove inherited 'extension) (hash-set inherited 'extension exts)))]
     [else (define exts (without-core-hints inherited))
           (if (null? exts) h (hash-set h key exts))]))
+;; fold-sd-rules : base-type rules invariants self-url -> (values elems order)   the rules folded
+;; into differential elements by id (elems) and the ids newest first (order); one clause per kind
+;; of rule, each on the element its path addresses (rid, rpath, rslice)
 (define (fold-sd-rules base-type rules invariants self-url #:parent-types [parent-types (lambda (_) '())]
                        #:parent-element [parent-element (lambda (_) #f)])
   (define (constraint-of key)
@@ -357,29 +367,16 @@
       ;; a flag the Parent's element already carries changes nothing, and SUSHI writes only what
       ;; changes: `* status MS` under US Core's observation (status MS there) adds no element
       [(rule-flag p _ flags)
-       (define pe (parent-element rid))
-       (define already (and (hash? pe) (not (hash-has-key? elems rid))
-                            (for/and ([f (in-list flags)])
-                              (cond [(eq? f 'MS) (eq? (hash-ref pe 'mustSupport #f) #t)]
-                                    [(eq? f 'SU) (eq? (hash-ref pe 'isSummary #f) #t)]
-                                    [(eq? f mod-flag) (eq? (hash-ref pe 'isModifier #f) #t)]
-                                    [else #t]))))
-       (if already (values elems order) (upd elems order rid rpath rslice (lambda (h) (apply-flags h flags))))]
+       (if (and (not (hash-has-key? elems rid)) (carries-flags? (parent-element rid) flags))
+           (values elems order)
+           (upd elems order rid rpath rslice (lambda (h) (apply-flags h flags))))]
       ;; `from VS` without a strength is a required binding (FSH's default)
       [(rule-binding p vs str)  (upd elems order rid rpath rslice (lambda (h) (hash-set h 'binding (drop-false (hasheq 'strength (if str (symbol->string str) "required") 'valueSet (and vs (valueset-url vs)))))))]
       [(rule-only p types)
-       ;; types in the base element's order (SUSHI), unknown ones after
-       (define base-codes (or (base-type-codes base-type rpath) '()))
-       (define (rank t) (or (index-of base-codes (hash-ref t 'code)) 1000))
-       ;; a kept type carries the Parent's extension on it (US Core's type-level must-support), as
-       ;; SUSHI narrows the inherited type list rather than writing a new one
-       (define inherited (parent-types rpath))
-       (define (inherit t)
-         (define pt (findf (lambda (x) (equal? (hash-ref x 'code #f) (hash-ref t 'code #f))) inherited))
-         (if (and pt (hash-ref pt 'extension #f) (not (hash-ref t 'extension #f))) (hash-set t 'extension (hash-ref pt 'extension)) t))
-       (define new-types (sort (map (compose inherit type->jsexpr) types) < #:key rank))
+       (define new-types (only-types base-type rpath types (parent-types rpath)))
        ;; an `only` naming exactly the base element's types narrows nothing: SUSHI emits no element
-       (if (and (not (hash-has-key? elems rid)) (equal? (base-type-codes base-type rpath) (map (lambda (t) (hash-ref t 'code)) new-types))
+       (if (and (not (hash-has-key? elems rid))
+                (equal? (base-type-codes base-type rpath) (map (lambda (t) (hash-ref t 'code)) new-types))
                 (andmap (lambda (t) (= (hash-count t) 1)) new-types))
            (values elems order)
            (upd elems order rid rpath rslice (lambda (h) (hash-set h 'type new-types))))]
@@ -405,47 +402,72 @@
                                    'short short 'definition (or def short)
                                    'type (and (pair? types) (map type->jsexpr types)))))]
       [(rule-contains p items)
-       (define slice-min (for/sum ([it (in-list items)]) (card-lo (contains-item-card it))))
-       (define ext? (regexp-match? #rx"[.](modifierE|e)xtension$" rpath))
-       ;; SUSHI slices extensions by url when `contains` names them — where the element is not sliced
-       ;; yet. The Parent's element may be; and below a datatype (`bodySite.extension`,
-       ;; `telecom.extension`) the element comes from the datatype's own definition, whose
-       ;; `extension` FHIR already slices by url: nothing changes, so nothing is written
-       (define sliced-already?
-         (and ext? (or (let ([pe (parent-element rid)]) (and (hash? pe) (hash-ref pe 'slicing #f)))
-                       (let ([b (base-element base-type rpath)]) (and (hash? b) (hash-ref b 'slicing #f))))))
-       (define-values (e1 o1) (upd elems order rid rpath rslice
-                                   (lambda (h)
-                                     (let* ([h (if (> slice-min 0) (hash-set h 'min slice-min) h)]
-                                            [h (if (and ext? (not sliced-already?) (not (hash-has-key? h 'slicing)))
-                                                   (hash-set h 'slicing url-slicing)
-                                                   h)])
-                                       h))))
-       (for/fold ([elems e1] [order o1]) ([it (in-list items)])
-         (define sn (or (contains-item-named-as it) (contains-item-name it)))
-         ;; reslicing: when the contains target is itself a slice, sub-slice ids join with "/"
-         (define sub-id (if rslice (string-append rid "/" sn) (string-append rid ":" sn)))
-         (define sub-name (if rslice (string-append rslice "/" sn) sn))
-         ;; the declaration order of the slices of this path, for the differential's order
-         (let ([decl (current-slice-declarations)])
-           (when (and decl (not (hash-has-key? decl (cons rpath sub-name))))
-             (hash-set! decl (cons rpath sub-name) (hash-count decl))))
-         ;; `extension contains <ext> named <slice>`: the slice is typed Extension, profiled by that
-         ;; extension's canonical (a local Extension's url, an alias, or a url as written)
-         (define ext-profile
-           (and ext? (contains-item-named-as it)
-                (let* ([n (resolve-alias (contains-item-name it) (current-aliases))]
-                       [local (hash-ref (current-profiles) n #f)])
-                  (cond [local (local-profile-url local)]
-                        [(regexp-match? #rx"^https?:" n) n]
-                        [else (external-canonical "StructureDefinition" n)]))))
-         (upd elems order sub-id rpath sub-name
-              (lambda (h)
-                (let ([h (apply-card (apply-flags h (contains-item-flags it)) (contains-item-card it))])
-                  (if (and ext-profile (not (hash-has-key? h 'type)))
-                      (hash-set h 'type (list (hasheq 'code "Extension" 'profile (list ext-profile))))
-                      h)))))]
+       (contain-slices elems order rid rpath rslice items
+                       (and (extension-path? rpath)
+                            (or (let ([pe (parent-element rid)]) (and (hash? pe) (hash-ref pe 'slicing #f)))
+                                (let ([b (base-element base-type rpath)]) (and (hash? b) (hash-ref b 'slicing #f))))))]
       [_ (values elems order)]))))
+;; carries-flags? : element|#f flags -> boolean   the element already has every one of the flags
+(define (carries-flags? pe flags)
+  (and (hash? pe)
+       (for/and ([f (in-list flags)])
+         (cond [(eq? f 'MS) (eq? (hash-ref pe 'mustSupport #f) #t)]
+               [(eq? f 'SU) (eq? (hash-ref pe 'isSummary #f) #t)]
+               [(eq? f mod-flag) (eq? (hash-ref pe 'isModifier #f) #t)]
+               [else #t]))))
+;; only-types : base-type path (listof type-name) (listof jsexpr) -> (listof jsexpr)   what
+;; `* path only T1 or T2` makes the element's `type`: in the base element's order (SUSHI), unknown
+;; ones after; a kept type carries the Parent's extension on it (US Core's type-level must-support),
+;; as SUSHI narrows the inherited type list rather than writing a new one
+(define (only-types base-type path types inherited)
+  (define base-codes (or (base-type-codes base-type path) '()))
+  (define (rank t) (or (index-of base-codes (hash-ref t 'code)) 1000))
+  (define (inherit t)
+    (define pt (findf (lambda (x) (equal? (hash-ref x 'code #f) (hash-ref t 'code #f))) inherited))
+    (if (and pt (hash-ref pt 'extension #f) (not (hash-ref t 'extension #f))) (hash-set t 'extension (hash-ref pt 'extension)) t))
+  (sort (map (compose inherit type->jsexpr) types) < #:key rank))
+;; extension-path? : element-path -> boolean   the path of an `extension` / `modifierExtension`
+(define (extension-path? path) (regexp-match? #rx"[.](modifierE|e)xtension$" path))
+;; contain-slices : elems order id path slice (listof contains-item) sliced-already? -> (values elems order)
+;; `* path contains a 0..1 and b 1..1`: the element's min is the slices' sum; each slice is an
+;; element of its own with its cardinality and flags, its place in the declaration order recorded.
+;; On an extension, SUSHI slices by url — where the element is not sliced yet: the Parent's element
+;; may be; and below a datatype (`bodySite.extension`, `telecom.extension`) the element comes from
+;; the datatype's own definition, whose `extension` FHIR already slices by url: nothing changes, so
+;; nothing is written — and a slice `named` after an Extension is typed with it.
+(define (contain-slices elems order rid rpath rslice items sliced-already?)
+  (define slice-min (for/sum ([it (in-list items)]) (card-lo (contains-item-card it))))
+  (define ext? (extension-path? rpath))
+  (define-values (e1 o1)
+    (upd elems order rid rpath rslice
+         (lambda (h)
+           (let ([h (if (> slice-min 0) (hash-set h 'min slice-min) h)])
+             (if (and ext? (not sliced-already?) (not (hash-has-key? h 'slicing))) (hash-set h 'slicing url-slicing) h)))))
+  (for/fold ([elems e1] [order o1]) ([it (in-list items)])
+    (define sn (or (contains-item-named-as it) (contains-item-name it)))
+    ;; reslicing: when the contains target is itself a slice, sub-slice ids join with "/"
+    (define sub-id (if rslice (string-append rid "/" sn) (string-append rid ":" sn)))
+    (define sub-name (if rslice (string-append rslice "/" sn) sn))
+    ;; the declaration order of the slices of this path, for the differential's order
+    (let ([decl (current-slice-declarations)])
+      (when (and decl (not (hash-has-key? decl (cons rpath sub-name))))
+        (hash-set! decl (cons rpath sub-name) (hash-count decl))))
+    (define ext-profile (and ext? (contains-item-named-as it) (named-extension-url (contains-item-name it))))
+    (upd elems order sub-id rpath sub-name
+         (lambda (h)
+           (let ([h (apply-card (apply-flags h (contains-item-flags it)) (contains-item-card it))])
+             (if (and ext-profile (not (hash-has-key? h 'type)))
+                 (hash-set h 'type (list (hasheq 'code "Extension" 'profile (list ext-profile))))
+                 h))))))
+;; named-extension-url : name -> url|#f   `extension contains <ext> named <slice>`: the canonical of
+;; the Extension the slice is profiled by — a local Extension's url, an alias, a url as written, or
+;; an Extension of the packages by name
+(define (named-extension-url name)
+  (define n (resolve-alias name (current-aliases)))
+  (define local (hash-ref (current-profiles) n #f))
+  (cond [local (local-profile-url local)]
+        [(regexp-match? #rx"^https?:" n) n]
+        [else (external-canonical "StructureDefinition" n)]))
 ;; check-instance-of! : instance aliases profiles -> void   an InstanceOf nothing defines — not a type,
 ;; a profile, extension or logical model here, nor a definition in the packages — is an error, as
 ;; SUSHI's "Cannot find definition for Instance": compiling on writes a resource of a type that does
@@ -689,10 +711,20 @@
 (define (card-lo card)
   (match (regexp-match #px"^([0-9]*)\\.\\." card) [(list _ lo) (if (positive? (string-length lo)) (string->number lo) 0)] [_ 0]))
 ;; differential element accumulator keyed by ElementDefinition id
+;; current-slice-origins : (parameter (or #f (mutable-hash id -> element)))   for an element inside a
+;; slice, the profile's own element outside the slices as it stood when the rules first reached the
+;; slice's one: SUSHI unfolds a slice's children from the sliced element as constrained so far, so
+;; what `section.title` already says is not written again at `section:problems.title`
+(define current-slice-origins (make-parameter #f))
 (define (ensure elems order id path slice)
-  (if (hash-has-key? elems id)
-      (values elems order)
-      (values (hash-set elems id (drop-false (hasheq 'id id 'path path 'sliceName slice))) (cons id order))))
+  (cond
+    [(hash-has-key? elems id) (values elems order)]
+    [else
+     (define origins (current-slice-origins))
+     (define unsliced (and origins (not slice) (regexp-replace* #rx":[^.]+" id "")))
+     (when (and unsliced (not (equal? unsliced id)) (hash-ref elems unsliced #f))
+       (hash-set! origins id (hash-ref elems unsliced)))
+     (values (hash-set elems id (drop-false (hasheq 'id id 'path path 'sliceName slice))) (cons id order))]))
 (define (upd elems order id path slice f)
   (define-values (e1 o1) (ensure elems order id path slice))
   (values (hash-set e1 id (f (hash-ref e1 id))) o1))

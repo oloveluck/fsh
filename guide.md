@@ -54,6 +54,9 @@ Comments are `//` and `/* … */`. Paths are element names from the parent (`com
 `value[x]`, `valueQuantity`). In instances, `[0]` indexes a repeating element, `[+]` takes the
 next one and `[=]` the current one; a slice is `component[systolic]`. `Id:` gives the resource
 id (and the canonical `<canonical>/StructureDefinition/<id>`); without it the name is used.
+A quantity is `120 'mm[Hg]'`, or `120 'mm[Hg]' "mmHg"` to say its `unit`; without the display the
+unit written is the UCUM code (SUSHI writes none). A Reference or Canonical target may pin a
+version, `Reference(USCorePatientProfile|7.0.0)`; several targets are joined with `or`.
 
 ## Worked example
 A profile for HbA1c results, and an example that conforms to it:

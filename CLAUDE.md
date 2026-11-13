@@ -37,7 +37,7 @@ The International Patient Summary IG's own FSH sources (`tests/vendor/ips-2.0.1`
 2.0.1, 123 files / 274 entities) are compiled for R4 and compared with the PUBLISHED package
 (fhir-spec's `hl7.fhir.uv.ips.tgz` — SUSHI + IG Publisher output for the same sources), paired by
 (resourceType, id) after normalising publisher-only content (narrative, snapshots, dates, config
-metadata, version pins). Current: **0 compile errors; 114 resources paired; 94 exact; 108 with all
+metadata, version pins). Current: **0 compile errors; 114 resources paired; 108 exact; 111 with all
 published content; 438/438 differential elements** — ratcheted. This is the honest conformance
 number; the 22 golden pairs below are hand-authored and far easier.
 It drove these fixes: STAR lexing after trailing whitespace / blank lines; `40` lexed as TIME;
@@ -78,7 +78,7 @@ published `hl7.fhir.us.mcode-4.0.0.tgz`. mCODE builds on US Core 6.1.0 and Genom
 each dependency in fhir-spec (`<id>-<version>.tgz`); the packages go ahead of core in
 `current-sd-packages`. `raco fsh <dir>` does the same when it finds a sushi-config.yaml (next to the
 sources or up to two levels up); flags override it, missing dependencies are reported.
-Current: **0 compile errors; 349 paired; 311 exact; 339 with all published content; 472/473 differential
+Current: **0 compile errors; 349 paired; 338 exact; 347 with all published content; 472/473 differential
 elements** — ratcheted. It drove: profiles of DEPENDENCY packages for Parent and InstanceOf (`external-sd`:
 base type, canonical, `meta.profile`), aliases on InstanceOf and along Parent chains; SUSHI's required
 values (`assign-required`: an element the InstanceOf profile requires with fixed[x]/pattern[x] is
@@ -102,8 +102,8 @@ one type, `valueQuantity` addresses `value[x]` itself (no type slice); an instan
 take positions in profile order, the rest in first-mention order, and a new slice takes the next
 unused position (re-mentioning an earlier slice used to rewind the counter, so two slices shared an
 entry). These came from the FSH -> package -> server loop (below): 250 -> 283/283.
-Remaining (measured): 28 profiles whose differential lacks elements SUSHI writes (mostly genomics and
-performance-status profiles), a few instance details.
+Remaining: see the 2026-11-13 pass at the end (the "28 profiles" once named here were this compiler
+writing MORE than SUSHI — the surplus the harness now classifies — not less).
 
 ## Real-IG corpus 3: Da Vinci PDex Plan-Net 1.2.0, its oracle fetched (`tests/ig-plannet-test.rkt`, `tests/ig-fetch.rkt`)
 Plan-Net's own FSH (`tests/vendor/plannet-1.2.0`, HL7/davinci-pdex-plan-net at tag 1.2.0, 9 files /
@@ -115,7 +115,7 @@ pin it), and returns #f offline (the test skips with a note; CI has the network)
 on `hl7.fhir.us.core 3.1.1` and nothing else — which the fetcher follows (`stub-dependency`) to the real
 package; the test pins the real one. US Core 7.0.0, 6.1.0 and HRex are declared too but no rule reaches
 them. Current: **0 compile errors; 109 paired (the CapabilityStatement, SearchParameters and IG are not
-FSH-authored); 84 exact, 99 with all published content; 321/321 differential elements** — ratcheted.
+FSH-authored); 104 exact, 105 with all published content; 321/321 differential elements** — ratcheted.
 It drove: a code's system part as a CodeSystem NAME (`LanguageProficiencyCS#30`, this document's or a
 dependency's — `resolve-system`); `[slice][k]` as the k-th slot of a slice (base+k while no other slice
 holds it, else the next unused position — `daysOfWeek[5]` written after `allDay` lands after it);
@@ -130,8 +130,8 @@ HansSoloRole1: `code`, `status`, then the optional `issuer`). `OrgPeriod named o
 `organization-period` through the extensions package SUSHI loads implicitly: `ig-config.rkt`'s
 `implicit-packages` puts the newest `hl7.fhir.uv.extensions.<r4|r5>` and `hl7.terminology.<r4|r5>`
 found in `current-package-directories` or fhir-spec into every project's SD context (project.rkt),
-and the Plan-Net and HRex tests fetch extensions 5.2.0 (pinned). Remaining: 31 resources differ in
-details the CI output names (instance details, a few `min`s).
+and the Plan-Net and HRex tests fetch extensions 5.2.0 (pinned). Remaining: four profiles with an
+element SUSHI leaves out (named in the CI output).
 
 ## Real-IG corpus 4: Da Vinci HRex 1.1.0 (`tests/ig-hrex-test.rkt`)
 Health Record Exchange's own FSH (`tests/vendor/hrex-1.1.0`, HL7/davinci-ehrx at tag 1.1.0, 46 files /
@@ -140,7 +140,7 @@ versions (7.0.0, and 6.1.0 / 3.1.1 as `.v610`/`.v311` aliases; 6.1.0 from fhir-s
 fetched) and pins Parents and Reference targets to one (`Parent: USCoreProvenance|7.0.0`,
 `Reference(USCorePatientProfile|7.0.0)`); the packages go into the SD context in the declared order.
 Current: **0 compile errors; 46 paired (a Basic, a Binary, the IG and one JSON-kept SD are not
-FSH-authored); 31 exact, 46 with all published content; 138/138 differential elements** — ratcheted.
+FSH-authored); 46 exact, 46 with all published content; 138/138 differential elements** — ratcheted.
 It drove: a Reference target by package NAME with its `|version` kept on the canonical
 (`target-urls`); a parameterized RuleSet inserting another parameterized RuleSet (the nested
 reference re-texts with its paren — HRex's concept maps, 500 `insert map…` rows); a failing
@@ -161,8 +161,8 @@ HRexConsent` fills Consent.category) and the slices an embedded resource USES
 a bare `[+]`/`[=]` on an array has its OWN counter, independent of the named slices (`class[+]`
 after `class[group]` is element 0 — mCODE's bundle says "the first unnamed slice entry must be
 numbered"), and a slice's pattern MERGES with what the instance wrote, the pattern's codings first
-(`merge-pattern`: member-match-in-provider's `[group, subplan]`). Remaining: one resource (named in
-the CI output).
+(`merge-pattern`: member-match-in-provider's `[group, subplan]`). Nothing remains: every paired resource is
+identical.
 
 ## Projects and packages (`fsh/project.rkt`, `fsh/pack.rkt`, `raco fsh <dir> --pack [out.tgz]`)
 `compile-project` finds the files and sushi-config.yaml, parses each file (diagnostics name the file),
@@ -245,9 +245,9 @@ bindingName and explicit-type-name annotations (SUSHI drops those: Composition.s
 obligations alone). A Logical whose Parent is a logical model of the document carries the parent's
 type-characteristics before its own (IPSSectionsLM). The harness drops the Publisher's OID from an
 R4 ConceptMap too (a single Identifier there).
-Remaining (named in the CI output): mCODE examples whose published JSON differs from the tagged FSH
-(eve-anyperson), a `{Base}` UCUM unit, a must-support type extension; IPS Bundle narratives and one
-numeric-looking entry.
+Remaining (named in the CI output): an mCODE example whose published JSON differs from the tagged FSH
+(eve-anyperson), a must-support type extension; IPS Bundle narratives. (The `{Base}` UCUM unit and
+the numeric-looking entry were closed on 2026-11-13.)
 
 ## The decompiler's oracle (`tests/gofsh-ips-test.rkt`)
 The GoFSH direction measured on a real package: every resource of the PUBLISHED IPS 2.0.1 package
@@ -273,16 +273,17 @@ again).
 
 ## The decompiler's oracle 2: mCODE (`tests/gofsh-mcode-test.rkt`)
 The published mCODE 4.0.0 package (349 resources, with US Core and Genomics Reporting in context)
-decompiled, recompiled and compared the same way. Current: **349 paired; 341 exact, 345 with all
-published content; 472/473 differential elements** — ratcheted. The residue is named in the CI output
-(a handful of examples and the one differential element the forward corpus also misses).
+decompiled, recompiled and compared the same way. Current: **349 paired; 348 exact, 348 with all
+published content; 472/473 differential elements** — ratcheted. The residue is one example
+(eve-anyperson, whose published JSON is not what its FSH says) and the one differential element
+the forward corpus also misses.
 
 ## Real-IG corpus 5: Genomics Reporting 2.0.0 (`tests/ig-genomics-test.rkt`)
 HL7 Genomics Reporting's own FSH (`tests/vendor/genomics-reporting-2.0.0`, HL7/genomics-reporting at
 commit c2cf861 — the commit whose resource ids match the published package 46/46; the 2.0.0 tag's do
 not) against fhir-spec's `hl7.fhir.uv.genomics-reporting-2.0.0.tgz`. What it adds: OperationDefinitions
 and ConceptMaps as instances, deep component slicing through RuleSets, large code systems, examples
-authored as Bundles. Current: **0 compile errors; 141 paired; 121 exact, 129 with all published
+authored as Bundles. Current: **0 compile errors; 141 paired; 134 exact, 137 with all published
 content; 254/259 differential elements** — ratcheted. It drove: `drop-unchanged` (SUSHI writes what
 changes — a property equal to the Parent's element's leaves the differential), `extension[<Extension
 name>]` resolved to the slice typed with it in the profile's OWN `contains` (`extension contains
@@ -312,7 +313,7 @@ told from strings), and `=`/`->` without their spaces. The parser enforces SUSHI
 as positioned errors (two spaces per level, the first rule left-aligned, at most one level deeper
 than the rule above, nothing indented under a path-less rule, `.` only at the top level).
 `compile-project` parses through the same entry point, so a project reports every file's findings.
-Current: **514/515 — 408 agree, 95 of them on SUSHI's own line, 11 where SUSHI logs an error its test leaves unasserted; 0 missed errors, 0 over-reports, 0 crashes; the one line elsewhere is the empty RuleSet, whose error SUSHI positions at the next entity** — ratcheted (agreements up, over-reports and crashes down). The
+Current: **514/515 — 407 agree, 95 of them on SUSHI's own line, 12 where SUSHI logs an error its test leaves unasserted; 0 missed errors, 0 over-reports, 0 crashes; the one line elsewhere is the empty RuleSet, whose error SUSHI positions at the next entity** — ratcheted (agreements up, over-reports and crashes down). The
 over-reports are read against SUSHI's source: a shape-asserting test (no message assertion) can
 hide an error SUSHI did log — `* address 1..* Address` without a short does (BadDefs.fsh asserts
 that very error). Remaining misses are named in the CI output.
@@ -412,7 +413,8 @@ mCODE 15.1 s (18.9) — most of the gain is the foundation's lazy package index.
 - The remaining cost is parsing: brag's CFG parser ~70 µs a token (lexing all three IGs: 0.3 s;
   parsing them: ~10 s), and RuleSet bodies re-parsed per distinct instantiation (3.6 s of mCODE's
   5.2 s compile). Group size for long entities (`rules-per-parse`) was measured at 1-32: 16 is
-  near the best, so it stays.
+  near the best, so it stays. (Superseded on 2026-11-13: the parse is remembered by token shape,
+  every entity is parsed rule by rule, and the per-document memo of instantiations is gone.)
 
 ## Claude as the user (2026-11-09)
 What an agent working through fhir-mcp needed (the main repo's CLAUDE.md, "Claude as the user"):
@@ -582,3 +584,108 @@ folders whose names start with a dot and take only what exists. Emacs writes `.#
 nothing, beside a buffer as soon as it changes, and the project failed with "cannot open input
 file" on every keystroke after the first.
 
+## Quality, performance and SUSHI alignment pass (2026-11-13)
+Held to a dump of what the code produces over every corpus (IPS, mCODE, Genomics, Plan-Net and HRex
+compiled as projects, with their diagnostics; `check` on mCODE; golden; the published IPS and mCODE
+packages decompiled; every corpus file parsed, with each rule's position; the 515 importer texts
+with their diagnostics): identical after every refactoring and speed change; each alignment below
+changes it, and is said. Tests 620 -> 661.
+
+**Speed** (medians of 3, same machine): mCODE compiles in 2.9 s (6.8), IPS 3.1 s (5.4), Genomics
+1.8 s (5.1); `check` on mCODE 4.4 s (8.3); the whole test suite 1 min 36 s (2 min 04 s).
+- **The parse is remembered by its shape** (parser/parse.rkt `parse-tokens`). A context-free parse is
+  decided by the token TYPES; the values ride along to the leaves. So a type sequence is parsed once,
+  with each value replaced by its token's index (a Template), and every later token list of that
+  shape is the template filled (`fill-template`). A shape that does not parse is not remembered:
+  the real tokens are parsed again, so the error is brag's own at their positions. Every entity is
+  now parsed rule by rule (header, then header + each `*` rule: the path long entities always took;
+  `rules-per-parse` is gone), so the shapes repeat: mCODE's parse 2.7 s -> 0.3 s, and the 866
+  parameterized inserts cost a lexing each (2.2 s -> ~0). The table is cleared at 20,000 shapes.
+  This is instead of substituting parameters in parsed rules (the brief's idea): it needs no
+  judgement of where a parameter may land, because the text is still lexed as it always was.
+- `instantiate-ruleset` lost its per-document memo (`current-instantiations`): nothing left to save.
+- fml is loaded only when a project has map files (project.rkt `parse-maps`: ~0.25 s per compile).
+- Regexps built per pair or per element are built once (sd.rkt `copy-slice-children`,
+  `rewrite-extension-slices`; compile.rkt `scan-base-element-names`; instance.rkt
+  `fill-slice-children`); `compiled-on-demand` memoises by entity identity (it hashed the whole
+  entity structure on every lookup).
+
+**Bugs found on the way** (each with a test that fails without the fix):
+- **Primitive types were types only by accident** (context.rkt requires fhir/primitives/primitives
+  for effect). They are registered by that module, not by a tower; fsh never loaded it, so
+  `* effective[x] only dateTime` compiled to `{code: dateTime, profile: […/dateTime]}` unless
+  something else in the process had loaded them. `raco fsh` was right only because compiling a
+  project loaded fml (-> fhirpath -> primitives); `fsh->fhir` alone and EVERY corpus test were wrong,
+  which is what the old "28 profiles" residue was. `tests/primitive-types-test.rkt` (a process of its
+  own). This alone: IPS 94 -> 103 exact, mCODE 311 -> 323.
+- **`Reference(X|7.0.0)` was refused as a `|` list** (lint.rkt `piped-reference?`): HRex's own FSH
+  did not compile as a project (`raco fsh tests/vendor/hrex-1.1.0`: four lint errors, nothing
+  written; the corpus test parses without the lint, so it never showed). A `|` beside whitespace
+  lists targets (SUSHI's error); inside a name it is a version, as FSHLexer.g4's REFERENCE reads it.
+- **`raco fsh` with no argument** was `car` of the empty list. cli.rkt's arguments are parsed by
+  `parse-args` into a Command (data, tested); `tests/cli-test.rkt` runs the command line.
+- **A problem in a rule a parameterized RuleSet makes** was positioned in the instantiated text
+  (`<input>:2:5`): its rules are located at the insert (`instantiate-ruleset #:at`), and a rule
+  copied under a path keeps its position (`prefix-rule`).
+- **An Invariant's indented rules** were read as written at the top level (`apply-indentation` had no
+  clause for it; SUSHI's own importer cases 78 and 79); a Mapping's `insert`s were never expanded.
+
+**SUSHI alignment** (tests/sushi-alignment-test.rkt, one case each; the floors raised):
+exact / with all published content — IPS 94/108 -> **108/111**, mCODE 311/339 -> **338/347**,
+Plan-Net 84/99 -> **104/105**, HRex 31/46 -> **46/46**, Genomics 121/129 -> **134/137**; GoFSH mCODE
+341/345 -> **348/348**; importer 514/515 (407 + 95 + 12).
+- The differential holds what CHANGES against the definition an element starts from
+  (`inherited-element`, `drop-unchanged`): the Parent's element; else, for an element that is not a
+  new slice, the Parent's element outside the slices, else the base definition through the
+  datatypes (`base-element`) — under what this profile had already said of the element outside the
+  slices when the rules first reached the slice's one (`current-slice-origins`, recorded by
+  `ensure`). `* name.family 0..1 MS` writes `mustSupport` alone; IPS's Composition no longer
+  repeats `section.title`'s constraints in every section slice.
+- `extension contains …` adds the url slicing only where the element is not sliced yet
+  (`contain-slices`): the Parent's may be, and a datatype's `extension` always is.
+- A type-specific choice path addresses the choice itself once the PARENT narrowed it to one type
+  (`narrowed-choice` asks the Parent's element too).
+- Order (`snapshot-order`, moved from caret-apply.rkt to sd.rkt beside `base-element`): an element
+  below a datatype stands where the datatype's definition has it (`datatype-position`:
+  `telecom.extension` before `telecom.system`); the Parent's slices come in its snapshot's order
+  (`profile-slices` seeds the declarations; a slice is keyed by its element path and full name, so
+  nested and re-slices are found).
+- Instances: an object assigned where an object stands is laid over it (`set-field`, `laid-over`:
+  SUSHI's `Object.assign` — `coding.version` then `coding = …` keeps the version); an element the
+  instance writes holds the pattern its profile pins there, required or not (`fill-used-patterns`:
+  Genomics' TMB unit, the old `{Base}` residue); `Title:`/`Description:` fill only a `Usage:
+  #definition` instance's elements (`titled`); a number names an instance to embed (`coerce`).
+- `Target:` unquoted is a lint error (`unquoted-target`; FSH.g4: `target: KW_TARGET STRING`).
+- The harness classifies what OURS writes beyond the published resource (`surplus`, `long-list`):
+  exact < contained had no class before, and that is where most of the above was found. It drops a
+  SearchParameter's `xpath` (the IG Publisher removes it; the FSH writes it).
+
+**Quality**: parser/ast.rkt has `entity-name`, `entity-metadata`, `with-entity-rules` (the ladders
+in parse, compile, lint and project are gone); compile.rkt's 150-line `compile-doc/errors` is a
+driver over named table builders (`alias-table`, `profile-table`, `definition-table`,
+`invariant-table`, `instance-table`, `own-slice-orders`, `slice-orders`, `compiled-on-demand`) and
+returns outcomes instead of `set!`-ing an error list; sd.rkt's `fold-sd-rules` hands its long
+clauses to `carries-flags?`, `only-types`, `contain-slices`, `named-extension-url`; lint.rkt's
+three `begin0`/mutable-hash accumulators are folds; check.rkt pairs artifacts with instances by a
+fold, builds its fallback config from an empty guide file (the positional `ig-config` broke once
+already) and lost four unused imports and a cache of a `member`; context-hint.rkt finds a folder's
+files as the project does (`fsh-files`).
+
+**Departures decided against, or left**:
+- A quantity without a display gets the UCUM code as its `unit` (`coerce`); SUSHI writes none
+  (~20 corpus examples). Left: cql's and fhir-mcp's tested guides read that `unit` from FSH data;
+  changing it is one line here, one in the decompiler (`quantity-value`), and their guides. Said in
+  the manual's Limits and guide.md.
+- The importer's one line elsewhere (an empty RuleSet): SUSHI positions the error at the end of the
+  input; here it is at the RuleSet's name, where it is fixed.
+- The lexer reads any `Reference(…)`/`Canonical(…)` up to its `)` and any word after
+  `Characteristics:`, more than FSHLexer.g4 does, so that the lint can say the mistake where it is:
+  the `|` list of targets, a characteristic without its `#` (`bare-characteristics`).
+- Still differing: four Plan-Net profiles (an element SUSHI leaves out: `Location.type MS`, a nested
+  extension slice); `^comment = ""` written as an empty string (2 mCODE profiles); a must-support
+  extension on a `targetProfile` (`^type[0].targetProfile[1].extension…`, 1); IPS Bundle narratives;
+  Genomics' SUSHI 2 shapes and drifted OperationDefinitions.
+- A profile NAMED like a registered type (`Profile: Base`) is taken for the type when another names
+  it as Parent (SUSHI looks among the project's definitions first). Not fixed.
+- instance.rkt's `resolve-soft-indices` (one function, seven mutable tables) and decompile.rkt were
+  left as they are: both are pinned by the corpora, neither was in the way.

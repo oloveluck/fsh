@@ -36,6 +36,6 @@
    (print-classes r)
    ;; RATCHETED floors
    (check-true (>= (ig-fsh-report-pairs r) 141))
-   (check-true (>= (ig-fsh-report-exact r) 121) "fewer exact resources than the floor")
-   (check-true (>= (ig-fsh-report-contained r) 129) "fewer fully-matching resources than the floor")
+   (check-true (>= (ig-fsh-report-exact r) 134) "fewer exact resources than the floor")
+   (check-true (>= (ig-fsh-report-contained r) 137) "fewer fully-matching resources than the floor")
    (check-true (>= (ig-fsh-report-elements-ok r) 254) "fewer matching differential elements than the floor")])
