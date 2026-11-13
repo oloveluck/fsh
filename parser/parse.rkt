@@ -170,17 +170,7 @@
     (if (or (andmap (lambda (i) (zero? (car i))) indents) (not (= (length rules) (length indents))))
         rules
         (contextualize rules indents)))
-  (match e
-    [(fsh-profile n m r) (fsh-profile n m (fix r))]
-    [(fsh-extension n m r) (fsh-extension n m (fix r))]
-    [(fsh-logical n m r) (fsh-logical n m (fix r))]
-    [(fsh-resource n m r) (fsh-resource n m (fix r))]
-    [(fsh-instance n m r) (fsh-instance n m (fix r))]
-    [(fsh-valueset n m r) (fsh-valueset n m (fix r))]
-    [(fsh-codesystem n m r) (fsh-codesystem n m (fix r))]
-    [(fsh-mapping n m r) (fsh-mapping n m (fix r))]
-    [(fsh-ruleset n r) (fsh-ruleset n (fix r))]
-    [_ e]))
+  (with-entity-rules e fix))
 
 ;; contextualize : rules (listof (cons indent loc)) -> rules   stack entries are (list level path codes)
 ;; The indentation rules SUSHI's importer enforces (FSHImporter.getPathWithContext), each a parse
@@ -364,6 +354,18 @@
   (check-equal? (diag "ValueSet: V\n* include codes from system ZOO\n  * include codes from system X\n")
                 "t.fsh:3:5: fsh parse error: A rule that does not use a path cannot be indented")
   (check-equal? (diag "Profile: P\nParent: Patient\n* name 1..1\n  * given 1..1\n") #f)
+  ;; an Invariant's indented rules continue the path above them, as any entity's do (they were read
+  ;; as written at the top level: `id` for `requirements.id`)
+  (check-equal? (fsh-invariant-rules (parse-fsh-entity "Invariant: i\nSeverity: #error\n* requirements\n  * id = \"req-id\"\n"))
+                (list (rule-path "requirements") (rule-assign "requirements.id" "req-id" #f)))
+  ;; the parse of a shape is remembered: the same rule shapes with other values are the same tree
+  ;; with those values, and a shape that does not parse is parsed again for its own error
+  (check-equal? (parse-fsh-entity "Profile: A\nParent: Patient\n* name 1..1 MS\n* gender 0..1\n")
+                (fsh-profile "A" '((parent . "Patient")) (list (rule-card "name" "1..1" '(MS)) (rule-card "gender" "0..1" '()))))
+  (check-equal? (parse-fsh-entity "Profile: B\nParent: Observation\n* code 1..1 MS\n* value[x] 0..1\n")
+                (fsh-profile "B" '((parent . "Observation")) (list (rule-card "code" "1..1" '(MS)) (rule-card "value[x]" "0..1" '()))))
+  (check-equal? (diag "Profile: A\nParent: Patient\n* name 1..1 MS\n* gender = = 3\n") "t.fsh:4:12: fsh parse error: unexpected equal `=`")
+  (check-equal? (diag "Profile: B\nParent: Patient\n* code 1..1 MS\n* status = = 3\n") "t.fsh:4:12: fsh parse error: unexpected equal `=`")
   ;; every entity that parses, every entity's parse error, and the lint's findings
   (let-values ([(es ds) (parse-fsh-doc/diagnostics
                          "Profile: P\nParent: Patient\n\nProfile: P\nParent: Observation\n\nProfile: Q\nParent: Patient\n* name ^short =\n"

@@ -97,7 +97,7 @@
   ;; SUSHI writes what CHANGES: a property equal to the Parent's element's is not in the
   ;; differential, and an element left with nothing but its id and path is not either (a slice
   ;; stays, bare, so its children have a home)
-  (define-values (elems1 order1) (drop-unchanged elems0 order0 (lambda (id) (hash-ref parent-elements id #f))))
+  (define-values (elems1 order1) (drop-unchanged elems0 order0 (inherited-element base-type (lambda (id) (hash-ref parent-elements id #f)))))
   (define-values (elems order)
     (if ext? (add-extension-scaffold elems1 order1 self-url meta) (values elems1 order1)))
   (define diff (parameterize ([current-slice-declarations slice-declarations])
@@ -135,13 +135,26 @@
                              base)])
                   (if (hash-ref b 'context #f) b (hash-remove b 'context))))
   (maybe-snapshot (apply-carets (hash-set base* 'abstract #f) rules)))
-;; drop-unchanged : elems order (id -> element|#f) -> (values elems order)   each element minus the
-;; properties its Parent's element already has with the same value; an element reduced to id/path
-;; (no sliceName) is dropped with its place in `order`
-(define (drop-unchanged elems order parent-element)
+;; inherited-element : base-type (id -> element|#f) -> (element -> element|#f)   the definition an
+;; element of the differential starts from, which SUSHI diffs it against: the Parent's element of
+;; that id; else — for an element that is not itself a slice — the Parent's element outside the
+;; slices (`component:gene-studied.value[x]` unfolds from `component.value[x]`), else the base
+;; definition at its path, through the datatypes (`Patient.name.family` is HumanName.family, 0..1).
+;; A new slice has no original: SUSHI writes its min and max whatever they are.
+(define ((inherited-element base-type parent-element) e)
+  (define id (hash-ref e 'id))
+  (or (parent-element id)
+      (and (not (hash-ref e 'sliceName #f))
+           (let ([unsliced (regexp-replace* #rx":[^.]+" id "")])
+             (or (and (not (equal? unsliced id)) (parent-element unsliced))
+                 (base-element base-type (hash-ref e 'path)))))))
+;; drop-unchanged : elems order (element -> element|#f) -> (values elems order)   each element minus
+;; the properties the element it starts from already has with the same value; an element reduced to
+;; id/path (no sliceName) is dropped with its place in `order`
+(define (drop-unchanged elems order inherited)
   (define trimmed
     (for/hash ([(id e) (in-hash elems)])
-      (define pe (parent-element id))
+      (define pe (inherited e))
       (values id
               (if (hash? pe)
                   (for/hash ([(k v) (in-hash e)]

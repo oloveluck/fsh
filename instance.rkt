@@ -57,13 +57,18 @@
     ;; InstanceOf a dependency's profile: SUSHI stamps that profile's canonical
     [(external-sd type-str) => (lambda (sd) (inject-meta-profile js (hash-ref sd 'url)))]
     [else js]))
-;; titled : jsexpr metadata -> jsexpr   an Instance's `Title:` / `Description:` land on the resource's
-;; title / description elements when it has them and the rules set none (SUSHI)
+;; titled : jsexpr metadata -> jsexpr   a `Usage: #definition` Instance's `Title:` / `Description:`
+;; land on the resource's title / description elements when it has them and the rules set none
+;; (SUSHI). An example's do not: they describe the example to the guide's reader (the
+;; ImplementationGuide lists them), and a Location or Task example that got its `Description:` as
+;; its own `description` said something about the place or the task that its author did not.
 (define (titled js meta)
   (define type (hash-ref js 'resourceType))
-  (for/fold ([js js]) ([k '(title description)])
-    (define v (assoc-ref meta k))
-    (if (and v (not (hash-has-key? js k)) (has-element? type (symbol->string k))) (hash-set js k v) js)))
+  (if (equal? (assoc-ref meta 'usage) "#definition")
+      (for/fold ([js js]) ([k '(title description)])
+        (define v (assoc-ref meta k))
+        (if (and v (not (hash-has-key? js k)) (has-element? type (symbol->string k))) (hash-set js k v) js))
+      js))
 ;; definitional-url : jsexpr usage -> jsexpr   a `Usage: #definition` instance of a canonical resource
 ;; (CapabilityStatement, OperationDefinition, …) gets SUSHI's url <canonical>/<Type>/<id>
 (define (definitional-url js usage)
@@ -332,10 +337,18 @@
 (define (step-index s)
   (for/or ([b (in-list (fsh-step-brackets s))])
     (case (fsh-bracket-kind b) [(index) (fsh-bracket-value b)] [(soft+ soft=) 'end] [else #f])))
+;; set-field : jsexpr symbol kind index value -> jsexpr   the element set to the value. An object
+;; assigned where an object already stands is laid over it, key by key (SUSHI's setPropertyOnInstance
+;; is `Object.assign`): after `* coding.version = "2.7"`, `* coding = $v2#MD "Doctor"` keeps the version
 (define (set-field js fname kind idx v)
   (case kind
     [(list) (hash-set js fname (list-set* (hash-ref js fname '()) idx v))]
-    [else   (hash-set js fname v)]))
+    [else   (hash-set js fname (laid-over (hash-ref js fname #f) v))]))
+;; laid-over : jsexpr|#f jsexpr -> jsexpr   `new` itself, or — two objects — `old` with new's keys
+(define (laid-over old new)
+  (if (and (hash? old) (hash? new))
+      (for/fold ([h old]) ([(k v) (in-hash new)]) (hash-set h k v))
+      new))
 ;; a repeating element named without an index is its FIRST element (`* focus = …` is focus[0], so a
 ;; second such assignment replaces the first, as SUSHI does); soft indices are numbers by now
 (define (update-field js fname kind idx f)
@@ -351,7 +364,7 @@
 (define (list-update* lst i f)
   (let ([lst (extend lst (add1 i))]) (for/list ([x (in-list lst)] [j (in-naturals)]) (if (= j i) (f x) x))))
 (define (list-pad lst i v)
-  (let ([lst (extend lst (add1 i))]) (for/list ([x (in-list lst)] [j (in-naturals)]) (if (= j i) v x))))
+  (let ([lst (extend lst (add1 i))]) (for/list ([x (in-list lst)] [j (in-naturals)]) (if (= j i) (laid-over x v) x))))
 (define (extend lst n) (append lst (make-list (max 0 (- n (length lst))) #f)))
 (define json-number-primitives '("integer" "decimal" "positiveInt" "unsignedInt" "boolean"))
 ;; ftype->type : ftype [child] -> type symbol | 'object   the type to build a child under; a
@@ -393,6 +406,8 @@
     ;; a bare instance name assigned to a Resource-typed element (`* entry[0].resource = MyPatient`,
     ;; `* contained[0] = Med1`) embeds that instance (https://hl7.org/fhir/uv/shorthand/reference.html#assignments-with-resources)
     [('resource (? string? s)) (or ((current-instance-resolver) s) s)]
+    ;; … and an instance whose name reads as a number (`Instance: 39252`, `* entry[=].resource = 39252`)
+    [('resource (? number? n)) (or ((current-instance-resolver) (number->string n)) n)]
     [(_ (? boolean? b)) b] [(_ (? number? n)) n] [(_ (? string? s)) s] [(_ _) v]))
 ;; profile-elements : profile-name|id|url -> (hash element-id -> ElementDefinition jsexpr)
 ;; the constraints an Instance of that profile inherits: a dependency profile's (or the base type's)
@@ -444,7 +459,24 @@
 ;; recursively); a required slice gets its entry appended unless an entry already carries it; a named
 ;; slice the instance uses is completed the same way (and gets its own pattern even when optional).
 (define (assign-required js elements [positions (hash)] [embedded-positions (hash)])
-  (fill-embedded-profiles (assign-required* (fill-slice-children js elements positions) elements) elements positions embedded-positions))
+  (fill-embedded-profiles (assign-required* (fill-used-patterns (fill-slice-children js elements positions) elements) elements)
+                          elements positions embedded-positions))
+;; fill-used-patterns : jsexpr elements -> jsexpr   a single-valued element the instance WROTE holds
+;; the pattern its profile pins there, required or not (SUSHI assigns the fixed values of every
+;; element a rule's path passes through): Genomics Reporting's TMB pins the unit of `valueQuantity`
+;; (system and code), an optional type slice, and its instances write `valueQuantity.value` alone.
+;; What the instance wrote stays; the pattern's other keys are added (merge-pattern). Elements are
+;; `Type.name` and the type slices of a choice, `Type.name[x]:nameType`, whose key is the slice's.
+(define (fill-used-patterns js elements)
+  (define type (hash-ref js 'resourceType))
+  (define rx (pregexp (string-append "^" (regexp-quote type) "[.]([A-Za-z]+)(?:\\[x\\]:([A-Za-z]+))?$")))
+  (for/fold ([js js]) ([(id e) (in-hash elements)])
+    (define m (regexp-match rx id))
+    (define key (and m (string->symbol (or (caddr m) (cadr m)))))
+    (define pin (and key (hash? (hash-ref js key #f)) (pinned-value e)))
+    (if (hash? pin)
+        (hash-update js key (lambda (written) (merge-pattern written pin)))
+        js)))
 ;; fill-embedded-profiles : jsexpr elements positions -> jsexpr   a Resource-typed element of a used
 ;; slice (`parameter[Consent].resource only HRexConsent`) holds an embedded resource: it gets the
 ;; required values of the profile the slice names, as SUSHI fills it (the profile's own, by its id;

@@ -143,162 +143,172 @@
   (parameterize ([current-instantiations (make-hash)])
     (compile-doc/errors* entities)))
 (define (compile-doc/errors* entities)
-  (define errors '())
-  (define aliases  (for/hash ([e (in-list entities)] #:when (fsh-alias? e))
-                     (values (fsh-alias-name e) (fsh-alias-value e))))
-  (define rulesets (for/hash ([e (in-list entities)] #:when (fsh-ruleset? e))
-                     (values (fsh-ruleset-name e) (fsh-ruleset-rules e))))
-  ;; parameterized RuleSets: name -> (cons params body-tokens)
-  (define param-rulesets (for/hash ([e (in-list entities)] #:when (fsh-param-ruleset? e))
-                           (values (fsh-param-ruleset-name e)
-                                   (cons (fsh-param-ruleset-params e) (fsh-param-ruleset-body e)))))
-  ;; profile name -> (cons parent-base profile-id) — for Instance base resolution + meta.profile
-  ;; keyed by NAME, ID and canonical URL — SUSHI resolves InstanceOf/Parent by any of the three
-  (define profiles (for*/hash ([e (in-list entities)]
-                               #:when (or (fsh-profile? e) (fsh-extension? e))
-                               [id (in-value (or (assoc-ref (entity-meta e) 'id) (entity-name e)))]
-                               [key (in-list (remove-duplicates
-                                              (list (entity-name e) id
-                                                    (string-append (canonical-base) "/StructureDefinition/" id))))])
-                     (values key
-                             (cons (or (assoc-ref (entity-meta e) 'parent)
-                                       (if (fsh-extension? e) "Extension" "DomainResource"))
-                                   id))))
-  ;; an Invariant's fields come from its keywords (`Severity:`) OR from assignment rules
-  ;; (`* severity = #error`, `* expression = "…"`) — both forms are FSH
-  (define invariants (for/hash ([e (in-list entities)] #:when (fsh-invariant? e))
-                       (define m (fsh-invariant-metadata e))
-                       (define (rule-val k)                        ; an Invariant's rules may come from a RuleSet
-                         (for/or ([r (in-list (expand-rules (fsh-invariant-rules e) rulesets param-rulesets))])
-                           (match r [(rule-assign (== k) v _) (match v [(struct fsh-code (c _)) c] [_ v])] [_ #f])))
-                       (define (field k [rk (symbol->string k)]) (or (assoc-ref m k) (rule-val rk)))
-                       (values (fsh-invariant-name e)
-                               (drop-false
-                                (hasheq 'severity (strip# (or (field 'severity) "#error"))
-                                        'human (or (field 'description) (rule-val "human"))
-                                        'expression (field 'expression)
-                                        'xpath (field 'xpath))))))
-  ;; Instances by name and id, compiled on demand (memoised, cycle-guarded) so one instance can be
-  ;; embedded in another; `Usage: #inline` instances are ONLY embedded, never emitted on their own.
-  ;; names take precedence over ids (an id may be shared by instances of different types)
-  (define instances
-    (let ([by-id (for/fold ([h (hash)]) ([e (in-list entities)] #:when (fsh-instance? e))
-                   (if (hash-has-key? h (instance-id e)) h (hash-set h (instance-id e) e)))]   ; first wins
-          [by-name (for/hash ([e (in-list entities)] #:when (fsh-instance? e)) (values (fsh-instance-name e) e))])
-      (for/fold ([h by-id]) ([(k v) (in-hash by-name)]) (hash-set h k v))))
-  (define memo (make-hash))
-  (define (resolve-instance name)
-    (define e (hash-ref instances name #f))
-    (cond [(not e) #f]
-          [(hash-has-key? memo e) (hash-ref memo e)]          ; #f while in progress: a cycle stays a name
-          [else (hash-set! memo e #f)
-                (define js (with-handlers ([exn:fail? (lambda (_) #f)])
-                             (compile-entity (expand-entity-inserts e rulesets param-rulesets) aliases profiles invariants)))
-                (hash-set! memo e js)
-                js]))
-  ;; logical models and custom resources by name, id and url -> their canonical url
-  (define logicals (for*/hash ([e (in-list entities)] #:when (or (fsh-logical? e) (fsh-resource? e))
-                               [name (in-value (if (fsh-logical? e) (fsh-logical-name e) (fsh-resource-name e)))]
-                               [id (in-value (or (assoc-ref (if (fsh-logical? e) (fsh-logical-metadata e) (fsh-resource-metadata e)) 'id) name))]
-                               [url (in-value (string-append (canonical-base) "/StructureDefinition/" id))]
-                               [key (in-list (remove-duplicates (list name id url)))])
-                     (values key url)))
-  (define (inline? e) (and (fsh-instance? e) (equal? (assoc-ref (fsh-instance-metadata e) 'usage) "#inline")))
+  (define aliases (alias-table entities))
+  (define rulesets (ruleset-table entities))
+  (define param-rulesets (param-ruleset-table entities))
+  (define profiles (profile-table entities))
+  (define invariants (invariant-table entities rulesets param-rulesets))
+  (define instances (instance-table entities))
+  (define logicals (logical-table entities))
+  (define local-canonicals (local-canonical-table entities))
+  ;; compile-one : entity -> jsexpr   an entity with its inserts expanded, compiled (raises)
+  (define (compile-one e)
+    (compile-entity (expand-entity-inserts e rulesets param-rulesets) aliases profiles invariants))
+  ;; Instances by name and id, compiled on demand so one instance can be embedded in another;
+  ;; `Usage: #inline` instances are ONLY embedded, never emitted on their own.
+  (define resolve-instance (compiled-on-demand instances compile-one))
   ;; this document's logical models and custom resources are registered as types (fhir/sd/logical,
   ;; the same registry the FHIR towers fill), so an Instance of one builds like any resource
   (for ([e (in-list entities)] #:when (or (fsh-logical? e) (fsh-resource? e)))
     (define sd (with-handlers ([exn:fail? (lambda (_) #f)])
                  (parameterize ([current-aliases aliases] [current-logicals logicals])
-                   (compile-entity (expand-entity-inserts e rulesets param-rulesets) aliases profiles invariants))))
+                   (compile-one e))))
     (when (hash? sd) (register-structure-definition! sd)))
   ;; this document's Profiles (and logical models) compiled on demand (name/id/url ->
   ;; StructureDefinition jsexpr), for the required values an Instance inherits from its InstanceOf
   ;; profile and the characteristics a logical model inherits from its Parent
-  (define profile-entities
-    (for*/hash ([e (in-list entities)] #:when (or (fsh-profile? e) (fsh-extension? e) (fsh-logical? e) (fsh-resource? e))
-                [id (in-value (or (assoc-ref (entity-meta e) 'id) (entity-name e)))]
-                [k (in-list (remove-duplicates (list (entity-name e) id (string-append (canonical-base) "/StructureDefinition/" id))))])
-      (values k e)))
-  (define profile-memo (make-hash))
-  (define (resolve-profile-sd key)
-    (define e (hash-ref profile-entities key #f))
-    (cond [(not e) #f]
-          [(hash-has-key? profile-memo e) (hash-ref profile-memo e)]
-          [else (hash-set! profile-memo e #f)
-                (define sd (with-handlers ([exn:fail? (lambda (_) #f)])
-                             (parameterize ([emit-snapshot? #f])
-                               (compile-entity (expand-entity-inserts e rulesets param-rulesets) aliases profiles invariants))))
-                (hash-set! profile-memo e sd)
-                sd]))
-  ;; profile name/id -> (hash element-path -> REQUIRED slice names in declaration order), parents
-  ;; first. SUSHI creates a profile's required slices before applying an instance's rules (in profile
-  ;; order); every other slice takes its place in the order the instance first mentions it.
-  (define own-slice-orders
-    (for*/hash ([e (in-list entities)] #:when (or (fsh-profile? e) (fsh-extension? e))
-                [k (in-list (remove-duplicates (list (entity-name e) (or (assoc-ref (entity-meta e) 'id) (entity-name e)))))])
-      (values k (for/fold ([h (hash)]) ([r (in-list (entity-rules e))] #:when (rule-contains? r))
-                  (hash-update h (rule-contains-path r)
-                               (lambda (l) (append l (for/list ([it (in-list (rule-contains-items r))]
-                                                                #:when (let ([c (contains-item-card it)]) (and (string? c) (>= (card-lo c) 1))))
-                                                       (or (contains-item-named-as it) (contains-item-name it)))))
-                               '())))))
-  (define (slice-orders-of name [fuel 16])
-    (define own (hash-ref own-slice-orders name (hash)))
-    (define parent (let ([p (hash-ref profiles name #f)]) (and p (car p))))
-    (define inherited (if (and parent (> fuel 0) (hash-ref own-slice-orders parent #f)) (slice-orders-of parent (sub1 fuel)) (hash)))
-    (for/fold ([h inherited]) ([(k v) (in-hash own)]) (hash-update h k (lambda (l) (append l v)) '())))
-  ;; this document's ValueSets / CodeSystems: name and id -> canonical URL
-  (define local-canonicals
-    (for*/hash ([e (in-list entities)] #:when (or (fsh-valueset? e) (fsh-codesystem? e))
-                [kind (in-value (if (fsh-valueset? e) "ValueSet" "CodeSystem"))]
-                [name (in-value (if (fsh-valueset? e) (fsh-valueset-name e) (fsh-codesystem-name e)))]
-                [id (in-value (or (assoc-ref (if (fsh-valueset? e) (fsh-valueset-metadata e) (fsh-codesystem-metadata e)) 'id) name))]
-                [k (in-list (remove-duplicates (list name id)))])
-      (values k (string-append (canonical-base) "/" kind "/" id))))
+  (define resolve-profile-sd
+    (compiled-on-demand (definition-table entities)
+                        (lambda (e) (parameterize ([emit-snapshot? #f]) (compile-one e)))))
+  (define slice-orders-of (slice-orders (own-slice-orders entities) profiles))
   ;; instance name/id -> "Type/id", from metadata alone (no compilation, so references never cycle)
   (define (instance-ref name)
     (define e (hash-ref instances name #f))
-    (and e (let* ([m (fsh-instance-metadata e)]
-                  [of (let ([o (assoc-ref m 'instanceOf)]) (and o (resolve-alias o aliases)))]
+    (and e (let* ([of (let ([o (assoc-ref (fsh-instance-metadata e) 'instanceOf)]) (and o (resolve-alias o aliases)))]
                   [base (and of (instance-base of profiles))])
              (and base (string-append base "/" (instance-id e))))))
+  (define (inline? e) (and (fsh-instance? e) (equal? (assoc-ref (fsh-instance-metadata e) 'usage) "#inline")))
   ;; Invariants are consumed only as SD constraint sources (like SUSHI) — not emitted standalone.
-  (define compiled
+  ;; Each entity is (cons jsexpr #f) or (cons #f (cons label exn)): a RuleSet that fails to expand
+  ;; (its instantiated body does not parse) fails that entity alone, like any other compile error.
+  (define (attempt e thunk)
+    (with-handlers ([exn:fail? (lambda (x) (cons #f (cons (entity-label e) x)))]) (cons (thunk) #f)))
+  (define outcomes
     (parameterize ([current-instance-resolver resolve-instance] [current-instance-ref instance-ref]
                    [current-profile-sd resolve-profile-sd]
                    [current-aliases aliases] [current-profiles profiles] [current-logicals logicals]
                    [current-slice-orders slice-orders-of]
                    [current-local-canonical (lambda (n) (hash-ref local-canonicals n #f))])
-    (for*/list ([e (in-list entities)]
-                #:unless (or (fsh-alias? e) (fsh-ruleset? e) (fsh-param-ruleset? e)
-                             (fsh-invariant? e) (fsh-mapping? e))
-                ;; a RuleSet that fails to expand (its instantiated body does not parse) fails this
-                ;; entity alone, like any other compile error
-                [x (in-value (with-handlers ([exn:fail? (lambda (x) (set! errors (cons (cons (entity-label e) x) errors)) #f)])
-                               (expand-entity-inserts e rulesets param-rulesets)))]
-                #:when x
-                [_ (in-value (check-element-paths! x))]          ; rule-level diagnostics (accumulated)
-                #:unless (inline? e)
-                [out (in-value
-                      (with-handlers ([exn:fail? (lambda (x) (set! errors (cons (cons (entity-label e) x) errors)) #f)])
-                        (compile-entity x aliases profiles invariants)))]
-                #:when out)
-      out)))
-  ;; Mapping entities inject into their Source StructureDefinition (SUSHI-style) — a post-pass.
-  (values (for/fold ([sds compiled]) ([m (in-list entities)] #:when (fsh-mapping? m))
+      (for/list ([e (in-list entities)]
+                 #:unless (or (fsh-alias? e) (fsh-ruleset? e) (fsh-param-ruleset? e)
+                              (fsh-invariant? e) (fsh-mapping? e)))
+        (match (attempt e (lambda () (expand-entity-inserts e rulesets param-rulesets)))
+          [(cons #f failure) (cons #f failure)]
+          [(cons x _)
+           (check-element-paths! x)                               ; rule-level diagnostics (accumulated)
+           (if (inline? e)
+               (cons #f #f)
+               (attempt e (lambda () (compile-entity x aliases profiles invariants))))]))))
+  ;; Mapping entities inject into their Source StructureDefinition (SUSHI-style) — a post-pass,
+  ;; their own `insert`s expanded first (a Mapping's rules may come from a RuleSet)
+  (define mappings (for/list ([m (in-list entities)] #:when (fsh-mapping? m))
+                     (attempt m (lambda () (expand-entity-inserts m rulesets param-rulesets)))))
+  (values (for/fold ([sds (filter values (map car outcomes))]) ([m (in-list (filter values (map car mappings)))])
             (apply-mapping sds m))
-          (reverse errors)))
+          (filter values (map cdr (append outcomes mappings)))))
+
+;; ---- a document's tables: what its entities declare, by the names rules use for them --------------
+;; alias-table : entities -> (hash name -> value)
+(define (alias-table entities)
+  (for/hash ([e (in-list entities)] #:when (fsh-alias? e)) (values (fsh-alias-name e) (fsh-alias-value e))))
+;; ruleset-table : entities -> (hash name -> rules)
+(define (ruleset-table entities)
+  (for/hash ([e (in-list entities)] #:when (fsh-ruleset? e)) (values (fsh-ruleset-name e) (fsh-ruleset-rules e))))
+;; param-ruleset-table : entities -> (hash name -> (cons params body-tokens))
+(define (param-ruleset-table entities)
+  (for/hash ([e (in-list entities)] #:when (fsh-param-ruleset? e))
+    (values (fsh-param-ruleset-name e) (cons (fsh-param-ruleset-params e) (fsh-param-ruleset-body e)))))
+;; structure-keys : entity -> (listof string)   what names a StructureDefinition entity: its name,
+;; its id and its canonical url — SUSHI resolves InstanceOf and Parent by any of the three
+(define (structure-keys e)
+  (define id (entity-id e))
+  (remove-duplicates (list (entity-name e) id (string-append (canonical-base) "/StructureDefinition/" id))))
+;; profile-table : entities -> (hash name|id|url -> (cons parent id))   the Profiles and Extensions,
+;; for an Instance's base type and meta.profile
+(define (profile-table entities)
+  (for*/hash ([e (in-list entities)] #:when (or (fsh-profile? e) (fsh-extension? e))
+              [key (in-list (structure-keys e))])
+    (values key (cons (or (assoc-ref (entity-metadata e) 'parent) (if (fsh-extension? e) "Extension" "DomainResource"))
+                      (entity-id e)))))
+;; definition-table : entities -> (hash name|id|url -> entity)   every StructureDefinition entity
+(define (definition-table entities)
+  (for*/hash ([e (in-list entities)] #:when (or (fsh-profile? e) (fsh-extension? e) (fsh-logical? e) (fsh-resource? e))
+              [k (in-list (structure-keys e))])
+    (values k e)))
+;; logical-table : entities -> (hash name|id|url -> canonical url)   logical models and custom resources
+(define (logical-table entities)
+  (for*/hash ([e (in-list entities)] #:when (or (fsh-logical? e) (fsh-resource? e))
+              [key (in-list (structure-keys e))])
+    (values key (string-append (canonical-base) "/StructureDefinition/" (entity-id e)))))
+;; local-canonical-table : entities -> (hash name|id -> canonical url)   this document's ValueSets
+;; and CodeSystems
+(define (local-canonical-table entities)
+  (for*/hash ([e (in-list entities)] #:when (or (fsh-valueset? e) (fsh-codesystem? e))
+              [k (in-list (remove-duplicates (list (entity-name e) (entity-id e))))])
+    (values k (string-append (canonical-base) "/" (if (fsh-valueset? e) "ValueSet" "CodeSystem") "/" (entity-id e)))))
+;; invariant-table : entities rulesets param-rulesets -> (hash name -> constraint source)
+;; an Invariant's fields come from its keywords (`Severity:`) OR from assignment rules
+;; (`* severity = #error`, `* expression = "…"`) — both forms are FSH; its rules may come from a RuleSet
+(define (invariant-table entities rulesets param-rulesets)
+  (for/hash ([e (in-list entities)] #:when (fsh-invariant? e))
+    (define m (fsh-invariant-metadata e))
+    (define rules (expand-rules (fsh-invariant-rules e) rulesets param-rulesets))
+    (define (rule-val k)
+      (for/or ([r (in-list rules)])
+        (match r [(rule-assign (== k) v _) (match v [(struct fsh-code (c _)) c] [_ v])] [_ #f])))
+    (define (field k [rk (symbol->string k)]) (or (assoc-ref m k) (rule-val rk)))
+    (values (fsh-invariant-name e)
+            (drop-false
+             (hasheq 'severity (strip# (or (field 'severity) "#error"))
+                     'human (or (field 'description) (rule-val "human"))
+                     'expression (field 'expression)
+                     'xpath (field 'xpath))))))
+;; instance-table : entities -> (hash name|id -> instance)   names take precedence over ids (an id
+;; may be shared by instances of different types); of two instances with one id the first wins
+(define (instance-table entities)
+  (define instances (filter fsh-instance? entities))
+  (define by-id (for/fold ([h (hash)]) ([e (in-list instances)])
+                  (if (hash-has-key? h (instance-id e)) h (hash-set h (instance-id e) e))))
+  (for/fold ([h by-id]) ([e (in-list instances)]) (hash-set h (fsh-instance-name e) e)))
+;; compiled-on-demand : (hash key -> entity) (entity -> jsexpr) -> (key -> jsexpr | #f)   the entity
+;; of that key compiled, once (memoised by entity); #f for no such entity, for one that fails to
+;; compile, and for one being compiled right now (a cycle stays a name)
+(define (compiled-on-demand table compile-one)
+  (define memo (make-hasheq))
+  (lambda (key)
+    (define e (hash-ref table key #f))
+    (cond [(not e) #f]
+          [(hash-has-key? memo e) (hash-ref memo e)]
+          [else (hash-set! memo e #f)
+                (define js (with-handlers ([exn:fail? (lambda (_) #f)]) (compile-one e)))
+                (hash-set! memo e js)
+                js])))
+;; own-slice-orders : entities -> (hash profile name|id -> (hash element-path -> REQUIRED slice
+;; names in declaration order))   from each profile's own `contains` rules
+(define (own-slice-orders entities)
+  (for*/hash ([e (in-list entities)] #:when (or (fsh-profile? e) (fsh-extension? e))
+              [k (in-list (remove-duplicates (list (entity-name e) (entity-id e))))])
+    (values k (for/fold ([h (hash)]) ([r (in-list (entity-rules e))] #:when (rule-contains? r))
+                (hash-update h (rule-contains-path r)
+                             (lambda (l) (append l (for/list ([it (in-list (rule-contains-items r))]
+                                                              #:when (let ([c (contains-item-card it)]) (and (string? c) (>= (card-lo c) 1))))
+                                                     (or (contains-item-named-as it) (contains-item-name it)))))
+                             '())))))
+;; slice-orders : own-slice-orders profiles -> (profile -> (hash element-path -> slice names))
+;; a profile's required slices, its Parents' first. SUSHI creates a profile's required slices before
+;; applying an instance's rules (in profile order); every other slice takes its place in the order
+;; the instance first mentions it.
+(define ((slice-orders own profiles) name [fuel 16])
+  (define parent (let ([p (hash-ref profiles name #f)]) (and p (car p))))
+  (define inherited (if (and parent (> fuel 0) (hash-ref own parent #f)) ((slice-orders own profiles) parent (sub1 fuel)) (hash)))
+  (for/fold ([h inherited]) ([(k v) (in-hash (hash-ref own name (hash)))]) (hash-update h k (lambda (l) (append l v)) '())))
 ;; entity-label : entity -> string   "Profile: X" etc., for error reports
 (define (entity-label e)
   (define v (struct->vector e))
   (format "~a: ~a" (regexp-replace #rx"^struct:fsh-" (symbol->string (vector-ref v 0)) "")
           (if (> (vector-length v) 1) (vector-ref v 1) "?")))
-(define (entity-name e)
-  (cond [(fsh-profile? e) (fsh-profile-name e)] [(fsh-extension? e) (fsh-extension-name e)]
-        [(fsh-logical? e) (fsh-logical-name e)] [(fsh-resource? e) (fsh-resource-name e)] [else #f]))
-(define (entity-meta e)
-  (cond [(fsh-profile? e) (fsh-profile-metadata e)] [(fsh-extension? e) (fsh-extension-metadata e)]
-        [(fsh-logical? e) (fsh-logical-metadata e)] [(fsh-resource? e) (fsh-resource-metadata e)] [else '()]))
+;; entity-id : entity -> string   `Id:`, else the name (a definition's id; an instance's is instance-id)
+(define (entity-id e) (or (assoc-ref (entity-metadata e) 'id) (entity-name e)))
 ;; instance-id : instance -> string   `Id:`, else an `* id = "…"` rule, else its name
 (define (instance-id e)
   (or (assoc-ref (fsh-instance-metadata e) 'id)
@@ -398,17 +408,14 @@
 (define (unknown-ruleset! r name)
   (when (current-insert-label)
     (rule-diagnostic! r (current-insert-label) (format "RuleSet `~a` not found: no RuleSet of that name is in the project" name))))
+;; expand-entity-inserts : entity rulesets param-rulesets -> entity   a definition or instance with
+;; every `insert` replaced by the RuleSet's rules (an Invariant's and a RuleSet's own rules are
+;; expanded where they are used)
 (define (expand-entity-inserts e rulesets param-rulesets)
-  (define (xr rs) (parameterize ([current-insert-label (entity-label e)]) (expand-rules rs rulesets param-rulesets)))
-  (match e
-    [(fsh-profile n m rs)    (fsh-profile n m (xr rs))]
-    [(fsh-extension n m rs)  (fsh-extension n m (xr rs))]
-    [(fsh-instance n m rs)   (fsh-instance n m (xr rs))]
-    [(fsh-valueset n m rs)   (fsh-valueset n m (xr rs))]
-    [(fsh-codesystem n m rs) (fsh-codesystem n m (xr rs))]
-    [(fsh-logical n m rs)    (fsh-logical n m (xr rs))]
-    [(fsh-resource n m rs)   (fsh-resource n m (xr rs))]
-    [_ e]))
+  (if (or (fsh-invariant? e) (fsh-ruleset? e))
+      e
+      (with-entity-rules e (lambda (rs) (parameterize ([current-insert-label (entity-label e)])
+                                          (expand-rules rs rulesets param-rulesets))))))
 ;; ---- entity dispatch -----------------------------------------------------------------------
 (define (compile-entity e [aliases (hash)] [profiles (hash)] [invariants (hash)])
   (cond
@@ -452,6 +459,14 @@
   (define code-el (findf (lambda (e) (equal? (hash-ref e 'id) "Observation.code")) (hash-ref (hash-ref under-path 'differential) 'element)))
   (check-equal? (hash-ref code-el 'comment #f) "mandatory")
   (check-equal? (hash-ref code-el 'short #f) "m")
+  ;; a Mapping's rules may come from a RuleSet (its inserts were left unexpanded, the rules lost)
+  (define mapped (car (fsh->fhir (string-append
+                                  "RuleSet: NameMap\n* name -> \"PID-5\"\n\n"
+                                  "Profile: MP\nParent: Patient\n* name 1..*\n\n"
+                                  "Mapping: V2\nSource: MP\nTarget: \"HL7 V2\"\n* identifier -> \"PID-3\"\n* insert NameMap\n"))))
+  (check-equal? (for/list ([e (in-list (hash-ref (hash-ref mapped 'differential) 'element))] #:when (hash-ref e 'mapping #f))
+                  (list (hash-ref e 'id) (hash-ref (car (hash-ref e 'mapping)) 'map)))
+                '(("Patient.name" "PID-5") ("Patient.identifier" "PID-3")))
   ;; a plain RuleSet whose rules insert a parameterized one: the nested insert expands too
   (define nested (car (fsh->fhir (string-append
                                   "RuleSet: NotUsed(path)\n* {path} ^short = \"Not used\"\n\n"

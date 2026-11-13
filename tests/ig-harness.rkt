@@ -7,6 +7,7 @@
 ;;; what the IG Publisher (not SUSHI) adds or what comes from sushi-config.yaml, which this compiler
 ;;; does not read:
 ;;;   top level   text, snapshot, date, version, publisher, contact, jurisdiction; meta except profile;
+;;;               a SearchParameter's xpath;
 ;;;               publisher-assigned OID identifiers on conformance resources
 ;;;   anywhere    structuredefinition-wg / -fmm / -standards-status / -normative-version extensions;
 ;;;               a `|<version>` pin on hl7.org/fhir canonicals; xml:lang/lang on narrative divs, their
@@ -106,6 +107,10 @@
     [(hash? j)
      (for/hash ([(k v) (in-hash j)]
                 #:unless (and top? (memq k drop-top))
+                ;; the IG Publisher drops a SearchParameter's `xpath` (HRex's and mCODE's FSH write
+                ;; `* xpath = "f:Coverage/f:payor"` and `* xpathUsage = #normal`; the published
+                ;; resources keep the usage alone)
+                #:unless (and top? (eq? k 'xpath) (equal? (hash-ref j 'resourceType #f) "SearchParameter"))
                 #:unless (and (not top?) (eq? k 'text) (hash-ref j 'resourceType #f))
                 #:unless (and top? (eq? k 'meta) (not (hash-ref v 'profile #f)))
                 #:unless (and (eq? k 'extension) (list? v) (andmap publisher-ext? v)))
@@ -141,13 +146,19 @@
 ;; A Diff is (list 'missing path value) | (list 'differs path published ours) | (list 'short-list path n m)
 ;;         | (list 'order path id-before id-after)   two ids published in that order, ours the other way
 ;;         | (list 'extra path element)   an element ours has and the published does not
+;;         | (list 'surplus path value)   a key ours has and the published does not
+;;         | (list 'long-list path n m)   a list ours has more entries of
 (define (all-diffs a b path)
   (cond
     [(and (hash? a) (hash? b))
-     (append* (for/list ([(k v) (in-hash a)])
-                (if (hash-has-key? b k)
-                    (all-diffs v (hash-ref b k) (cons k path))
-                    (list (list 'missing (reverse (cons k path)) v)))))]
+     (append (append* (for/list ([(k v) (in-hash a)])
+                        (if (hash-has-key? b k)
+                            (all-diffs v (hash-ref b k) (cons k path))
+                            (list (list 'missing (reverse (cons k path)) v)))))
+             ;; what ours writes and the published resource does not: a resource with only these
+             ;; has all the published content and is still not the same
+             (for/list ([(k v) (in-hash b)] #:unless (hash-has-key? a k))
+               (list 'surplus (reverse (cons k path)) v)))]
     [(and (list? a) (list? b) (ids? a) (ids? b))
      (define ours (for/hash ([e (in-list b)]) (values (hash-ref e 'id) e)))
      ;; the ORDER of the shared elements is SUSHI's business too (`subset?` pairs lists by
@@ -169,7 +180,9 @@
                         (if o (all-diffs e o (cons (hash-ref e 'id) path))
                             (list (list 'missing (reverse (cons (hash-ref e 'id) path)) e))))))]
     [(and (list? a) (list? b))
-     (append (if (> (length a) (length b)) (list (list 'short-list (reverse path) (length a) (length b))) '())
+     (append (cond [(> (length a) (length b)) (list (list 'short-list (reverse path) (length a) (length b)))]
+                   [(< (length a) (length b)) (list (list 'long-list (reverse path) (length a) (length b)))]
+                   [else '()])
              (append* (for/list ([x a] [y b] [i (in-naturals)]) (all-diffs x y (cons i path)))))]
     [(equal? a b) '()]
     [else (list (list 'differs (reverse path) a b))]))

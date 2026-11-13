@@ -28,7 +28,7 @@
          (struct-out fsh-code) (struct-out fsh-quantity) (struct-out fsh-ratio)
          (struct-out fsh-reference) (struct-out fsh-canonical)
          ;; the accessors every stage shares (one definition each; see below)
-         entity-rules rule-target-path map-rule-path
+         entity-name entity-metadata entity-rules with-entity-rules rule-target-path map-rule-path
          (contract-out
           [lower-entity (-> any/c any/c)]))   ; brag parse-tree datum -> an FSH entity AST
 
@@ -89,6 +89,39 @@
     [_ d]))
 
 ;; ---- shared accessors ------------------------------------------------------------------------
+;; An Entity is one of: fsh-alias | fsh-profile | fsh-extension | fsh-logical | fsh-resource
+;;   | fsh-instance | fsh-invariant | fsh-valueset | fsh-codesystem | fsh-mapping | fsh-ruleset
+;;   | fsh-param-ruleset.  All but the alias and the rule sets are (name metadata rules).
+;; entity-name : entity -> string | #f   the name every kind of entity is declared with
+(define (entity-name e)
+  (match e
+    [(fsh-profile n _ _) n] [(fsh-extension n _ _) n] [(fsh-logical n _ _) n] [(fsh-resource n _ _) n]
+    [(fsh-instance n _ _) n] [(fsh-invariant n _ _) n] [(fsh-valueset n _ _) n] [(fsh-codesystem n _ _) n]
+    [(fsh-mapping n _ _) n] [(fsh-ruleset n _) n] [(fsh-param-ruleset n _ _) n] [(fsh-alias n _) n]
+    [_ #f]))
+;; entity-metadata : entity -> (listof (cons symbol any))   its keyword lines (`Id:`, `Parent:` …);
+;; none for an alias or a rule set
+(define (entity-metadata e)
+  (match e
+    [(fsh-profile _ m _) m] [(fsh-extension _ m _) m] [(fsh-logical _ m _) m] [(fsh-resource _ m _) m]
+    [(fsh-instance _ m _) m] [(fsh-invariant _ m _) m] [(fsh-valueset _ m _) m] [(fsh-codesystem _ m _) m]
+    [(fsh-mapping _ m _) m] [_ '()]))
+;; with-entity-rules : entity ((listof rule) -> (listof rule)) -> entity   the entity with its rules
+;; passed through f; one without rules (an alias, a parameterized RuleSet's raw body) as it is.
+;; The one rebuilding of an entity around new rules: indentation contexts (parse), inserts (compile).
+(define (with-entity-rules e f)
+  (match e
+    [(fsh-profile n m r) (fsh-profile n m (f r))]
+    [(fsh-extension n m r) (fsh-extension n m (f r))]
+    [(fsh-logical n m r) (fsh-logical n m (f r))]
+    [(fsh-resource n m r) (fsh-resource n m (f r))]
+    [(fsh-instance n m r) (fsh-instance n m (f r))]
+    [(fsh-invariant n m r) (fsh-invariant n m (f r))]
+    [(fsh-valueset n m r) (fsh-valueset n m (f r))]
+    [(fsh-codesystem n m r) (fsh-codesystem n m (f r))]
+    [(fsh-mapping n m r) (fsh-mapping n m (f r))]
+    [(fsh-ruleset n r) (fsh-ruleset n (f r))]
+    [_ e]))
 ;; entity-rules : entity -> (listof rule) | #f   the rules of an entity that has them
 (define (entity-rules e)
   (match e

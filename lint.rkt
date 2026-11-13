@@ -39,13 +39,6 @@
     [(? fsh-valueset?) "ValueSet"] [(? fsh-codesystem?) "code system"] [(? fsh-mapping?) "Mapping"]
     [(or (? fsh-ruleset?) (? fsh-param-ruleset?)) "RuleSet"]
     [_ #f]))
-;; entity-name : entity -> string|#f
-(define (entity-name e)
-  (match e
-    [(fsh-profile n _ _) n] [(fsh-extension n _ _) n] [(fsh-logical n _ _) n] [(fsh-resource n _ _) n]
-    [(fsh-instance n _ _) n] [(fsh-invariant n _ _) n] [(fsh-valueset n _ _) n] [(fsh-codesystem n _ _) n]
-    [(fsh-mapping n _ _) n] [(fsh-ruleset n _) n] [(fsh-param-ruleset n _ _) n] [(fsh-alias n _) n]
-    [_ #f]))
 
 ;; duplicate-names : (listof Located) -> (listof diagnostic)   a second entity of a kind with a name
 (define (duplicate-names items)
