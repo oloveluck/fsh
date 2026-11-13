@@ -748,7 +748,8 @@ one structure to another (it needs the fml package). Their compiled form joins t
 source structure and validates the results against its target; findings are placed in the map.
 The structure a map reads is often not FHIR at all but a form or a message, described with
 @tt{Logical:}. An @tt{Instance:} of a logical model is written like any other, naming the model by
-its name or its @tt{Id}. The worked project is @tt{fhir-examples/examples/intake-maps}.
+its name or its @tt{Id}. A logical model has no @tt{id} element, so such an instance's file is named
+after the Instance (@tt{intake-ann-intake.json}). The worked project is @tt{fhir-examples/examples/intake-maps}.
 
 @section{In an editor, and for an AI agent}
 

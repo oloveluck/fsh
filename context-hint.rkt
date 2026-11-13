@@ -49,6 +49,7 @@
                #:unless (member (folder sib) taken)
                [f (in-directory sib)]
                #:when (regexp-match? #rx"[.]fsh$" (path->string f))
+               #:when (file-exists? f)                       ; not an editor's lock file (a link to nothing)
                #:when (regexp-match? rx (file->string f)))
     (cons f sib)))
 

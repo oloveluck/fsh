@@ -563,7 +563,10 @@ that file (fhir-lsp groups by uri). Found writing fhir-lsp's manual, which had s
   `tests/own-binding-test.rkt`.
 - `InstanceOf` a Logical model by its NAME (it had to be the Id): `instance-base` follows
   `current-logicals` to the registered type. Two artifacts that would take one file name (two
-  instances of a logical model, which has no id) get `-2`, `-3` (`artifact-file-names`, cli.rkt).
+  instances of a logical model, which has no id) get `-2`, `-3` (`artifact-file-names`, pack.rkt).
+  Then (same day): an id-less resource's file is named by its Instance (`intake-ann-intake.json`;
+  project.rkt `unnamed-instances`, `project-file-names`), in the output folder AND in the package —
+  `--pack` wrote every id-less resource to one `<type>-resource.json`, the later over the earlier.
 - The `--context` hint took the project's own folder for a sibling (`.` is "/a/b/", a listed folder
   "/a/b"): a profile that failed to compile was "defined in" its own file. Folders are compared as
   directory paths (context-hint.rkt).
@@ -572,3 +575,10 @@ that file (fhir-lsp groups by uri). Found writing fhir-lsp's manual, which had s
   `fsh-generated/` beside the sources).
 - `fsh->fhir` loads the tower `fsh-fhir-version` names when the program has loaded none (an
   Instance of a profile in the same text was "InstanceOf not found"). `tests/no-tower-test.rkt`.
+
+**An editor's lock file is no source** (2026-11-13; found running the fhir-lsp manual's Emacs
+configuration in Emacs): `fsh-files` and `map-files` (project.rkt `source-files`) skip files and
+folders whose names start with a dot and take only what exists. Emacs writes `.#bp.fsh`, a link to
+nothing, beside a buffer as soon as it changes, and the project failed with "cannot open input
+file" on every keystroke after the first.
+

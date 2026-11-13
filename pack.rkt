@@ -14,7 +14,9 @@
          "ig-config.rkt")
 
 (provide (contract-out
-          [pack-package! (-> path-string? ig-config? (listof hash?) (hash/c string? string?) path?)]
+          [pack-package! (->* (path-string? ig-config? (listof hash?) (hash/c string? string?))
+                              (#:unnamed (listof string?)) path?)]
+          [artifact-file-names (->* ((listof hash?)) ((listof string?)) (listof string?))]
           [conformance-type? (-> string? boolean?)]))
 
 (define conformance-types
@@ -48,9 +50,26 @@
             ([k '(url version kind type)] #:when (string? (hash-ref r k #f)))
     (hash-set h k (hash-ref r k))))
 
-;; pack-package! : out.tgz config resources usages -> out path
+;; artifact-file-names : (listof resource) [(listof string)] -> (listof string)   <Type>-<id>.json,
+;; one name per artifact. A resource with no id (an instance of a logical model, which has no `id`
+;; element) is named by `unnamed` — the names of the Instances that made the id-less resources, in
+;; order — when there is one name for each, else "instance". A name already given gets -2, -3 …
+;; instead of overwriting the first.
+(define (artifact-file-names artifacts [unnamed '()])
+  (define id-less (for/sum ([a (in-list artifacts)]) (if (hash-ref a 'id #f) 0 1)))
+  (define names (if (= (length unnamed) id-less) unnamed '()))
+  (for/fold ([out '()] [seen (hash)] [names names] #:result (reverse out)) ([a (in-list artifacts)])
+    (define id (hash-ref a 'id #f))
+    (define stem (format "~a-~a" (hash-ref a 'resourceType "Resource")
+                         (cond [id id] [(pair? names) (car names)] [else "instance"])))
+    (define n (add1 (hash-ref seen stem 0)))
+    (values (cons (if (= n 1) (format "~a.json" stem) (format "~a-~a.json" stem n)) out)
+            (hash-set seen stem n)
+            (if (and (not id) (pair? names)) (cdr names) names))))
+
+;; pack-package! : out.tgz config resources usages [#:unnamed names] -> out path
 ;; usages: instance id -> "#example" | "#definition" (default #example)
-(define (pack-package! out cfg resources usages)
+(define (pack-package! out cfg resources usages #:unnamed [unnamed '()])
   (define dir (make-temporary-file "fsh-pack-~a" 'directory))
   (define pkg (build-path dir "package"))
   (make-directory* (build-path pkg "example"))
@@ -59,8 +78,7 @@
     (or (conformance-type? t)
         (equal? (hash-ref usages (hash-ref r 'id "") "#example") "#definition")))
   (define placed
-    (for/list ([r (in-list resources)])
-      (define file (format "~a-~a.json" (hash-ref r 'resourceType) (hash-ref r 'id "resource")))
+    (for/list ([r (in-list resources)] [file (in-list (artifact-file-names resources unnamed))])
       (define sub (if (definitional? r) pkg (build-path pkg "example")))
       (call-with-output-file (build-path sub file) #:exists 'replace (lambda (o) (write-json r o)))
       (list sub file r)))
@@ -75,3 +93,18 @@
   (parameterize ([current-directory dir]) (tar-gzip out* "package"))
   (delete-directory/files dir)
   out*)
+
+(module+ test
+  (require rackunit)
+  ;; one file name per artifact: <Type>-<id>.json; a resource with no id (an instance of a logical
+  ;; model) is named by its Instance when every id-less resource has a name, else "instance"; a name
+  ;; taken gets -2 (two such instances used to be written to ONE file, the later over the earlier)
+  (define as (list (hasheq 'resourceType "StructureDefinition" 'id "intake")
+                   (hasheq 'resourceType "intake" 'name "Ann")
+                   (hasheq 'resourceType "Patient" 'id "p")
+                   (hasheq 'resourceType "intake" 'name "Bob")))
+  (check-equal? (artifact-file-names as '("ann-intake" "bob-intake"))
+                '("StructureDefinition-intake.json" "intake-ann-intake.json" "Patient-p.json" "intake-bob-intake.json"))
+  (check-equal? (artifact-file-names as)
+                '("StructureDefinition-intake.json" "intake-instance.json" "Patient-p.json" "intake-instance-2.json"))
+  (check-equal? (artifact-file-names as '("only-one")) (artifact-file-names as)))

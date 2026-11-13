@@ -22,7 +22,7 @@
          (only-in racket/path path-only)
          (only-in fhir/sd/sd-index sd-index-available?)
          (only-in fsh/project compile-project pack-project! fsh-files project-missing project-diagnostics project-texts
-                  project-artifacts project-config project-files)
+                  project-artifacts project-config project-files project-file-names)
          (only-in fsh/ig-config ig-config-id ig-config-version read-ig-config ig-config-canonical)
          (only-in fsh/project find-config)
          (only-in fsh/decompile fhir->fsh)
@@ -32,7 +32,7 @@
          (only-in fhir/diagnostic emit-diagnostics format-flag diagnostic-severity)
          (only-in fhir/serialize/fhir-json write-fhir-json))
 
-(provide compile-path decompile-files artifact-file-names)
+(provide compile-path decompile-files)
 
 ;; compile-path : source out snapshot? canonical fhir-version -> void   compile (fsh/project.rkt),
 ;; report diagnostics (exit 1), optionally pack, write fsh-generated/
@@ -62,23 +62,13 @@
       (or out (build-path (if (directory-exists? src) src (or (path-only (car (project-files p))) (current-directory)))
                           "fsh-generated")))
     (make-directory* outdir)
-    (for ([a (in-list artifacts)] [name (in-list (artifact-file-names artifacts))])
+    (for ([a (in-list artifacts)] [name (in-list (project-file-names p))])
       ;; as FHIR writes it (resourceType first, each type's elements in its own order), as
       ;; `racket file.fsh` prints it: the keys were sorted by name here
       (call-with-output-file (build-path outdir name) #:exists 'replace
         (lambda (o) (write-fhir-json a o #:indent 2) (newline o)))
       (printf "  ~a\n" name))
     (printf "fsh: wrote ~a artifact(s) to ~a\n" (length artifacts) outdir)))
-
-;; artifact-file-names : (listof resource) -> (listof string)   <Type>-<id>.json, one name per
-;; artifact: a second artifact that would take a name already given (two instances of a logical
-;; model, which has no id) gets -2, -3 … instead of overwriting the first
-(define (artifact-file-names artifacts)
-  (for/fold ([names '()] [seen (hash)] #:result (reverse names)) ([a (in-list artifacts)])
-    (define stem (format "~a-~a" (hash-ref a 'resourceType "Resource") (hash-ref a 'id "instance")))
-    (define n (add1 (hash-ref seen stem 0)))
-    (values (cons (if (= n 1) (format "~a.json" stem) (format "~a-~a.json" stem n)) names)
-            (hash-set seen stem n))))
 
 ;; decompile-files : (listof path-string) -> void   print one FSH document for the given FHIR JSON files
 (define (decompile-files files)

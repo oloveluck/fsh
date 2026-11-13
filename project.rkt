@@ -37,7 +37,9 @@
                                         #:packages (listof path-string?) #:context (listof path-string?)
                                         #:files (or/c (listof path-string?) #f))
                         project?)]
-  [pack-project!   (-> project? path-string? path?)]))
+  [pack-project!   (-> project? path-string? path?)]
+  ;; the file name of each of the project's artifacts, as the command line and the package write them
+  [project-file-names (-> project? (listof string?))]))
 
 ;; project : config(ig-config|#f) fhir-version files texts(hash path-string -> text) located artifacts
 ;;           diagnostics missing-dependencies
@@ -47,10 +49,22 @@
 
 ;; map-files : path -> (listof path)   every .map / .fml under a directory
 (define (map-files src)
-  (cond [(directory-exists? src)
-         (sort (for/list ([f (in-directory src)] #:when (regexp-match? #rx"[.](map|fml)$" (path->string f))) f)
-               string<? #:key path->string)]
+  (cond [(directory-exists? src) (source-files src #rx"[.](map|fml)$")]
         [else '()]))
+
+;; source-files : dir regexp -> (listof path)   the files under a directory whose names match, by
+;; name. Not a file or folder whose name starts with a dot: an editor's lock file beside the one
+;; being edited (Emacs writes `.#bp.fsh`, a link to nothing, as soon as a buffer changes — the
+;; language server then failed the whole project with "cannot open input file"), macOS's `._bp.fsh`,
+;; a `.git` folder. And only what can be read: a link whose target is gone is no source.
+(define (source-files src rx)
+  (define (hidden? p) (regexp-match? #rx"^[.]" (path->string (let-values ([(_b n _d) (split-path p)]) n))))
+  (sort (for/list ([f (in-directory src (lambda (d) (not (hidden? d))))]
+                   #:when (regexp-match? rx (path->string f))
+                   #:unless (hidden? f)
+                   #:when (file-exists? f))
+          f)
+        string<? #:key path->string))
 
 ;; fml-entry : symbol -> procedure | #f   a function of the fml package, when it is installed
 (define (fml-entry name)
@@ -79,9 +93,7 @@
 
 ;; fsh-files : path -> (listof path)   a file, or every .fsh under a directory, sorted
 (define (fsh-files src)
-  (cond [(directory-exists? src)
-         (sort (for/list ([f (in-directory src)] #:when (regexp-match? #rx"[.]fsh$" (path->string f))) f)
-               string<? #:key path->string)]
+  (cond [(directory-exists? src) (source-files src #rx"[.]fsh$")]
         [(file-exists? src) (list (if (path? src) src (string->path src)))]
         [else '()]))
 
@@ -196,7 +208,21 @@
                              [m (in-value (fsh-instance-metadata (car l)))]
                              [u (in-value (assoc 'usage m))] #:when u)
                    (values (instance-id (car l)) (cdr u))))
-  (pack-package! out (project-config p) (project-artifacts p) usages))
+  (pack-package! out (project-config p) (project-artifacts p) usages #:unnamed (unnamed-instances p)))
+
+;; unnamed-instances : project -> (listof string)   the Instances whose resource carries no id, in
+;; project order: those that are not inline and whose id no artifact has (an instance of a logical
+;; model — the model has no `id` element, so the name is all that tells two of them apart)
+(define (unnamed-instances p)
+  (define ids (for/hash ([a (in-list (project-artifacts p))] #:when (hash-ref a 'id #f)) (values (hash-ref a 'id) #t)))
+  (for/list ([l (in-list (project-located p))]
+             #:when (fsh-instance? (car l))
+             #:unless (equal? (assoc-ref* (fsh-instance-metadata (car l)) 'usage) "#inline")
+             #:unless (hash-ref ids (instance-id (car l)) #f))
+    (instance-id (car l))))
+(define (assoc-ref* m k) (let ([p (assoc k m)]) (and p (cdr p))))
+;; project-file-names : project -> (listof string)
+(define (project-file-names p) (artifact-file-names (project-artifacts p) (unnamed-instances p)))
 
 (module+ test
   (require rackunit racket/file fhir/diagnostic)
@@ -253,3 +279,30 @@
     (check-equal? (length (project-diagnostics p3)) 1)
     (check-true (regexp-match? #rx"bad[.]map" (loc-source (diagnostic-loc (car (project-diagnostics p3))))))
     (delete-directory/files d2)))
+
+(module+ test
+  ;; an instance of a logical model has no id: its file is named by the Instance, so two of them
+  ;; are two files (they were `<type>-instance.json`, and one file in a package)
+  (define lm (make-temporary-directory))
+  (call-with-output-file (build-path lm "a.fsh")
+    (λ (o) (void (write-string (string-append "Logical: Intake\nId: intake\nTitle: \"Intake\"\nDescription: \"x\"\n* name 1..1 string \"name\"\n\n"
+                                              "Instance: ann-intake\nInstanceOf: Intake\n* name = \"Ann\"\n\n"
+                                              "Instance: bob-intake\nInstanceOf: Intake\n* name = \"Bob\"\n") o))))
+  (check-equal? (project-file-names (compile-project lm #:fhir-version "4.0.1"))
+                '("StructureDefinition-intake.json" "intake-ann-intake.json" "intake-bob-intake.json"))
+  (delete-directory/files lm))
+
+(module+ test
+  ;; an editor's lock file is no source: Emacs puts `.#bp.fsh` (a link to nothing) beside a file
+  ;; being edited, and the project failed with "cannot open input file"
+  (define ed (make-temporary-directory))
+  (call-with-output-file (build-path ed "bp.fsh") (λ (o) (void (write-string "Profile: BP\nParent: Observation\n* subject 1..1\n" o))))
+  (make-file-or-directory-link "someone@host.123:456" (build-path ed ".#bp.fsh"))
+  (call-with-output-file (build-path ed "._bp.fsh") (λ (o) (void (write-string "\0\5\26\7" o))))
+  (make-directory (build-path ed ".cache"))
+  (call-with-output-file (build-path ed ".cache" "old.fsh") (λ (o) (void (write-string "Profile: Old\nParent: Nope\n" o))))
+  (call-with-output-file (build-path ed ".#m.map") (λ (o) (void (write-string "x" o))))
+  (check-equal? (map (λ (f) (path->string (file-name-from-path f))) (fsh-files ed)) '("bp.fsh"))
+  (check-equal? (map-files ed) '())
+  (check-equal? (project-diagnostics (compile-project ed #:fhir-version "4.0.1")) '())
+  (delete-directory/files ed))
