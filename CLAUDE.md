@@ -10,7 +10,8 @@ The CLI is `cli.rkt` (`raco fsh`); the conformance runner(s) live in `tests/` be
 A from-scratch FSH compiler (the SUSHI authoring DSL) built onto this repo's model. Layers: `parser/` (a `#lang brag` grammar + a stateful `br-parser-tools` lexer
 that emulates FSH's ANTLR pushMode/popMode via a mode-stack box + one lexer per mode; prefab AST with
 `lower-entity`; `path.rkt` sub-parses FSH paths; `parse.rkt` pre-splits a doc into entity chunks since
-brag's start rule is one `entity`), `resolve.rkt` (walks an FSH path against the R5 registry via
+brag's start rule is one `entity`; `descent.rkt` reads an entity by recursive descent, brag the rest —
+"Read by descent, held to the grammar" below), `resolve.rkt` (walks an FSH path against the R5 registry via
 `model/introspect` `full-field-specs` → element type code / cardinality kind — for fixed/pattern key
 selection and Instance array nesting), `caret.rkt` (get/set at a caret path), `compile.rkt`
 (entity AST → **FHIR jsexpr**). Targets **R5** (`fhirVersion "5.0.0"`, canonical base default
@@ -414,7 +415,8 @@ mCODE 15.1 s (18.9) — most of the gain is the foundation's lazy package index.
   parsing them: ~10 s), and RuleSet bodies re-parsed per distinct instantiation (3.6 s of mCODE's
   5.2 s compile). Group size for long entities (`rules-per-parse`) was measured at 1-32: 16 is
   near the best, so it stays. (Superseded on 2026-11-13: the parse is remembered by token shape,
-  every entity is parsed rule by rule, and the per-document memo of instantiations is gone.)
+  every entity is parsed rule by rule, and the per-document memo of instantiations is gone; and on
+  2026-11-14: entities are read by descent, brag only what descent leaves.)
 
 ## Claude as the user (2026-11-09)
 What an agent working through fhir-mcp needed (the main repo's CLAUDE.md, "Claude as the user"):
@@ -603,6 +605,8 @@ changes it, and is said. Tests 620 -> 661.
   parameterized inserts cost a lexing each (2.2 s -> ~0). The table is cleared at 20,000 shapes.
   This is instead of substituting parameters in parsed rules (the brief's idea): it needs no
   judgement of where a parameter may land, because the text is still lexed as it always was.
+  (Since 2026-11-14 brag, and so this table, sees only what descent.rkt leaves — below; the table
+  still pays for itself there: without it the corpus parse is 0.86 s, with it 0.51 s.)
 - `instantiate-ruleset` lost its per-document memo (`current-instantiations`): nothing left to save.
 - fml is loaded only when a project has map files (project.rkt `parse-maps`: ~0.25 s per compile).
 - Regexps built per pair or per element are built once (sd.rkt `copy-slice-children`,
@@ -689,3 +693,50 @@ files as the project does (`fsh-files`).
   it as Parent (SUSHI looks among the project's definitions first). Not fixed.
 - instance.rkt's `resolve-soft-indices` (one function, seven mutable tables) and decompile.rkt were
   left as they are: both are pinned by the corpora, neither was in the way.
+
+## Read by descent, held to the grammar (2026-11-14)
+The owner's rule: keep brag "for testing since it helps tie the implementation to the published
+antlr grammar". So `parser/grammar.rkt` (brag, ported from SUSHI's FSH.g4) stays the definition of
+FSH text and the reader of every error, and `parser/descent.rkt` reads it fast:
+- **descent.rkt** (`descend-parts`, `descend-entity`) reads one entity's tokens straight to brag's
+  `parse-to-datum` datum for `entity` (the `/` cuts and the `@mostAlphaKeywords` splice as the
+  grammar has them, so `lower-entity`, the indentation and everything after are unchanged). The
+  header (keyword, name, metadata) is read by a table of what each entity allows (`entity-specs`);
+  each rule, between its STAR and the next, by trying every rule kind the entity allows
+  (`rule-contexts`, the grammar's alternatives in order, wrappers and all) — a kind matches only when
+  it reads every token. Inside a rule each choice is decided by the next token or two; the three
+  values the grammar reads two ways (a NUMBER/DATETIME/TIME also a name, `true` a bool or a name, a
+  code also a quantity) are read as brag reads them (`value!`). It only ever ACCEPTS: a header it does
+  not take makes the whole entity brag's (`#f`), a rule no kind reads or two kinds read is a hole.
+  Two kinds read `* ^x = v` and `* insert R` in a ValueSet or a RuleSet (caretValueRule or
+  codeCaretValueRule with no code, insertRule or codeInsertRule) and `* #a` in a RuleSet (concept or
+  vsComponent): brag's choice is the first of its parallel attempts to finish, not the grammar's
+  order — `* insert R` is an insertRule, `* insert R(x)` a codeInsertRule (the corpus found that) —
+  so those rules are left to brag.
+- **The seam** (parse.rkt `parse-reals`): descent's parts, each hole read by brag exactly as
+  `parse-reals/brag` (the old path, unchanged) reads it — the header and that rule, through the shape
+  templates — and the whole old path when descent does not take the header. So every error, its
+  position and the "ends after" probe are brag's, as before. `parse-fsh-doc/diagnostics/brag` is the
+  brag-only reading (a parameter, `descent?`); the `grammar` submodule gives the test
+  `parse-reals`, `parse-reals/brag` and `parse-tokens`.
+- **tests/descent-test.rkt** holds the two to the same Outcome at three levels — a document (the
+  entities and the diagnostics, as strings), an entity (production vs brag's rule-by-rule datum, or
+  the same error), and every token list brag is given (header, header + each rule: descent, where it
+  reads the list, vs `g:parse-to-datum`, one list per shape) — over every vendored guide's FSH (IPS,
+  mCODE, Genomics, Plan-Net, HRex), the golden corpus, the 515 importer texts as written and
+  left-aligned, guide.md's and ig-guide.md's blocks, every value form in every place a value stands
+  (1,035 texts), 2,000 generated entities (seeded, one in four broken) and 4,000 token soups:
+  0 disagreements. Counted and floored: descent reads 23,064 of the guides' 23,696 rules itself
+  (1,201 of 1,382 entities whole; the 632 left are ValueSet and RuleSet carets and inserts),
+  775 of the importer texts' 837, 1,109 of the 1,195 generated entities brag reads; of the soups
+  it reads the 96 brag reads and nothing else. A planted bug (a ratio's parts swapped) fails it in
+  three groups (importer 21, values 298, generated 240 disagreements); the guides hold no ratio.
+- **Measured** (one machine, back to back, medians of 3; other work was running, load ~1):
+  the parse alone of the 291 corpus files in a cold process 866 -> 538 ms (lexing is now most of it:
+  sampled in mCODE's compile, `parse-reals` 40 ms and lexing 240 ms of the parse's ~360 ms; it was
+  `parse-reals` ~1,070 ms), the importer texts 369 -> 99 ms;
+  `raco fsh` mCODE 6.3 -> 5.4 s (in process 3.4 -> 2.9 s: the 866 RuleSet instantiations no longer
+  each fail brag's header-alone parse), IPS 4.7 -> 4.7 s and Genomics 4.8 -> 5.0 s (in process 3.4 ->
+  3.5, 2.2 -> 2.0: within noise — their parse was already mostly template hits); `raco fsh check`
+  mCODE 6.1 -> 5.4 s; tests/sushi-importer-test.rkt 1.10 -> 0.92 s. The suite gained the 25 s test.
+

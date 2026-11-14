@@ -854,7 +854,10 @@ error missed and none reported where SUSHI reports none.}
 @item{SUSHI's 22 hand-written pairs of FSH and JSON all compile to their JSON and survive the round
 trip.}
 @item{mCODE's examples, compiled and packed here, all validate against the profiles compiled here,
-as they do against the published package.}]
+as they do against the published package.}
+@item{FSH is read by a hand-written parser, for speed. The parser generated from the grammar
+(SUSHI's FSH.g4) is kept as the reference: it reports every syntax error, and a test requires both
+to read every guide above, SUSHI's test texts and thousands of generated ones to the same result.}]
 
 The repository's @tt{TESTING.md} says what the remaining differences are and how to run the tests.
 To work on the compiler itself, install the packages from source with the repositories side by

@@ -28,6 +28,16 @@ adds (narratives, snapshots, dates, OIDs). Floors only rise.
 no missed errors, no over-reports, no crashes. The one line elsewhere is an empty RuleSet, whose error
 SUSHI positions at the next entity.
 
+**The parser against the grammar** (`tests/descent-test.rkt`). FSH is read by a hand-written
+parser; the parser generated from the grammar (`parser/grammar.rkt`, ported from SUSHI's FSH.g4)
+stays the reference and the reader of every error. Both must give the same entities and the same
+diagnostics for every document, the same tree for every entity, and — wherever the hand-written one
+reads it — the grammar's own tree for every token list it is given: over every vendored guide's FSH,
+the golden corpus, SUSHI's importer texts, the guides' FSH blocks, every value form in every place a
+value stands, 2,000 generated entities and 4,000 token soups. 0 disagreements; the hand-written
+parser reads 23,064 of the guides' 23,696 rules itself (the rest, which the grammar reads two ways,
+go to the grammar).
+
 **The SUSHI golden corpus** (hand-authored FSH and JSON pairs): 22/22 compile to their JSON, and 22/22
 survive FSH → FHIR → FSH → FHIR unchanged.
 
@@ -53,6 +63,7 @@ OperationDefinitions that changed after publication. `CLAUDE.md` lists them in f
 raco test .                              # everything, with the floors
 raco test tests/ig-ips-test.rkt          # one IG (also ig-mcode, ig-genomics, gofsh-ips, gofsh-mcode)
 raco test tests/sushi-importer-test.rkt  # the importer oracle
+raco test tests/descent-test.rkt         # the hand-written parser against the grammar
 raco test tests/golden-test.rkt tests/roundtrip-test.rkt
 raco test tests/guide-test.rkt tests/docs-test.rkt   # the guide and the manual
 raco test tests/sushi-alignment-test.rkt tests/cli-test.rkt   # SUSHI's behaviours, case by case; the command line

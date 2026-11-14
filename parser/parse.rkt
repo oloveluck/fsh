@@ -17,6 +17,7 @@
          (only-in racket/string string-split string-replace)
          (prefix-in g: "grammar.rkt")
          "lexer.rkt"
+         "descent.rkt"
          "ast.rkt")
 
 (provide
@@ -29,6 +30,9 @@
   ;; every entity that parses, with its location, and every diagnostic: each entity's parse error
   ;; (the others still parse) and the import-level checks of fsh/lint over the document
   [parse-fsh-doc/diagnostics (->* (string?) (#:source (or/c string? path? #f)) (values (listof pair?) list?))]
+  ;; the same through brag's parser of the grammar alone (descent.rkt left out): what the tests
+  ;; hold the production reading to
+  [parse-fsh-doc/diagnostics/brag (->* (string?) (#:source (or/c string? path? #f)) (values (listof pair?) list?))]
   [parse-fsh-entity (-> string? any/c)]))  ; one entity's source -> its AST
 
 (define entity-start-types
@@ -78,6 +82,8 @@
 (define (parse-fsh-doc/diagnostics str #:source [source #f])
   (define-values (es ds) (parse-fsh-doc/diagnostics* str #:source source))
   (values es (for/list ([d (in-list ds)]) (hinted d str))))
+(define (parse-fsh-doc/diagnostics/brag str #:source [source #f])
+  (parameterize ([descent? #f]) (parse-fsh-doc/diagnostics str #:source source)))
 
 ;; hinted : diagnostic text -> diagnostic   a parse error whose line shows a common slip gets the fix:
 ;; a number followed by a bare unit (`* valueQuantity = 7.1 %`) — FSH quotes a UCUM unit (`7.1 '%'`)
@@ -270,14 +276,38 @@
           [(exact-nonnegative-integer? d) (vector-ref vals d)]
           [else d])))
 
+;; ---- the entity's parse --------------------------------------------------------------------------
+;; An entity is read by descent.rkt, the grammar read by recursive descent in one pass. What it does
+;; not take is read by brag's parser of the grammar as it always was: a whole entity whose header it
+;; does not take (every entity whose header has an error), and otherwise each rule it does not take
+;; (every rule with an error, and the few rules the grammar reads two ways), from the header and that
+;; rule — so the answer, the tree or the positioned error, is brag's wherever descent is silent.
+;; tests/descent-test.rkt holds the two to the same datum.
+(define descent? (make-parameter #t))                  ; #f: brag alone (parse-fsh-doc/diagnostics/brag)
 ;; parse-reals : entity tokens -> its datum (entity (<kind> header-item … rule …))
+(define (parse-reals reals)
+  (define parts (and (descent?) (descend-parts reals)))
+  (if parts (completed parts reals) (parse-reals/brag reals)))
+;; completed : Parts entity-tokens -> datum   descent's reading, each rule it left out read by brag
+;; with the header (the rule node such a parse adds after the header's items, as parse-reals/brag
+;; takes it)
+(define (completed parts reals)
+  (match-define (cons head rules) parts)
+  (match-define (cons header groups) (star-groups reals))
+  (list 'entity
+        (append head
+                (for/list ([r (in-list rules)] [grp (in-list groups)])
+                  (or r (match (parse-tokens (append header grp))
+                          [(list 'entity one) (match (list-tail one (length head)) [(list node) node])]))))))
+
+;; parse-reals/brag : entity tokens -> its datum   brag's reading.
 ;; brag's CFG parser is superlinear in input length, and real IGs have entities with hundreds of rules
 ;; (IPS's Composition profile: 105 s as one parse). An entity is therefore parsed RULE BY RULE: the
 ;; header alone, then header + each `*` rule, keeping the rule node each parse adds. Same tree,
 ;; linear cost — and the shapes repeat (one header, the same few kinds of rule), so most of these
 ;; parses are a template already made (parse-tokens). Entities of every length go this way: held to
 ;; the corpora's entities, rule positions and diagnostics, which are the same as parsed whole.
-(define (parse-reals reals)
+(define (parse-reals/brag reals)
   (match-define (cons header groups) (star-groups reals))
   (cond
     [(null? groups) (parse-tokens reals)]
@@ -332,6 +362,11 @@
 (define (parse-fsh-entity str)
   (define ds (parse-fsh-doc str))
   (if (pair? ds) (car ds) (error 'parse-fsh-entity "no entity in: ~s" str)))
+
+(module+ grammar
+  ;; for tests/descent-test.rkt: an entity's tokens read by brag, rule by rule, and one token list
+  ;; read by brag through the shape templates
+  (provide parse-reals parse-reals/brag parse-tokens))
 
 (module+ test
   (require rackunit (only-in fhir/diagnostic diagnostic->string exn:fail:diagnostic-diagnostic))
