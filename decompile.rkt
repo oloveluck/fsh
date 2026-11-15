@@ -140,9 +140,14 @@
   (define version (hash-ref v 'version #f))
   (define display (hash-ref v 'display #f))
   (and (hash? v) (only-keys? v '(system code display version))
-       (token? code) (or (not system) (token? system)) (or (not version) (and system (token? version)))
+       (or (token? code) (quotable? code)) (or (not system) (token? system)) (or (not version) (and system (token? version)))
        (or (not display) (string? display))
-       (fsh-code (string-append (or system "") (if version (string-append "|" version) "") "#" code) display)))
+       (fsh-code (string-append (or system "") (if version (string-append "|" version) "") "#"
+                                (if (token? code) code (string-append "\"" code "\"")))
+                 display)))
+;; quotable? : string -> boolean   a code FSH writes quoted (`#"Cardiovascular (Pulses)"`): one line,
+;; no quote or backslash of its own
+(define (quotable? s) (and (string? s) (positive? (string-length s)) (not (regexp-match? #px"[\"\\\n\r]" s))))
 (define (quantity-value v)
   (define value (hash-ref v 'value #f))
   (define code (hash-ref v 'code #f))
