@@ -740,3 +740,6 @@ FSH text and the reader of every error, and `parser/descent.rkt` reads it fast:
   3.5, 2.2 -> 2.0: within noise — their parse was already mostly template hits); `raco fsh check`
   mCODE 6.1 -> 5.4 s; tests/sushi-importer-test.rkt 1.10 -> 0.92 s. The suite gained the 25 s test.
 
+**A code with spaces, compact** (2026-11-15): the decompiler writes a single-coding concept or a
+Coding whose code holds spaces as one rule, `system#"Cardiovascular (Pulses)"` (it wrote one rule per
+element); fhir-mcp's FSH answers alias the systems a text repeats. GoFSH IPS 117/117, mCODE 348/349.
