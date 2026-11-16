@@ -31,6 +31,10 @@
   ;; a binding's value set reference (a name, alias or url) as the canonical it means; the name
   ;; itself when nothing resolves it
   [valueset-url (-> string? string?)]
+  ;; a type named in an `only` rule that nothing defines (#f when it is defined, or cannot be judged)
+  [unknown-only-type (-> string? (or/c string? #f))]
+  ;; the names a Parent, InstanceOf or type may be: for suggestions
+  [parent-candidates (-> (listof string?))]
   ;; an Invariant -> the constraint source compile-profile reads
   [compile-invariant (-> fsh-invariant? hash?)]
   ;; a Mapping injected into its Source StructureDefinition among the compiled SDs
@@ -172,12 +176,19 @@
                          (for/and ([k (in-hash-keys e)]) (memq k '(id path)))))
   (define kept (for/hash ([(id e) (in-hash trimmed)] #:unless (bare? e)) (values id e)))
   (values kept (filter (lambda (id) (hash-has-key? kept id)) order)))
-;; strip-core-version : string -> string   a core type pinned to its version (`Parent:
-;; Observation|4.0.1`, as a published IG's baseDefinition reads) is the type itself
-(define (strip-core-version p)
-  (match (regexp-match #px"^([^|]+)[|][^|]+$" p)
-    [(list _ n) (if (type-registered? (string->symbol n)) n p)]
-    [_ p]))
+;; aliased+versioned : text -> (values name version|#f)   a name, alias or canonical with its pin
+;; apart: the pin may be written after an alias (`$ext|5.3.0`, as SUSHI reads it) or be part of
+;; the alias's value; the one written wins
+(define (aliased+versioned t)
+  (define-values (n0 written) (versioned t))
+  (define-values (n its) (versioned (resolve-alias n0 (current-aliases))))
+  (values n (or written its)))
+;; strip-core-version : string -> string   a core type pinned to its version or given by its
+;; canonical (`Parent: Observation|4.0.1`, `Parent: http://hl7.org/fhir/StructureDefinition/
+;; Observation|4.0.1`, as a published IG's baseDefinition reads) is the type itself. The canonical
+;; used to be taken for a type NAME: the profile compiled, its type the whole url and every element
+;; id rooted at it, without a word.
+(define (strip-core-version p) (or (core-type-name p) p))
 ;; ---- Logical / Resource -> StructureDefinition (specialization, addElement) ----------------
 (define (compile-logical-resource e)
   (define logical? (fsh-logical? e))
@@ -425,7 +436,10 @@
   (define (inherit t)
     (define pt (findf (lambda (x) (equal? (hash-ref x 'code #f) (hash-ref t 'code #f))) inherited))
     (if (and pt (hash-ref pt 'extension #f) (not (hash-ref t 'extension #f))) (hash-set t 'extension (hash-ref pt 'extension)) t))
-  (sort (map (compose inherit type->jsexpr) types) < #:key rank))
+  ;; on an `extension` element a profile is an Extension's, resolved or not (its package may be absent)
+  (define (as-extension t)
+    (if (and (extension-path? path) (pair? (hash-ref t 'profile '()))) (hash-set t 'code "Extension") t))
+  (sort (map (compose as-extension inherit type->jsexpr) types) < #:key rank))
 ;; extension-path? : element-path -> boolean   the path of an `extension` / `modifierExtension`
 (define (extension-path? path) (regexp-match? #rx"[.](modifierE|e)xtension$" path))
 ;; contain-slices : elems order id path slice (listof contains-item) sliced-already? -> (values elems order)
@@ -463,11 +477,12 @@
 ;; the Extension the slice is profiled by — a local Extension's url, an alias, a url as written, or
 ;; an Extension of the packages by name
 (define (named-extension-url name)
-  (define n (resolve-alias name (current-aliases)))
+  (define-values (n ver) (aliased+versioned name))
   (define local (hash-ref (current-profiles) n #f))
-  (cond [local (local-profile-url local)]
-        [(regexp-match? #rx"^https?:" n) n]
-        [else (external-canonical "StructureDefinition" n)]))
+  (define url (cond [local (local-profile-url local)]
+                    [(regexp-match? #rx"^https?:" n) n]
+                    [else (external-canonical "StructureDefinition" n)]))
+  (and url (string-append url (or ver ""))))
 ;; check-instance-of! : instance aliases profiles -> void   an InstanceOf nothing defines — not a type,
 ;; a profile, extension or logical model here, nor a definition in the packages — is an error, as
 ;; SUSHI's "Cannot find definition for Instance": compiling on writes a resource of a type that does
@@ -754,19 +769,39 @@
   (match (regexp-match #px"^(Reference|Canonical|CodeableReference)\\s*\\((.*)\\)$" t)
     [(list _ "Canonical" inner) (hasheq 'code "canonical" 'targetProfile (target-urls inner))]
     [(list _ kind inner) (hasheq 'code kind 'targetProfile (target-urls inner))]
-    [_ (define n (resolve-alias t (current-aliases)))
+    ;; a name or a canonical, either with a `|version` pin, which stays on the profile's canonical
+    ;; and is no part of what is looked up (a pinned url was taken whole: its last step, pin and
+    ;; all, became the type code)
+    [_ (define-values (n ver) (aliased+versioned t))
+       (define (pinned u) (string-append u (or ver "")))
        (cond [(hash-ref (current-logicals) n #f) => (lambda (url) (hasheq 'code url))]   ; a logical type is its url
              [(hash-ref (current-profiles) n #f)
               => (lambda (p) (hasheq 'code (instance-base n (current-profiles))
-                                     'profile (list (local-profile-url p))))]
+                                     'profile (list (pinned (local-profile-url p)))))]
+             [(core-type-name n) => (lambda (type) (hasheq 'code type))]   ; a core type by name or canonical
              [(regexp-match? #px"^https?:" n)
               ;; a profile by url: its code is the profile's base type (core vitalsigns -> Observation)
               (define sd (and (sd-index-available?) (resolve-canonical-raw "StructureDefinition" n)))
-              (hasheq 'code (or (and sd (hash-ref sd 'type #f)) (last-url-seg n)) 'profile (list n))]
-             [(and (sd-index-available?) (not (type-registered? (string->symbol n)))
-                   (resolve-canonical-raw "StructureDefinition" n))
-              => (lambda (sd) (hasheq 'code (hash-ref sd 'type) 'profile (list (hash-ref sd 'url))))]
+              (hasheq 'code (or (and sd (hash-ref sd 'type #f)) (last-url-seg n)) 'profile (list (pinned n)))]
+             [(and (sd-index-available?) (resolve-canonical-raw "StructureDefinition" n))
+              => (lambda (sd) (hasheq 'code (hash-ref sd 'type) 'profile (list (pinned (hash-ref sd 'url)))))]
              [else (hasheq 'code n)])]))
+;; unknown-only-type : type-text -> string | #f   the name of a type in an `only` rule that nothing
+;; defines — no FHIR type, no profile, extension or logical model of the project, no definition of
+;; its packages — else #f; a url is not judged (a dependency may not be installed), nor anything
+;; without the packages. SUSHI: "No definition for the type … could be found". Such a name used to
+;; become the element's type code as written (`CodeableConceptUvIps`), which no validator resolves.
+(define (unknown-only-type t)
+  (cond [(regexp-match? #px"^(Reference|Canonical|CodeableReference)\\s*\\(" t) #f]
+        [else
+         (define-values (n _v) (aliased+versioned t))
+         (and (sd-index-available?)
+              (not (regexp-match? #px"^https?:|^urn:" n))
+              (not (hash-ref (current-logicals) n #f))
+              (not (hash-ref (current-profiles) n #f))
+              (not (core-type-name n))
+              (not (resolve-canonical-raw "StructureDefinition" n))
+              n)]))
 ;; target-urls : "A or B|1.0" -> urls   each target a local profile, a profile of the packages by name
 ;; (USCorePatientProfile), an alias or a url; a `|version` pin stays on the canonical (SUSHI)
 (define (target-urls inner)

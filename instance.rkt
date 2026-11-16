@@ -25,6 +25,9 @@
   [instance-base (->* (string? hash?) (exact-nonnegative-integer?) (or/c string? #f))]
   ;; a dependency package's profile by name, id or url (a constraint SD), when the SD index has it
   [external-sd (-> string? (or/c hash? #f))]
+  ;; a name or canonical apart from its `|version` pin; the FHIR type a name or core canonical means
+  [versioned (-> string? (values string? (or/c string? #f)))]
+  [core-type-name (-> string? (or/c string? #f))]
   ;; a StructureDefinition a required module registered, by url, id or name
   [registered-sd (-> string? (or/c hash? #f))]
   ;; an assigned FSH value as the element's JSON, by the element's ftype
@@ -81,10 +84,23 @@
   (and (hash? sd)
        (for/or ([e (in-list (hash-ref (hash-ref sd 'snapshot (hash)) 'element '()))])
          (equal? (hash-ref e 'id #f) (string-append type "." field)))))
+;; versioned : string -> (values name version|#f)   a canonical or a name apart from its `|version` pin
+(define (versioned s)
+  (match (regexp-match #px"^([^|]+)([|][^|]+)$" s)
+    [(list _ n v) (values n v)]
+    [_ (values s #f)]))
+;; core-type-name : string -> string | #f   the FHIR type a name or a core canonical means:
+;; `Observation`, `http://hl7.org/fhir/StructureDefinition/Observation`, either with a `|version`
+(define (core-type-name s)
+  (define-values (n _v) (versioned s))
+  (define name (match (regexp-match #rx"^http://hl7.org/fhir/StructureDefinition/([A-Za-z0-9]+)$" n) [(list _ t) t] [_ n]))
+  (and (not (regexp-match? #rx"[:/]" name)) (type-registered? (string->symbol name)) name))
 ;; follows the Parent chain (a profile of a profile of …) to the base resource type; bounded so a
-;; cyclic Parent cannot loop
+;; cyclic Parent cannot loop. A core type may be given by its canonical, pinned or not (a profile
+;; whose Parent was `http://hl7.org/fhir/StructureDefinition/Condition|4.0.1` had no base type, so
+;; an Instance of it was "not found")
 (define (instance-base type-str profiles [fuel 16])
-  (cond [(type-registered? (string->symbol type-str)) type-str]
+  (cond [(core-type-name type-str) => values]
         ;; a logical model or custom resource of this document, named by its NAME (or url): the type
         ;; it was registered as is its url's last step, its id (`InstanceOf: IntakeForm` was "not
         ;; found" unless it wrote the id, `intake-form`)

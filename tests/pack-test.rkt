@@ -8,6 +8,7 @@
 
 (require rackunit racket/runtime-path racket/file racket/list racket/string json file/gunzip file/untar
          (only-in fhir/spec-package spec-package-path)
+         (only-in fhir/diagnostic diagnostic-severity diagnostic-message)
          fsh/project)
 
 (define-runtime-path mcode "vendor/mcode-4.0.0/fsh")
@@ -26,7 +27,11 @@
    (printf "  FSH pack: skipped (needs fhir-spec with mCODE's dependencies)\n")]
   [else
    (define p (compile-project mcode))
-   (check-equal? (project-diagnostics p) '())
+   ;; no error; the only warnings are mCODE's own four patterns that carry a display (DeauvilleScale
+   ;; and LymphomaStage: the four the published package has too)
+   (check-equal? (filter (lambda (d) (eq? (diagnostic-severity d) 'error)) (project-diagnostics p)) '())
+   (check-equal? (length (filter (lambda (d) (regexp-match? #rx"becomes part of the pattern" (diagnostic-message d))) (project-diagnostics p))) 4)
+   (check-equal? (length (project-diagnostics p)) 4)
    (define tgz (make-temporary-file "mcode-~a.tgz"))
    (pack-project! p tgz)
    (define es (package-entries tgz))

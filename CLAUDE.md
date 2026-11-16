@@ -743,3 +743,34 @@ FSH text and the reader of every error, and `parser/descent.rkt` reads it fast:
 **A code with spaces, compact** (2026-11-15): the decompiler writes a single-coding concept or a
 Coding whose code holds spaces as one rule, `system#"Cardiovascular (Pulses)"` (it wrote one rule per
 element); fhir-mcp's FSH answers alias the systems a text repeats. GoFSH IPS 117/117, mCODE 348/349.
+
+## What a model writes: canonicals with pins, unknown types, displays in patterns (2026-11-16)
+Found by fhir-examples' spec bench asking a model to state a published profile's requirements in
+FSH (the same task as FHIR JSON, one oracle): with the requirements stated in words the JSON
+answers were perfect, and every FSH loss but a handful was THIS compiler, silently. Re-scoring the
+same 72 round-1 FSH answers under the fixes took them from 1134 to 1416 of 1431 facets (79% ->
+99%). `tests/versioned-canonical-test.rkt`.
+- **A core type by its canonical, pinned or not, is the type** (instance.rkt `versioned`,
+  `core-type-name`; sd.rkt `strip-core-version`): `Parent:
+  http://hl7.org/fhir/StructureDefinition/Condition|4.0.1` — as a published baseDefinition reads,
+  and as SUSHI accepts — was taken for a type NAME: `type` was the whole url, every element id was
+  rooted at it, an Instance of the profile was "InstanceOf not found" (its suggestion flipping
+  between the profile's name and id each round), and nothing said why. `instance-base` ends a
+  Parent chain at such a canonical too.
+- **A `|version` pin is no part of what is looked up** (sd.rkt `aliased+versioned`,
+  `type->jsexpr`, `named-extension-url`): `only <profile canonical>|2.0.1`, `only $alias|5.3.0`,
+  an alias whose value carries a pin, `extension contains <url>|5.3.0 named x` — the code was the
+  canonical's last step, pin and all. The pin stays on the profile's canonical (SUSHI). On an
+  `extension` element a profile is an Extension's, resolved or not (`as-extension`: its package
+  may be absent).
+- **A type in `only` that nothing defines is an error at its rule**, with the nearest name
+  (compile.rkt's rule pre-pass, sd.rkt `unknown-only-type`; SUSHI: "No definition for the type …
+  could be found"): `only CodeableConceptUvIps` (the IG's name is CodeableConceptIPS) became the
+  element's type code as written. A url is not judged (a dependency may not be installed), nor
+  anything without the packages. The five IG corpora have none.
+- **A display in a code a profile assigns is a warning at the rule**: it becomes part of the
+  pattern, so every instance must carry exactly that display. Published practice leaves it out
+  (88 of 92 pattern codings in US Core, IPS and mCODE; the four are mCODE's DeauvilleScale and
+  LymphomaStage, which pack-test now counts); a model writes it from habit.
+Floors unchanged: IPS 108/111, mCODE 338/347, Plan-Net 104/105, HRex 46/46, Genomics 134/137,
+GoFSH 117 and 348, importer 514/515, golden 22/22.

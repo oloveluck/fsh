@@ -100,6 +100,25 @@
              (rule-diagnostic! r (entity-label e)
                                (format "value set `~a` not found: it is not a ValueSet of this project or its packages, an alias, or a url" vs)
                                #:severity 'warning))]
+          ;; a display in a code a PROFILE assigns is part of the pattern: every instance must then
+          ;; carry exactly that display. Published profiles leave it out (88 of 92 pattern codings in
+          ;; US Core, IPS and mCODE); written from habit (`= $loinc#82810-3 "Pregnancy status"`), it
+          ;; over-constrains without a word
+          [(rule-assign _ (fsh-code code (? string? display)) _)
+           #:when (or (fsh-profile? e) (fsh-extension? e))
+           (rule-diagnostic! r (entity-label e)
+                             (format "the display \"~a\" becomes part of the pattern: every instance must carry exactly it. Write the code alone (`~a`) unless that is meant"
+                                     display code)
+                             #:severity 'warning)]
+          ;; a type in an `only` rule that nothing defines: an error at the rule, with the nearest
+          ;; name (it was written into the element as its type code)
+          [(rule-only _ types)
+           (for ([t (in-list types)] #:when (string? t))
+             (define unknown (unknown-only-type t))
+             (when unknown
+               (rule-diagnostic! r (entity-label e)
+                                 (format "type `~a` not found: it is not a FHIR type, nor a profile, extension or logical model of this project or its packages~a"
+                                         unknown (did-you-mean unknown (parent-candidates))))))]
           [_ (void)])))
     (define names (and base (type-registered? (string->symbol base)) (base-element-names base)))
     (when names
