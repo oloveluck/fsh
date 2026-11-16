@@ -763,6 +763,9 @@ same 72 round-1 FSH answers under the fixes took them from 1134 to 1416 of 1431 
   canonical's last step, pin and all. The pin stays on the profile's canonical (SUSHI). On an
   `extension` element a profile is an Extension's, resolved or not (`as-extension`: its package
   may be absent).
+- **A value set in a binding with a pin** (sd.rkt `valueset-url`): `from PregnancyStatusUvIps|2.0.1`,
+  `from $alias|2.0.1` — looked up without the pin, which stays on the canonical; it was "value set
+  … not found" (a warning that cost a model a second round) and the binding named no url.
 - **A type in `only` that nothing defines is an error at its rule**, with the nearest name
   (compile.rkt's rule pre-pass, sd.rkt `unknown-only-type`; SUSHI: "No definition for the type …
   could be found"): `only CodeableConceptUvIps` (the IG's name is CodeableConceptIPS) became the

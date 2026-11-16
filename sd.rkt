@@ -818,8 +818,12 @@
 (define (local-profile-url p) (string-append (canonical-base) "/StructureDefinition/" (cdr p)))
 ;; a ValueSet reference in a binding: alias, then this document's ValueSets, else as written
 (define (valueset-url n)
-  (define r (resolve-alias n (current-aliases)))
-  (or ((current-local-canonical) r) (external-canonical "ValueSet" r) r))
+  ;; a `|version` pin (written after the name or alias, or part of the alias's value) is no part
+  ;; of what is looked up, and stays on the canonical: `from PregnancyStatusUvIps|2.0.1` was "not
+  ;; found", and the binding named no url
+  (define-values (r ver) (aliased+versioned n))
+  (define url (or ((current-local-canonical) r) (external-canonical "ValueSet" r)))
+  (if url (string-append url (or ver "")) (string-append r (or ver ""))))
 ;; ---- Extension auto-scaffolding (SUSHI-style) ----------------------------------------------
 ;; a `context` of Element, and for R5+ a top-level `extension` (type-characteristics can-bind)
 (define (add-extension-header sd [default-context? #t])

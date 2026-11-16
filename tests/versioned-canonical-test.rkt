@@ -67,6 +67,22 @@
                 (list (hasheq 'code "Observation" 'profile '("http://hl7.org/fhir/StructureDefinition/vitalsigns|4.0.1")))
                 id))
 
+;; a value set in a binding by its name or alias with a pin: found, the pin kept (it was "value set
+;; … not found", a warning, and the binding named no url)
+(write! (string-append
+         "Alias: $vs = http://example.org/t/ValueSet/colours\n\n"
+         "ValueSet: Colours\nId: colours\n* http://example.org/cs#red\n\n"
+         "Profile: P8\nParent: Observation\nId: p8\n"
+         "* method from Colours|0.1.0 (required)\n"
+         "* bodySite from $vs|0.1.0 (preferred)\n"
+         "* interpretation from http://hl7.org/fhir/ValueSet/observation-interpretation|4.0.1 (extensible)\n"))
+(define r3 (check-fsh-project root))
+(check-equal? (map diagnostic-message (check-report-diagnostics r3)) '())
+(check-equal? (for/list ([id '("Observation.method" "Observation.bodySite" "Observation.interpretation")])
+                (hash-ref (hash-ref (element (sd r3 "p8") id) 'binding) 'valueSet))
+              '("http://example.org/t/ValueSet/colours|0.1.0" "http://example.org/t/ValueSet/colours|0.1.0"
+                "http://hl7.org/fhir/ValueSet/observation-interpretation|4.0.1"))
+
 ;; a type nothing defines is an error at its rule, with the nearest name; a url is not judged
 (write! (string-append
          "Profile: P6\nParent: Observation\nId: p6\n"
