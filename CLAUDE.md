@@ -777,3 +777,26 @@ same 72 round-1 FSH answers under the fixes took them from 1134 to 1416 of 1431 
   LymphomaStage, which pack-test now counts); a model writes it from habit.
 Floors unchanged: IPS 108/111, mCODE 338/347, Plan-Net 104/105, HRex 46/46, Genomics 134/137,
 GoFSH 117 and 348, importer 514/515, golden 22/22.
+
+## An instance of its profile (2026-11-16; `instance-of.rkt`)
+fhir-examples' size measurement: an FSH instance as `fhir->fsh` writes it is 96% of compact JSON in
+a model's tokens — the same data, a line to a value. What shortens it is what the PROFILE knows.
+- **`fhir->fsh/of-profile`** (`fsh/instance-of`) writes a resource as an author would: `InstanceOf`
+  the one profile it claims (by name, else id, else canonical), entries by the profile's slice
+  names (`component[tumorLongestDimension]`), a lone `[0]` unwritten, and no rule the compiler
+  writes by itself (`assign-required`'s fixed and required values, `meta.profile`, `Usage`). It
+  asks the COMPILER and never guesses: each step is kept only when the text still compiles
+  (`fsh->fhir`, in the caller's `current-sd-packages`, registry and `fsh-fhir-version`) to exactly
+  the resource, numbers compared as exact. So the law holds by construction; past 150 rules the
+  rule-by-rule step is skipped (a compile per rule). A resource claiming no single profile, or one
+  nothing in context defines, is `fhir->fsh`'s text.
+- **A registered profile fills as a local one does** (instance.rkt `profile-elements`,
+  `profile-slices`): a profile a required `#lang fsh` module (or a workspace) registered has a
+  differential and no snapshot, and an Instance of it got no required or fixed value — only
+  dependency packages' profiles did. It is read as a profile of the document is: its base's
+  elements, its own over them.
+- `tests/instance-of-test.rkt`: every fourth IPS and mCODE example (52): 48 stated as instances
+  of their profile, 34 with an entry by its slice, 84% of `fhir->fsh`'s characters — floors — and
+  each compiles back to exactly its resource. mCODE's tumor-size example: 968 characters as compact
+  JSON, 739 as `fhir->fsh` writes it, 537 as an instance of TumorSize. Suite 752 tests.
+- Used by fhir-mcp for data no commit kept a text for (`describe … as=source`, the text export).

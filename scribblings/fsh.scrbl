@@ -3,7 +3,7 @@
 @(require (only-in scribble/core [element literal-element]))
 @(define (tt . text) (literal-element (quote tt) text))
 @(require (for-label racket/base racket/contract
-                     fsh/parser/parse fsh/lint fsh/compile fsh/decompile fsh/print fsh/project fsh/pack fsh/check fsh/ig-config
+                     fsh/parser/parse fsh/lint fsh/compile fsh/decompile fsh/instance-of fsh/print fsh/project fsh/pack fsh/check fsh/ig-config
                      fsh/ig fsh/workspace fsh/support
                      (only-in fhir/diagnostic diagnostic?) (only-in fhir/lang/workspace ws-support?)
                      (only-in fhir/lang/support lang-support?)))
@@ -730,14 +730,23 @@ The steps the command line does, one at a time. Each loads the FHIR version's ty
 (R5 unless a project's guide file says otherwise); a program that has already loaded one keeps it.
 
 @racketblock[
-(require fhir/r5/schemas fsh/compile fsh/project fsh/check fsh/decompile)
+(require fhir/r5/schemas fsh/compile fsh/project fsh/check fsh/decompile fsh/instance-of)
 (fsh->fhir text)                                   (code:comment "FSH text -> the resources, as JSON values")
 (define p (compile-project "clinic/"))             (code:comment "a project, with its sushi-config.yaml")
 (project-artifacts p)                              (code:comment "the resources")
 (project-diagnostics p)                            (code:comment "every problem, positioned")
 (check-report-diagnostics (check-fsh-project "clinic/"))  (code:comment "what raco fsh check reports")
 (fhir->fsh resource)                               (code:comment "a JSON value -> FSH text")
+(fhir->fsh/of-profile resource)                    (code:comment "... as an Instance OF the profile it claims")
 ]
+
+@racket[fhir->fsh] writes every value a resource holds, one rule each. @racket[fhir->fsh/of-profile]
+writes it as an author would: @tt{InstanceOf} the profile it claims, list entries by the profile's
+slice names (@tt{component[systolic]}), and none of the values the profile fixes, which the compiler
+writes by itself. It keeps each of those shortenings only when the text still compiles to exactly
+the resource, in the packages and FHIR version the program has set, so the text always means the
+resource it was given; a resource that claims no profile it can find is written as
+@racket[fhir->fsh] writes it.
 
 @subsection[#:tag "maps"]{Maps in a project}
 
@@ -949,6 +958,17 @@ compiles back to exactly the JSON) and a lossless @tt{^caret} for the rest; inva
 from the SD constraints. Reads element types from the registered tower.}
 @defproc[(node->fsh [node fhir?] ...) string?]{The same from typed nodes.}
 @defproc[(fhir->fsh-entity [resource hash?]) any/c]{One resource as an entity AST.}
+
+@subsection[#:style 'unnumbered]{@tt{fsh/instance-of}}
+@defmodule[fsh/instance-of]
+
+@defproc[(fhir->fsh/of-profile [resource hash?]) string?]{
+A resource as an Instance of the one profile it claims in @tt{meta.profile}: named by the profile,
+its list entries by the profile's slice names, a lone first entry without its index, and no rule the
+compiler writes by itself from the profile. Each of those is kept only when the text still compiles
+(@racket[fsh->fhir], in the packages of @racket[current-sd-packages], the definitions registered and
+the version of @racket[fsh-fhir-version]) to exactly the resource. A resource that claims no profile,
+several, or one nothing in context defines is written as @racket[fhir->fsh] writes it.}
 
 @subsection[#:style 'unnumbered]{@tt{fsh/project}}
 @defmodule[fsh/project]

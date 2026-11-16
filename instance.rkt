@@ -448,8 +448,16 @@
             (hash-update h (hash-ref e 'id) (lambda (old) (for/fold ([o old]) ([(kk v) (in-hash e)]) (hash-set o kk v))) e)))]
     [(external-sd k)
      => (lambda (sd)
-          (for/hash ([e (in-list (hash-ref (hash-ref sd 'snapshot (hash)) 'element '()))] #:when (hash-ref e 'id #f))
-            (values (hash-ref e 'id) e)))]
+          (define snapshot (hash-ref (hash-ref sd 'snapshot (hash)) 'element '()))
+          (cond
+            [(pair? snapshot) (for/hash ([e (in-list snapshot)] #:when (hash-ref e 'id #f)) (values (hash-ref e 'id) e))]
+            ;; a profile with no snapshot (one a required `#lang fsh` module registered: a
+            ;; differential) is read as a profile of this document is: its base's elements, its own over them
+            [else
+             (define base (hash-ref sd 'baseDefinition #f))
+             (for/fold ([h (if (string? base) (profile-elements (or (core-type-name base) base) (sub1 fuel)) (hash))])
+                       ([e (in-list (hash-ref (hash-ref sd 'differential (hash)) 'element '()))] #:when (hash-ref e 'id #f))
+               (hash-update h (hash-ref e 'id) (lambda (old) (for/fold ([o old]) ([(kk v) (in-hash e)]) (hash-set o kk v))) e))]))]
     [else (hash)]))
 ;; profile-slices : profile-name|id|url -> (listof (cons element-path slice-name))   the slices that
 ;; profile's elements declare, in the order its snapshot holds them: a dependency profile's snapshot;
@@ -467,7 +475,14 @@
           (define parent (let ([p (hash-ref (current-profiles) k #f)]) (and p (car p))))
           (append (if parent (profile-slices parent (sub1 fuel)) '())
                   (slices-in (hash-ref (hash-ref sd 'differential (hash)) 'element '()))))]
-    [(external-sd k) => (lambda (sd) (slices-in (hash-ref (hash-ref sd 'snapshot (hash)) 'element '())))]
+    [(external-sd k)
+     => (lambda (sd)
+          (define snapshot (hash-ref (hash-ref sd 'snapshot (hash)) 'element '()))
+          (define base (hash-ref sd 'baseDefinition #f))
+          (if (pair? snapshot)
+              (slices-in snapshot)
+              (append (if (string? base) (profile-slices (or (core-type-name base) base) (sub1 fuel)) '())
+                      (slices-in (hash-ref (hash-ref sd 'differential (hash)) 'element '())))))]
     [else '()]))
 ;; assign-required : jsexpr (hash id -> element) -> jsexpr
 ;; SUSHI assigns what the InstanceOf profile REQUIRES and the instance leaves out: a required element
