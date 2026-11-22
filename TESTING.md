@@ -11,7 +11,7 @@ adds (narratives, snapshots, dates, OIDs). Floors only rise.
 | IG | Compile errors | Resources paired | Identical | With all published content | Differential elements |
 |---|---|---|---|---|---|
 | International Patient Summary 2.0.1 | 0 | 114 | 108 | 111 | 438/438 |
-| mCODE 4.0.0 (with US Core 6.1.0 and Genomics Reporting 2.0.0) | 0 | 349 | 338 | 347 | 472/473 |
+| mCODE 4.0.0 (with US Core 6.1.0 and Genomics Reporting 2.0.0) | 0 | 349 | 339 | 348 | 472/473 |
 | Da Vinci Plan-Net 1.2.0 | 0 | 109 | 104 | 105 | 321/321 |
 | Da Vinci HRex 1.1.0 | 0 | 46 | 46 | 46 | 138/138 |
 | Genomics Reporting 2.0.0 | 0 | 141 | 134 | 137 | 254/259 |

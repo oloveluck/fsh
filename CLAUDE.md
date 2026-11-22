@@ -79,7 +79,7 @@ published `hl7.fhir.us.mcode-4.0.0.tgz`. mCODE builds on US Core 6.1.0 and Genom
 each dependency in fhir-spec (`<id>-<version>.tgz`); the packages go ahead of core in
 `current-sd-packages`. `raco fsh <dir>` does the same when it finds a sushi-config.yaml (next to the
 sources or up to two levels up); flags override it, missing dependencies are reported.
-Current: **0 compile errors; 349 paired; 338 exact; 347 with all published content; 472/473 differential
+Current: **0 compile errors; 349 paired; 339 exact; 348 with all published content; 472/473 differential
 elements** — ratcheted. It drove: profiles of DEPENDENCY packages for Parent and InstanceOf (`external-sd`:
 base type, canonical, `meta.profile`), aliases on InstanceOf and along Parent chains; SUSHI's required
 values (`assign-required`: an element the InstanceOf profile requires with fixed[x]/pattern[x] is
@@ -246,8 +246,8 @@ bindingName and explicit-type-name annotations (SUSHI drops those: Composition.s
 obligations alone). A Logical whose Parent is a logical model of the document carries the parent's
 type-characteristics before its own (IPSSectionsLM). The harness drops the Publisher's OID from an
 R4 ConceptMap too (a single Identifier there).
-Remaining (named in the CI output): an mCODE example whose published JSON differs from the tagged FSH
-(eve-anyperson), a must-support type extension; IPS Bundle narratives. (The `{Base}` UCUM unit and
+Remaining (named in the CI output): an mCODE example (eve-anyperson: it was ours, closed on
+2026-11-22, below), a must-support type extension; IPS Bundle narratives. (The `{Base}` UCUM unit and
 the numeric-looking entry were closed on 2026-11-13.)
 
 ## The decompiler's oracle (`tests/gofsh-ips-test.rkt`)
@@ -276,8 +276,7 @@ again).
 The published mCODE 4.0.0 package (349 resources, with US Core and Genomics Reporting in context)
 decompiled, recompiled and compared the same way. Current: **349 paired; 348 exact, 348 with all
 published content; 472/473 differential elements** — ratcheted. The residue is one example
-(eve-anyperson, whose published JSON is not what its FSH says) and the one differential element
-the forward corpus also misses.
+(eve-anyperson) and the one differential element the forward corpus also misses.
 
 ## Real-IG corpus 5: Genomics Reporting 2.0.0 (`tests/ig-genomics-test.rkt`)
 HL7 Genomics Reporting's own FSH (`tests/vendor/genomics-reporting-2.0.0`, HL7/genomics-reporting at
@@ -800,3 +799,16 @@ a model's tokens — the same data, a line to a value. What shortens it is what 
   each compiles back to exactly its resource. mCODE's tumor-size example: 968 characters as compact
   JSON, 739 as `fhir->fsh` writes it, 537 as an instance of TumorSize. Suite 752 tests.
 - Used by fhir-mcp for data no commit kept a text for (`describe … as=source`, the text export).
+
+## One extension, named by its slice or by its Extension (2026-11-22)
+`extension[race]` (the slice) and `extension[USCoreRace]` (the Extension the slice is typed with)
+in one instance are the same entry: SUSHI assigns both to it, the later values replacing the
+earlier. They were two slice names here, so mCODE's cancer-patient-eve-anyperson compiled with two
+race and two birth-sex extensions — the difference from the published JSON this file had put down
+to the example. `instance.rkt` `by-slice-name` rewrites a top-level `extension[Name]` step to the
+slice the InstanceOf profile types with that Extension before positions are given
+(`instance-paths`). Found by fhir-validation once it checked a slice's maximum
+(`slice 'race' allows 1, found 2`, from `raco fsh check` on mCODE; the main repo's CLAUDE.md,
+"The validator held to HL7's"). `tests/sushi-alignment-test.rkt` has the case. mCODE from FSH: 338 ->
+**339 exact, 347 -> 348 with all published content** (floors raised).
+

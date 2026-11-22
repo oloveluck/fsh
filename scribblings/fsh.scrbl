@@ -854,7 +854,7 @@ SUSHI and the IG Publisher), leaving aside what only the Publisher adds.
 @itemlist[
 @item{Five guides compile from their own FSH with no errors. Of the resources that can be paired
 with the published ones: International Patient Summary 2.0.1, 108 of 114 identical and 111 with all
-the published content; mCODE 4.0.0, 338 of 349 and 347; Da Vinci Plan-Net 1.2.0, 104 of 109 and 105;
+the published content; mCODE 4.0.0, 339 of 349 and 348; Da Vinci Plan-Net 1.2.0, 104 of 109 and 105;
 Da Vinci HRex 1.1.0, all 46; Genomics Reporting 2.0.0, 134 of 141 and 137.}
 @item{The other direction: the published IPS and mCODE packages decompiled to FSH and compiled
 back. All 117 IPS resources come back identical, and 348 of mCODE's 349.}

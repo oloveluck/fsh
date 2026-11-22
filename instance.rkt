@@ -168,12 +168,17 @@
 (define (instance-paths e aliases)
   (define assigns (for/list ([r (in-list (fsh-instance-rules e))] #:when (or (rule-assign? r) (rule-path? r))) r))
   (define of (let ([o (assoc-ref (fsh-instance-metadata e) 'instanceOf)]) (and o (resolve-alias o aliases))))
-  (define orig (for/list ([r (in-list assigns)]) (fsh-path-steps (parse-fsh-path (if (rule-path? r) (rule-path-path r) (rule-assign-path r))))))
+  (define written (for/list ([r (in-list assigns)]) (fsh-path-steps (parse-fsh-path (if (rule-path? r) (rule-path-path r) (rule-assign-path r))))))
   ;; the profile's slices in declaration order, and which of them are required (min 1): the required
   ;; ones take the first positions, in that order (SUSHI assigns them before any rule); the others
   ;; take positions as the rules mention them
   (define elements (if of (profile-elements of) (hash)))
   (define type (and of (instance-base of (current-profiles))))
+  ;; `extension[USCoreRace]` names the Extension, `extension[race]` the slice typed with it: one
+  ;; entry, whichever way each rule says it
+  (define orig
+    (for/list ([steps (in-list written)])
+      (if (and type (pair? steps)) (cons (by-slice-name (car steps) type elements) (cdr steps)) steps)))
   ;; declared : ctx field -> the required slices of that array in declaration order. The context's
   ;; steps are followed through the profile's elements: a slice typed with an Extension of this
   ;; document continues in that Extension's elements (its own `contains`), rooted at Extension
@@ -572,6 +577,31 @@
                                                    (or pinned (hasheq)))
                                     (if slice-el (required-children elements (hash-ref slice-el 'id slice-id)) (hasheq))))
        (hash-set js field (for/list ([x (in-list lst)] [i (in-naturals)]) (if (= i (cdr pos)) entry x)))])))
+;; by-slice-name : fsh-step type elements -> fsh-step
+;; A step into `extension` (or `modifierExtension`) at the top of an instance, bracketed with what
+;; is not a slice of the InstanceOf profile but names an Extension (its name, id, alias or url):
+;; when the profile types a slice of that element with that Extension, the step is that slice's.
+;; mCODE's cancer-patient-eve-anyperson writes `extension[race]…` and then
+;; `extension[USCoreRace]…`: SUSHI assigns both to the one race extension (the later values
+;; replace); read as two names they were two entries, and the patient had two races where the
+;; profile allows one.
+(define (by-slice-name st type elements)
+  (define prefix (string-append type "." (fsh-step-name st) ":"))
+  (define (slice-typed-with url)
+    (for/first ([id (in-list (sort (hash-keys elements) string<?))]
+                #:when (and (string-prefix? id prefix)
+                            (not (regexp-match? #rx"[.:/]" (substring id (string-length prefix))))
+                            (member url (extension-profile (hash-ref elements id)))))
+      (substring id (string-length prefix))))
+  (cond
+    [(not (member (fsh-step-name st) '("extension" "modifierExtension"))) st]
+    [else
+     (fsh-step (fsh-step-name st)
+               (for/list ([b (in-list (fsh-step-brackets st))])
+                 (define name (and (eq? (fsh-bracket-kind b) 'slice) (string? (fsh-bracket-value b)) (fsh-bracket-value b)))
+                 (define slice (and name (not (hash-ref elements (string-append prefix name) #f))
+                                    (let ([url (extension-url-of name)]) (and url (slice-typed-with url)))))
+                 (if slice (fsh-bracket 'slice slice) b)))]))
 ;; extension-profile : element -> (listof url)   the profiles its first type names
 (define (extension-profile el)
   (define ts (hash-ref el 'type '()))

@@ -168,4 +168,22 @@
                           "Instance: b" "InstanceOf: Bundle"
                           "* type = #collection"
                           "* entry[+].resource = 39252"))
-     (check-equal? (hash-ref (hash-ref (car (hash-ref (named rs "b") 'entry)) 'resource) 'resourceType) "Procedure"))])
+     (check-equal? (hash-ref (hash-ref (car (hash-ref (named rs "b") 'entry)) 'resource) 'resourceType) "Procedure"))
+
+   (test-case "an extension named by its slice and by its Extension is one entry"
+     ;; mCODE's cancer-patient-eve-anyperson: `extension[race]…` then `extension[USCoreRace]…`
+     (define rs (compiled "Extension: Ward" "Id: ward" "* value[x] only string"
+                          ""
+                          "Extension: Bed" "Id: bed" "* value[x] only integer"
+                          ""
+                          "Profile: Admitted" "Parent: Patient"
+                          "* extension contains Ward named ward 0..1 and Bed named bed 0..1"
+                          ""
+                          "Instance: p" "InstanceOf: Admitted"
+                          "* extension[ward].valueString = \"3B\""
+                          "* extension[bed].valueInteger = 4"
+                          "* extension[Ward].valueString = \"4A\""))
+     (define exts (hash-ref (named rs "p") 'extension))
+     (check-equal? (length exts) 2 "one ward, one bed")
+     (check-equal? (for/list ([e (in-list exts)]) (or (hash-ref e 'valueString #f) (hash-ref e 'valueInteger #f)))
+                   '("4A" 4) "the later value replaces the earlier, in the slice's place"))])
