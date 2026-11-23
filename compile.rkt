@@ -69,6 +69,8 @@
   (define found (box '()))
   (define-values (out errors) (parameterize ([current-rule-diagnostics found]) (compile-doc/errors entities)))
   (values out errors (reverse (unbox found))))
+;; current-invariant-names : (parameter (hash name -> any))   the Invariants of the document being compiled
+(define current-invariant-names (make-parameter (hash)))
 ;; rule-diagnostic! : rule label message [#:severity] -> void   a problem at the rule, when collected
 (define (rule-diagnostic! rule entity-label msg #:severity [severity 'error])
   (define b (current-rule-diagnostics))
@@ -95,11 +97,12 @@
     (when (sd-index-available?)
       (for ([r (in-list rules)])
         (match r
+          ;; (an error, as SUSHI's "Resolved value … is not a valid URI": a binding names a value
+          ;; set by its canonical, and a bare name that resolves to nothing is none)
           [(rule-binding _ (? string? vs) _)
            (unless (regexp-match? #rx":" (valueset-url vs))
              (rule-diagnostic! r (entity-label e)
-                               (format "value set `~a` not found: it is not a ValueSet of this project or its packages, an alias, or a url" vs)
-                               #:severity 'warning))]
+                               (format "value set `~a` not found: it is not a ValueSet of this project or its packages, an alias, or a url" vs)))]
           ;; a display in a code a PROFILE assigns is part of the pattern: every instance must then
           ;; carry exactly that display. Published profiles leave it out (88 of 92 pattern codings in
           ;; US Core, IPS and mCODE); written from habit (`= $loinc#82810-3 "Pregnancy status"`), it
@@ -120,6 +123,7 @@
                                  (format "type `~a` not found: it is not a FHIR type, nor a profile, extension or logical model of this project or its packages~a"
                                          unknown (did-you-mean unknown (parent-candidates))))))]
           [_ (void)])))
+    (structure-rule-checks! e base rules)
     (define names (and base (type-registered? (string->symbol base)) (base-element-names base)))
     (when names
       (for ([r (in-list rules)])
@@ -130,6 +134,65 @@
           (when (and first (not (known-element? names first)))
             (rule-diagnostic! r (entity-label e) (format "`~a` is not an element of ~a~a" first base
                                                          (did-you-mean first (map (lambda (n) (regexp-replace #rx"\\[x\\]$" n "")) names))))))))))
+;; structure-rule-checks! : entity base-type rules -> void   what SUSHI refuses in a profile's rules
+;; and this compiler wrote without a word (found by running both over SUSHI's own test inputs,
+;; fhir-examples' value experiment H part 3):
+;;   - an invariant an `obeys` names that no Invariant of the project defines;
+;;   - an extension slice with no Extension behind it (`* extension contains foo 0..1`) outside an
+;;     Extension: a profile names the Extension, `contains <Extension> named <slice>`;
+;;   - a cardinality that does not fit within the base type's (`0..*` on an element that is 0..1,
+;;     a minimum below the base's);
+;;   - `contains` on an element nothing says how to slice.
+;; The last two are decided only for a profile whose Parent is a base type and a plain path (a
+;; Parent profile may have narrowed or sliced the element: not modelled here, so nothing is said).
+(define (structure-rule-checks! e base rules)
+  (define label (entity-label e))
+  (define profile? (fsh-profile? e))
+  (define parent-is-base?
+    (and profile?
+         (let ([p (resolve-alias (or (assoc-ref (fsh-profile-metadata e) 'parent) "DomainResource") (current-aliases))])
+           (and (not (hash-ref (current-profiles) p #f)) (equal? p base) (type-registered? (string->symbol p))))))
+  (define (extension-rule-path? p) (and (string? p) (regexp-match? #px"(^|[.])(extension|modifierExtension)$" p)))
+  (define sliced-here   ; the paths this entity states a slicing for
+    (for/list ([r (in-list rules)] #:when (and (rule-caret? r) (string? (rule-caret-caret-path r))
+                                               (regexp-match? #rx"^\\^?slicing([.]|$)" (rule-caret-caret-path r))))
+      (rule-caret-path r)))
+  (when (or profile? (fsh-extension? e))
+    (for ([r (in-list rules)])
+      (match r
+        [(rule-obeys _ invs)
+         (for ([i (in-list invs)] #:when (and (string? i) (not (hash-ref (current-invariant-names) i #f))))
+           (rule-diagnostic! r label (format "invariant `~a` not found: no Invariant of that name is in the project~a"
+                                             i (did-you-mean i (hash-keys (current-invariant-names))))))]
+        [(rule-contains (? extension-rule-path? p) items)
+         #:when profile?
+         (for ([it (in-list items)] #:unless (contains-item-named-as it))
+           (rule-diagnostic! r label
+                             (format "`~a` names no Extension: in a profile an extension slice is `~a contains <Extension> named ~a`; an extension with no definition of its own can only be declared inside an Extension"
+                                     (contains-item-name it) p (contains-item-name it))))]
+        [(rule-contains (? string? p) items)
+         #:when (and parent-is-base? (not (extension-rule-path? p)) (not (member p sliced-here)))
+         (define el (base-element-of base p))
+         (when (and el (not (hash-ref el 'slicing #f)))
+           (rule-diagnostic! r label
+                             (format "cannot create the slice `~a`: `~a` is not sliced. State how its entries are told apart first: `* ~a ^slicing.discriminator.type = #pattern`, `* ~a ^slicing.discriminator.path = \"<element>\"`, `* ~a ^slicing.rules = #open`"
+                                     (contains-item-name (car items)) p p p p)))]
+        [(rule-card (? string? p) (? string? card) _)
+         #:when parent-is-base?
+         (define el (base-element-of base p))
+         (define m (regexp-match #px"^([0-9]*)[.][.]([0-9]*|[*])$" card))
+         (when (and el m (exact-nonnegative-integer? (hash-ref el 'min #f)) (string? (hash-ref el 'max #f)))
+           (define bmin (hash-ref el 'min))
+           (define bmax (hash-ref el 'max))
+           (define lo (and (positive? (string-length (cadr m))) (string->number (cadr m))))
+           (define hi (and (positive? (string-length (caddr m))) (caddr m)))
+           (define (wider? hi) (and (not (equal? bmax "*")) (or (equal? hi "*") (> (string->number hi) (string->number bmax)))))
+           (when (or (and lo (< lo bmin)) (and hi (wider? hi)))
+             (rule-diagnostic! r label
+                               (format "cannot constrain `~a` to ~a: it does not fit within ~a's ~a..~a (a profile narrows a cardinality, it cannot widen it)"
+                                       p card base bmin bmax))))]
+        [_ (void)]))))
+
 ;; base-element-names : type -> (listof string)|#f   its top-level element names ("value[x]", "name"),
 ;; per package context (every entity of a type asks; the snapshot scan was repeated for each)
 (define base-element-name-cache (make-hash))
@@ -202,6 +265,7 @@
     (parameterize ([current-instance-resolver resolve-instance] [current-instance-ref instance-ref]
                    [current-profile-sd resolve-profile-sd]
                    [current-aliases aliases] [current-profiles profiles] [current-logicals logicals]
+                   [current-invariant-names invariants]
                    [current-slice-orders slice-orders-of]
                    [current-local-canonical (lambda (n) (hash-ref local-canonicals n #f))])
       (for/list ([e (in-list entities)]
@@ -436,7 +500,23 @@
       (with-entity-rules e (lambda (rs) (parameterize ([current-insert-label (entity-label e)])
                                           (expand-rules rs rulesets param-rulesets))))))
 ;; ---- entity dispatch -----------------------------------------------------------------------
+;; check-id! : entity -> void   the id an entity's resource gets — its `Id:`, an instance's `* id =`,
+;; else its name — is a FHIR id: letters, digits, `-` and `.`, at most 64 characters. Otherwise an
+;; error at the entity (SUSHI: "does not represent a valid FHIR id"): no server stores such a
+;; resource. An underscore is left to pass: SUSHI writes `-` for it, with a warning.
+(define (check-id! e)
+  (define id
+    (cond [(fsh-instance? e) (instance-id e)]
+          [(or (fsh-profile? e) (fsh-extension? e) (fsh-logical? e) (fsh-resource? e) (fsh-valueset? e) (fsh-codesystem? e))
+           (or (assoc-ref (entity-metadata e) 'id) (entity-name e))]
+          [else #f]))
+  (define text (cond [(string? id) id] [(number? id) (number->string id)] [else #f]))
+  (when (and text (not (regexp-match? #px"^[A-Za-z0-9.-]{1,64}$" (regexp-replace* #rx"_" text "-"))))
+    (raise (exn:fail (format "`~a` is not a FHIR id: an id is letters, digits, `-` and `.`, at most 64 characters. Give the ~a one with `Id:`"
+                             text (if (fsh-instance? e) "instance" "definition"))
+                     (current-continuation-marks)))))
 (define (compile-entity e [aliases (hash)] [profiles (hash)] [invariants (hash)])
+  (check-id! e)
   (cond
     [(fsh-instance? e)   (check-instance-of! e aliases profiles) (compile-instance e aliases profiles)]
     [(fsh-valueset? e)   (compile-valueset e aliases)]
@@ -595,4 +675,4 @@
   (check-regexp-match #rx"InstanceOf `Observaton` not found.*did you mean `Observation`" (exn-message (cdar errs2)))
   (check-equal? (sort (map (lambda (d) (list (diagnostic-severity d) (diagnostic-message d))) ds2) string<? #:key cadr)
                 '((error "profile: P3: `stauts` is not an element of Observation (did you mean `status`?)")
-                  (warning "profile: P3: value set `NoSuchVS` not found: it is not a ValueSet of this project or its packages, an alias, or a url"))))
+                  (error "profile: P3: value set `NoSuchVS` not found: it is not a ValueSet of this project or its packages, an alias, or a url"))))

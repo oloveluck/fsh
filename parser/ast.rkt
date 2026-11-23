@@ -370,6 +370,9 @@
     [(? code-tok? c) (fsh-code (code-tok-text c) #f)]
     [(list 'code c) (fsh-code (code-text c) #f)]
     [(list 'code c d) (fsh-code (code-text c) d)]
+    ;; a unit with its display and no number (`'[lb_av]' "lb"`): the first of the two is the unit
+    ;; (it was read as a number and a unit: the unit became the value, the display the code)
+    [(list 'quantity (? (lambda (u) (not (number? u))) u) (? string? d)) (fsh-quantity #f (code-text u) d)]
     [(list 'quantity n u) (fsh-quantity n (code-text u) #f)]
     [(list 'quantity n u d) (fsh-quantity n (code-text u) d)]
     [(list 'quantity u) (fsh-quantity #f (code-text u) #f)]
@@ -378,6 +381,7 @@
     [(list 'canonical c) (fsh-canonical c)]
     [(list 'bool b) (string=? b "true")]
     [(list 'ratio a b) (fsh-ratio (lower-value a) (lower-value b))]
+    [(list 'ratioPart x) (lower-value x)]
     [(list 'name n) n]
     [_ v]))
 

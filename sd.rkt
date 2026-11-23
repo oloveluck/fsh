@@ -33,6 +33,8 @@
   [valueset-url (-> string? string?)]
   ;; a type named in an `only` rule that nothing defines (#f when it is defined, or cannot be judged)
   [unknown-only-type (-> string? (or/c string? #f))]
+  ;; the base type's own element at a plain path, or #f
+  [base-element-of (-> string? any/c (or/c hash? #f))]
   ;; the names a Parent, InstanceOf or type may be: for suggestions
   [parent-candidates (-> (listof string?))]
   ;; an Invariant -> the constraint source compile-profile reads
@@ -65,7 +67,9 @@
   ;; a Parent nothing defines — no type, no profile or logical model here, nothing in the packages —
   ;; is an error, as SUSHI's "Parent … not found": compiling on would invent a type and a
   ;; baseDefinition named after it (decided only when the packages can be asked)
-  (unless (or local-parent ext? (unknown-parent-undecidable?) (type-registered? (string->symbol base-type))
+  ;; (an Extension's Parent too, when it names one: it was never looked at)
+  (unless (or local-parent (and ext? (member parent '("Extension" "http://hl7.org/fhir/StructureDefinition/Extension")))
+              (unknown-parent-undecidable?) (and (not ext?) (type-registered? (string->symbol base-type)))
               (hash-ref (current-logicals) parent #f) (resolve-sd-raw parent))
     (raise (exn:fail (format "Parent `~a` not found: it is not a FHIR type, a profile, extension or logical model in this project, nor a definition in its packages~a"
                              parent (did-you-mean parent (parent-candidates)))
@@ -106,8 +110,11 @@
     (drop-unchanged elems0 order0 (inherited-element base-type (lambda (id) (hash-ref parent-elements id #f)) slice-origins)))
   (define-values (elems order)
     (if ext? (add-extension-scaffold elems1 order1 self-url meta) (values elems1 order1)))
+  (define (unmarked el)   ; an element without the marks apply-flags left on its extensions
+    (define xs (hash-ref el 'extension #f))
+    (if (list? xs) (hash-set el 'extension (for/list ([x (in-list xs)]) (if (hash? x) (hash-remove x 'stated) x))) el))
   (define diff (parameterize ([current-slice-declarations slice-declarations])
-                 (snapshot-order base-type (for/list ([k (in-list (reverse order))]) (hash-ref elems k)))))
+                 (snapshot-order base-type (for/list ([k (in-list (reverse order))]) (unmarked (hash-ref elems k))))))
   (define base (drop-false
                 (hasheq 'resourceType "StructureDefinition"
                         'id id
@@ -129,7 +136,9 @@
                         'baseDefinition parent-url
                         'derivation "constraint"
                         ;; no `mapping`: SUSHI writes none (the IG Publisher adds the base's)
-                        'differential (and (pair? diff) (hasheq 'element diff)))))
+                        ;; a profile that changes nothing still has a differential: its root element
+                        ;; alone, as SUSHI writes it (it had none)
+                        'differential (hasheq 'element (if (pair? diff) diff (list (hasheq 'id base-type 'path base-type)))))))
   (define own-context? (for/or ([r (in-list rules)])
                          (and (rule-caret? r) (member (rule-caret-path r) '(#f "" "."))
                               (regexp-match? #rx"^\\^?context" (rule-caret-caret-path r)))))
@@ -196,6 +205,15 @@
     (if logical? (values (fsh-logical-name e) (fsh-logical-metadata e) (fsh-logical-rules e))
         (values (fsh-resource-name e) (fsh-resource-metadata e) (fsh-resource-rules e))))
   (define parent (or (assoc-ref meta 'parent) (if logical? "Base" "DomainResource")))
+  ;; a Parent nothing defines is an error here as for a profile (it was written into
+  ;; baseDefinition as a url of FHIR's that names nothing)
+  (let ([p (strip-core-version (resolve-alias parent (current-aliases)))])
+    (unless (or (unknown-parent-undecidable?) (member p '("Base" "Element" "BackboneElement" "Resource" "DomainResource"))
+                (hash-ref (current-logicals) p #f) (hash-ref (current-profiles) p #f)
+                (type-registered? (string->symbol p)) (resolve-sd-raw p))
+      (raise (exn:fail (format "Parent `~a` not found: it is not a FHIR type, a profile, extension or logical model in this project, nor a definition in its packages~a"
+                               p (did-you-mean p (parent-candidates)))
+                       (current-continuation-marks)))))
   (define id (or (assoc-ref meta 'id) name))
   (define self-url (string-append (canonical-base) "/StructureDefinition/" id))
   ;; `Characteristics: #can-be-target, #has-size`: one type-characteristics extension per code —
@@ -425,6 +443,7 @@
          (cond [(eq? f 'MS) (eq? (hash-ref pe 'mustSupport #f) #t)]
                [(eq? f 'SU) (eq? (hash-ref pe 'isSummary #f) #t)]
                [(eq? f mod-flag) (eq? (hash-ref pe 'isModifier #f) #t)]
+               [(standards-status f) => (lambda (code) (equal? (standards-status-of pe) code))]
                [else #t]))))
 ;; only-types : base-type path (listof type-name) (listof jsexpr) -> (listof jsexpr)   what
 ;; `* path only T1 or T2` makes the element's `type`: in the base element's order (SUSHI), unknown
@@ -759,7 +778,7 @@
      (hash-set h key (coerce v ftype))]))
 (define (value-type-code v)
   (match v
-    [(struct fsh-code _) "code"] [(struct fsh-quantity _) "Quantity"]
+    [(struct fsh-code _) "code"] [(struct fsh-quantity _) "Quantity"] [(struct fsh-ratio _) "Ratio"]
     [(struct fsh-reference _) "Reference"] [(? boolean? _) "boolean"]
     [(? number? _) "decimal"] [(? string? _) "string"] [_ #f]))
 ;; type->jsexpr : an `only` type -> ElementDefinition.type. Names resolve through Aliases and this
@@ -865,14 +884,19 @@
                                  #:when (regexp-match? #px"^Extension\\.extension:[^.]+$" k))
                         (substring k (string-length "Extension.extension:"))))
   (define complex? (for/or ([k (in-list keys)]) (regexp-match? #px"^Extension\\.extension($|:)" k)))
+  ;; an extension that says something of its value is a simple one; one that says nothing of its
+  ;; value nor of sub-extensions is neither yet (SUSHI writes its url alone)
+  (define valued? (for/or ([k (in-list keys)]) (regexp-match? #px"^Extension\\.value" k)))
   (define steps
     (append
-     ;; root element carries the extension's short/definition
-     (list (lambda (es os) (upd es os "Extension" "Extension" #f
-                                (lambda (h) (hash-set-present* h 'short (assoc-ref meta 'title)
-                                                       'definition (assoc-ref meta 'description))))))
+     ;; root element carries the extension's short/definition, when it has one (it was written bare)
+     (if (or (assoc-ref meta 'title) (assoc-ref meta 'description) (hash-has-key? elems "Extension"))
+         (list (lambda (es os) (upd es os "Extension" "Extension" #f
+                                    (lambda (h) (hash-set-present* h 'short (assoc-ref meta 'title)
+                                                           'definition (assoc-ref meta 'description))))))
+         '())
      ;; simple extension: no sub-extensions allowed
-     (if complex? '()
+     (if (or complex? (not valued?)) '()
          (list (lambda (es os) (upd es os "Extension.extension" "Extension.extension" #f
                                     (lambda (h) (hash-set h 'max "0"))))))
      ;; per inline sub-extension slice: forbid nested extension, fix its url to the slice name
@@ -909,7 +933,32 @@
     (cond [(eq? f 'MS) (hash-set h 'mustSupport #t)]
           [(eq? f 'SU) (hash-set h 'isSummary #t)]
           [(eq? f mod-flag) (hash-set h 'isModifier #t)]
+          ;; TU, N and D are the element's standards status: FHIR's extension of that name (they
+          ;; were read and dropped)
+          [(standards-status f)
+           => (lambda (code)
+                (hash-set h 'extension
+                          (append (filter (lambda (x) (not (equal? (hash-ref x 'url #f) standards-status-url)))
+                                          (let ([x (hash-ref h 'extension '())]) (if (list? x) x '())))
+                                  ;; marked as stated here: SUSHI writes it even where the base
+                                  ;; element carries the same status (the mark is taken off on the way out)
+                                  (list (hasheq 'url standards-status-url 'valueCode code 'stated #t)))))]
           [else h])))
+(define standards-status-url "http://hl7.org/fhir/StructureDefinition/structuredefinition-standards-status")
+;; standards-status : flag -> string | #f   the status a flag states: TU trial-use, N normative, D draft
+(define (standards-status f) (case f [(TU) "trial-use"] [(N) "normative"] [(D) "draft"] [else #f]))
+;; standards-status-of : element -> string | #f   the standards status an element carries
+(define (standards-status-of el)
+  (for/or ([x (in-list (let ([x (hash-ref el 'extension '())]) (if (list? x) x '())))])
+    (and (hash? x) (equal? (hash-ref x 'url #f) standards-status-url) (hash-ref x 'stated #f) (hash-ref x 'valueCode #f))))
+;; base-element-of : base-type fsh-path -> ElementDefinition | #f   the base type's own element at a
+;; plain path (no slice, no index, no type-specific choice name), through its datatypes; #f when
+;; it cannot be found — a caller then decides nothing
+(define (base-element-of base-type fsh-path)
+  (and (string? fsh-path) (sd-index-available?) (not (regexp-match? #rx"[][]" (regexp-replace* #rx"\\[x\\]" fsh-path "")))
+       (with-handlers ([exn:fail? (lambda (_) #f)])
+         (let-values ([(id path slice) (element-loc base-type fsh-path)])
+           (and (not slice) (not (regexp-match? #rx":" id)) (base-element base-type path))))))
 ;; ---- Mapping -> StructureDefinition.mapping + ElementDefinition.mapping (into the Source SD) ----
 (define (apply-mapping sds m)
   (define meta (fsh-mapping-metadata m))

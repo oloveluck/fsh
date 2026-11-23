@@ -812,3 +812,50 @@ slice the InstanceOf profile types with that Extension before positions are give
 "The validator held to HL7's"). `tests/sushi-alignment-test.rkt` has the case. mCODE from FSH: 338 ->
 **339 exact, 347 -> 348 with all published content** (floors raised).
 
+
+## Held to SUSHI, text by text (2026-11-23)
+fhir-examples' value experiment H, part 3 (its `value-experiment/PROTOCOL.md`; `reference/
+fsh-cases.rkt`, `fsh-reference.rkt`, `SushiReference.js`): SUSHI 3.21.1 run as a library (what its
+own `sushiClient.fshToFhir` runs, its definitions loaded once; held to that client on fifty
+texts) and this compiler (`compile-project`, a config of the same facts) over 2,802 whole FSH
+texts — SUSHI's 515 importer test inputs, the 22 golden texts and the guide's blocks, and each
+changed in one rule line (a rule removed, a cardinality, a flag, a binding's strength, `(exactly)`,
+an assigned value). An answer is `error` or the resources written; a third of the published
+texts were the sample whose disagreements were read by cause, the rest only counted. As first
+measured the two gave the same answer on 57.6% of the texts and the same verdict (error or not)
+on 75.5%: SUSHI reported an error on 664 texts where this compiler reported none. After what the
+sample showed was fixed: 84.0% and 87.5%, and no text left on which this compiler alone errs.
+What was this compiler's, each with a case in `tests/sushi-reference-test.rkt`:
+- **Written differently.** A configuration without a `status` means `draft`, as SUSHI's command
+  line writes (project.rkt; no configuration at all keeps the compiler's own `active`); a profile
+  that changes nothing has its root element as its differential (sd.rkt: it had none); an
+  Extension that says nothing of its value or sub-extensions fixes its url and no more
+  (`add-extension-scaffold`: it wrote a bare root and `extension 0..0`); a value set that includes
+  nothing has no `compose` (it was `{}`); a concept named again (`* #anteater`, to hang a caret
+  under it) keeps its display (`insert-concept`); the flags `TU`, `N` and `D` are the element's
+  standards status — FHIR's `structuredefinition-standards-status` extension — also where the base
+  element carries the same one (`apply-flags`, `standards-status`; they were read and dropped).
+- **A Ratio assigned in a profile raised** (`jsexpr->string` of the AST's ratio): `fsh-ratio` is a
+  value (`coerce`, `value-type-code`; ast.rkt lowers its parts).
+- **A unit with its display and no number** (`* valueQuantity = '[lb_av]' "lb"`) was lowered as a
+  number and a unit: the unit became the value, the display the code (ast.rkt `lower-value`).
+- **Errors SUSHI reports and this compiler did not** (compile.rkt `structure-rule-checks!`,
+  `check-id!`; sd.rkt; terminology.rkt; instance.rkt `coerce`): a binding to a name that is no
+  value set (it was a warning); a code's system, or a value set's, that is no alias, no code
+  system of the project or its packages and no url (`foo#bar` was written as the system "foo";
+  only where the value keeps its system — a `code` element takes the code alone); an id that is
+  no FHIR id; a cardinality that does not fit within the base type's; `contains` on an element
+  nothing says how to slice; an extension slice with no Extension behind it, outside an
+  Extension; an invariant no Invariant defines; a Parent nothing defines for an Extension or a
+  Logical model. The cardinality and slicing checks are decided only for a profile whose Parent
+  is a base type and a plain path (`base-element-of`); otherwise nothing is said.
+Open, as they were: a quantity's `unit` (this compiler writes the UCUM code as the unit too:
+decided earlier, in the manual's Limits); an instance without an element its type requires is
+an error of SUSHI's compile and of `raco fsh check` here, not of compiling. Named, not fixed (37
+of the sample's texts): a path whose LATER step is no element, or an index in a profile's path;
+a RuleSet inserted in a value set or code system, a Mapping's Source, an instance to embed or a
+concept's ancestor that nothing defines; a value that does not fit its element (its type, a
+value the Parent already fixed, a code of one of FHIR's own required sets). Of the held-out
+texts' differences, 183 of 1,985 fall under no class and are unread. Floors unchanged: IPS
+108/111, mCODE 339/348, Plan-Net 104/105, HRex 46/46, Genomics 134/137, GoFSH 117 and 348,
+importer 514/515, golden 22/22; tests 753 -> 792.

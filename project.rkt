@@ -147,7 +147,9 @@
        (parameterize ([emit-snapshot? snapshot?]
                       [canonical-base (or canonical (canonical-base))]
                       [fsh-fhir-version fhir-version]
-                      [fsh-config-status (and cfg (ig-config-status cfg))]
+                      ;; a configuration that states no status means draft, as SUSHI's does (no
+                      ;; configuration at all: the compiler's own default)
+                      [fsh-config-status (and cfg (or (ig-config-status cfg) "draft"))]
                       [fsh-config-version (and cfg (eq? (yaml-boolean (yref (ig-config-yaml cfg) "FSHOnly")) #t)
                                                (ig-config-version cfg))]
                       [current-sd-packages sd-packages])

@@ -27,8 +27,10 @@
             'url (string-append (canonical-base) "/ValueSet/" id)
             'version (fsh-config-version) 'name (fsh-valueset-name e) 'status (or (fsh-config-status) "active")
             'title (assoc-ref meta 'title) 'description (assoc-ref meta 'description)
-            'compose (drop-false (hasheq 'include (and (pair? incl) (merge-concept-components (reverse incl)))
-                                         'exclude (and (pair? excl) (merge-concept-components (reverse excl)))))))
+            ;; no compose for a value set that includes and excludes nothing (it was `{}`)
+            'compose (and (or (pair? incl) (pair? excl))
+                          (drop-false (hasheq 'include (and (pair? incl) (merge-concept-components (reverse incl)))
+                                              'exclude (and (pair? excl) (merge-concept-components (reverse excl))))))))
    (fsh-valueset-rules e)))
 ;; merge-concept-components : (listof component) -> (listof component)
 ;; SUSHI adds an enumerated concept to the existing component for the same system+version (one
@@ -69,6 +71,16 @@
   (define split (for/list ([c (in-list codes)]) (call-with-values (lambda () (split-code (code-text* (cadr c)))) cons)))
   (define sys+ver (or from-system (and (pair? split) (car (car split)) (canon (car (car split))))))
   (define-values (sys ver) (if sys+ver (split-version sys+ver) (values #f #f)))
+  ;; a system and a value set are named by a URI: an alias or the name of a definition of this
+  ;; project or its packages resolved to one, or a url written out (SUSHI: "is not a valid URI").
+  ;; `* ZOO#bear` with nothing named ZOO was written as the system "ZOO".
+  (define (uri! what u)
+    (unless (regexp-match? #rx":" u)
+      (raise (exn:fail (format "`~a` is no ~a: it is not an alias, nor the name of a ~a of this project or its packages, nor a url"
+                               u (if (equal? what "ValueSet") "value set" "code system") what)
+                       (current-continuation-marks)))))
+  (when sys (uri! "CodeSystem" sys))
+  (for ([v (in-list value-sets)]) (uri! "ValueSet" v))
   (define concepts
     (for/list ([c (in-list codes)] [sp (in-list split)])
       (drop-false (hasheq 'code (cdr sp) 'display (code-display c)))))
@@ -128,7 +140,10 @@
   (define base (or existing (hasheq 'code code)))
   (define updated
     (if (null? rest)
-        (drop-false (hash-set (hash-set base 'display display) 'definition def))
+        ;; a concept named again (`* #anteater` to set a path context or a caret) keeps the display
+        ;; and definition it was given (they were dropped)
+        (drop-false (hash-set (hash-set base 'display (or display (hash-ref base 'display #f)))
+                              'definition (or def (hash-ref base 'definition #f))))
         (hash-set base 'concept (insert-concept (hash-ref base 'concept '()) rest display def))))
   (if existing
       (for/list ([c (in-list concepts)]) (if (equal? (hash-ref c 'code) code) updated c))

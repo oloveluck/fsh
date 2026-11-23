@@ -410,6 +410,13 @@
      ;; `http://…/v2-0360|2.7#MD`: the system part carries a version
      (define-values (sys version) (let ([m (and sys0 (regexp-match #px"^([^|]+)[|](.+)$" sys0))])
                                     (if m (values (cadr m) (caddr m)) (values sys0 #f))))
+     ;; where the value keeps its system, the system is a URI: an alias or the name of a code
+     ;; system resolved to one, or a url written out (SUSHI: "is not a valid URI"). `foo#bar` with
+     ;; nothing named foo was written as the system "foo".
+     (when (and sys (eq? tag 'type) (memq (ftype-type-name ftype) '(Coding CodeableConcept Quantity Age Duration Count Distance SimpleQuantity))
+                (not (regexp-match? #rx":" sys)))
+       (raise (exn:fail (format "`~a` in `~a` is no code system: it is not an alias, nor the name of a CodeSystem of this project or its packages, nor a url" sys c)
+                        (current-continuation-marks))))
      (case (and (eq? tag 'type) (ftype-type-name ftype))
        [(Coding)          (drop-false (hasheq 'system sys 'version version 'code code 'display d))]
        [(CodeableConcept) (hasheq 'coding (list (drop-false (hasheq 'system sys 'version version 'code code 'display d))))]
@@ -422,6 +429,10 @@
      (if usys
          (drop-false (hasheq 'value val 'unit d 'code ucode 'system usys))
          (drop-false (hasheq 'value val 'unit (or d u) 'code u 'system "http://unitsofmeasure.org")))]
+    ;; `130 'mg' : 1 'dL'`: a Ratio of two Quantities; a part that is a bare number is its value
+    [(_ (struct fsh-ratio (a b)))
+     (define (part x) (if (number? x) (hasheq 'value x) (coerce x (vector 'type 'Quantity))))
+     (hasheq 'numerator (part a) 'denominator (part b))]
     [(_ (struct fsh-reference (t d))) (drop-false (hasheq 'reference t 'display d))]
     [(_ (struct fsh-canonical (t))) t]
     ;; a bare instance name assigned to a Resource-typed element (`* entry[0].resource = MyPatient`,
