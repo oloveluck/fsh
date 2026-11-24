@@ -44,13 +44,20 @@
   (define parent (simplify-path (build-path here 'up)))
   (define taken (map folder context))
   (define rx (pregexp (string-append "(?m:^(?:Profile|Extension|Logical|Resource|Id):\\s*" (regexp-quote name) "\\s*$)")))
-  (for*/first ([sib (in-list (with-handlers ([exn:fail? (lambda (_) '())]) (directory-list parent #:build? #t)))]
+  (for*/first ([sib (in-list (readable '() (lambda () (directory-list parent #:build? #t))))]
                #:when (directory-exists? sib)
                #:unless (equal? (folder sib) here)
                #:unless (member (folder sib) taken)
-               [f (in-list (fsh-files sib))]                 ; as a project finds them: no lock file, no dot folder
-               #:when (regexp-match? rx (file->string f)))
+               ;; as a project finds them: no lock file, no dot folder
+               [f (in-list (readable '() (lambda () (fsh-files sib))))]
+               #:when (readable #f (lambda () (regexp-match? rx (file->string f)))))
     (cons f sib)))
+
+;; readable : X (-> X) -> X   what the thunk reads, or `none` when the file system refuses: a folder
+;; beside the project is somebody else's (a project in the temporary directory has every other
+;; program's folders beside it, some closed to this user), and a hint is not worth an error
+(define (readable none read)
+  (with-handlers ([exn:fail:filesystem? (lambda (_) none)]) (read)))
 
 ;; shown-relative : path -> string   relative to the current directory when that is shorter
 (define (shown-relative p)
@@ -72,4 +79,16 @@
     (check-false (defined-beside (build-path root "project") '() "Mine"))
     (check-true (pair? (defined-beside "." '() "Theirs")))
     (check-false (defined-beside "." (list (build-path root "next")) "Theirs") "already in context"))
+  ;; a folder beside the project that this user may not read holds nothing: it is passed over, and
+  ;; what the folders after it define is still found (a workspace in /var/tmp sat beside a systemd
+  ;; service's private folder, and the stage failed with "could not open directory")
+  (make-directory (build-path root "closed"))
+  (with-output-to-file (build-path root "closed" "c.fsh") (lambda () (display "Profile: Hidden\nParent: Patient\n")))
+  (file-or-directory-permissions (build-path root "closed") #o000)
+  (unless (with-handlers ([exn:fail:filesystem? (lambda (_) #f)])      ; root reads anything: nothing to test
+            (directory-list (build-path root "closed")) #t)
+    (parameterize ([current-directory (build-path root "project")])
+      (check-false (defined-beside "." '() "Hidden"))
+      (check-true (pair? (defined-beside "." '() "Theirs")))))
+  (file-or-directory-permissions (build-path root "closed") #o755)
   (delete-directory/files root))

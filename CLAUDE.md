@@ -859,3 +859,17 @@ value the Parent already fixed, a code of one of FHIR's own required sets). Of t
 texts' differences, 183 of 1,985 fall under no class and are unread. Floors unchanged: IPS
 108/111, mCODE 339/348, Plan-Net 104/105, HRex 46/46, Genomics 134/137, GoFSH 117 and 348,
 importer 514/515, golden 22/22; tests 753 -> 792.
+
+## A folder beside the project that cannot be read (2026-11-24)
+Found by the fhir repository's docs workflow, the first time it got as far as fhir-mcp's workspace
+test on a runner: a stage of `InstanceOf: Observaton` in a workspace under `/var/tmp` answered
+`could not open directory … systemd-private-…: Permission denied` where it should have said
+`InstanceOf `Observaton` not found (did you mean `Observation`?)`. The hint for a name a folder
+BESIDE the project defines (`context-hint.rkt` `defined-beside`) lists every sibling folder's `.fsh`
+files, and a project in the temporary directory has every other program's folders beside it. A
+folder or file the file system refuses holds nothing (`readable`): the hint is not worth an error.
+The module's test closes a folder and looks past it; it decides nothing as root (which reads
+anything), so it runs on CI and not in a root container — reproduced here as an unprivileged user
+(`setpriv --reuid=65534`, with a readable copy of the add-on directory as `PLTADDONDIR`): before,
+the error above for every name; after, `#f` for the closed folder's name and the next folder's
+definition found.
