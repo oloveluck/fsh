@@ -850,13 +850,17 @@ SUSHI and the IG Publisher), leaving aside what only the Publisher adds.
 
 @itemlist[
 @item{Five guides compile from their own FSH with no errors. Of the resources that can be paired
-with the published ones: International Patient Summary 2.0.1, 108 of 114 identical and 111 with all
-the published content; mCODE 4.0.0, 339 of 349 and 348; Da Vinci Plan-Net 1.2.0, 104 of 109 and 105;
-Da Vinci HRex 1.1.0, all 46; Genomics Reporting 2.0.0, 134 of 141 and 137.}
+with the published ones: International Patient Summary 2.0.1, 109 of 114 identical and 111 with all
+the published content; mCODE 4.0.0, 345 of 349 and 348; Da Vinci Plan-Net 1.2.0, 104 of 109 and 105;
+Da Vinci HRex 1.1.0, all 46; Genomics Reporting 2.0.0, 136 of 141 and 137.}
 @item{The other direction: the published IPS and mCODE packages decompiled to FSH and compiled
 back. All 117 IPS resources come back identical, and 348 of mCODE's 349.}
 @item{The parser's verdicts against SUSHI's own test suite of 515 FSH texts: 514 agree, with no
 error missed and none reported where SUSHI reports none.}
+@item{SUSHI itself, text by text: SUSHI 3.21.1 and this compiler over 2,802 whole FSH texts
+(SUSHI's test inputs, the hand-written pairs and the examples of guide.md, each also changed in
+one rule line). They give the same answer, the same resources or both an error, on 2,767 (98.8%);
+this compiler never reports an error where SUSHI reports none.}
 @item{SUSHI's 22 hand-written pairs of FSH and JSON all compile to their JSON and survive the round
 trip.}
 @item{mCODE's examples, compiled and packed here, all validate against the profiles compiled here,
