@@ -294,15 +294,16 @@
   (define kw (take! c '(KW_CONTENTREFERENCE)))
   (define ref (take! c '(SEQUENCE CODE)))
   (finish! c (append (list 'addCRElementRule p card) fs (list kw ref) (short-and-definition! c))))
-;; addElementRule : STAR path CARD flag* elementType (KW_OR elementType)*
+;; addElementRule : STAR path CARD flag* elementType (/KW_OR elementType)*
 ;;                  (STRING (STRING | MULTILINE_STRING)?)?
+;; (the `or` is cut: kept, it was the first string of the datum and was read as the short)
 (define (add-element-rule c)
   (define p (path! c))
   (define card (take! c '(CARD)))
   (define fs (flags! c))
   (define types (let loop ([acc (list (element-type! c))])
                   (if (eq? (peek c) 'KW_OR)
-                      (let* ([o (next! c)] [t (element-type! c)]) (loop (list* t o acc)))
+                      (let* ([_ (next! c)] [t (element-type! c)]) (loop (cons t acc)))
                       (reverse acc))))
   (finish! c (append (list 'addElementRule p card) fs types (short-and-definition! c))))
 ;; pathRule : STAR path

@@ -1,6 +1,6 @@
 #lang racket/base
 ;;; terminology.rkt — ValueSet / CodeSystem -> compose / concept.
-(require racket/match
+(require racket/match racket/string racket/list
          racket/contract
          "parser/ast.rkt"
          (only-in fhir/serialize/jsexpr-util drop-false)
@@ -21,7 +21,14 @@
          (define comp (vs-body->jsexpr body aliases))
          (if include? (values (cons comp incl) excl) (values incl (cons comp excl)))]
         [_ (values incl excl)])))
-  (apply-carets
+  ;; a compose of excludes alone selects nothing to exclude from (SUSHI: "must contain at least one
+  ;; inclusion rule or be empty")
+  (when (and (null? incl) (pair? excl))
+    (raise (exn:fail (format "value set ~a excludes codes but includes none: a value set without an include holds nothing to exclude from"
+                             (fsh-valueset-name e))
+                     (current-continuation-marks))))
+  (apply-vs-concept-carets
+   (apply-carets
    (drop-false
     (hasheq 'resourceType "ValueSet" 'id id
             'url (string-append (canonical-base) "/ValueSet/" id)
@@ -31,7 +38,39 @@
             'compose (and (or (pair? incl) (pair? excl))
                           (drop-false (hasheq 'include (and (pair? incl) (merge-concept-components (reverse incl)))
                                               'exclude (and (pair? excl) (merge-concept-components (reverse excl))))))))
-   (fsh-valueset-rules e)))
+   (fsh-valueset-rules e))
+   (fsh-valueset-rules e) aliases))
+;; apply-vs-concept-carets : ValueSet rules aliases -> ValueSet   a caret on a concept the value set
+;; lists (`* ZOO#hippo ^designation.value = "hipopótamo"`) sets that concept of the compose (they
+;; were dropped); a concept the compose does not list is an error (SUSHI: "Could not find concept")
+(define (apply-vs-concept-carets vs rules aliases)
+  (for/fold ([vs vs]) ([r (in-list rules)] #:when (and (rule-code-caret? r) (pair? (rule-code-caret-codes r))))
+    (define-values (sys code) (split-code (strip# (car (rule-code-caret-codes r)))))
+    (define system (and sys (let ([a (resolve-alias sys aliases)]) (or ((current-local-canonical) a) (external-canonical "CodeSystem" a) a))))
+    (define (matches? comp c)
+      (and (equal? (hash-ref c 'code #f) code) (or (not system) (equal? (hash-ref comp 'system #f) system))))
+    (define compose (hash-ref vs 'compose (hasheq)))
+    (define found? (for*/or ([part (in-list '(include exclude))] [comp (in-list (hash-ref compose part '()))]
+                             [c (in-list (hash-ref comp 'concept '()))])
+                     (matches? comp c)))
+    (unless found?
+      (raise (exn:fail (format "concept `~a` is not listed by value set ~a: a caret rule on a concept needs the concept included or excluded first"
+                               (car (rule-code-caret-codes r)) (hash-ref vs 'name ""))
+                       (current-continuation-marks))))
+    (hash-set vs 'compose
+              (for/hasheq ([(part comps) (in-hash compose)])
+                (values part
+                        (if (list? comps)
+                            (for/list ([comp (in-list comps)])
+                              (if (hash-has-key? comp 'concept)
+                                  (hash-set comp 'concept
+                                            (for/list ([c (in-list (hash-ref comp 'concept))])
+                                              (if (matches? comp c)
+                                                  (typed-caret-set c (rule-code-caret-caret-path r) (rule-code-caret-value r)
+                                                                   'ValueSetComposeIncludeConcept (make-hash))
+                                                  c)))
+                                  comp))
+                            comps))))))
 ;; merge-concept-components : (listof component) -> (listof component)
 ;; SUSHI adds an enumerated concept to the existing component for the same system+version (one
 ;; that enumerates concepts and has no filter / valueSet); components keep first-seen order.
@@ -124,8 +163,19 @@
 ;; #abstract`, or indented under the concept) sets that concept's property, designation, …
 (define (apply-concept-carets concepts rules)
   (for/fold ([cs concepts]) ([r (in-list rules)] #:when (and (rule-code-caret? r) (pair? (rule-code-caret-codes r))))
-    (update-concept cs (map strip# (rule-code-caret-codes r))
-                    (lambda (c) (typed-caret-set c (rule-code-caret-caret-path r) (rule-code-caret-value r) #f (make-hash))))))
+    (define chain (map strip# (rule-code-caret-codes r)))
+    ;; a caret on a concept the code system does not have (SUSHI: "The element or path you
+    ;; referenced does not exist"); it was silently dropped
+    (unless (concept-at cs chain)
+      (raise (exn:fail (format "concept ~a is not in the code system: a caret rule on a concept needs the concept defined first"
+                               (string-join (map (lambda (c) (string-append "#" c)) chain) " "))
+                       (current-continuation-marks))))
+    (update-concept cs chain
+                    (lambda (c) (typed-caret-set c (rule-code-caret-caret-path r) (rule-code-caret-value r) 'CodeSystemConcept (make-hash))))))
+;; concept-at : concepts code-chain -> concept | #f   the concept a chain of codes names
+(define (concept-at concepts codes)
+  (define c (findf (lambda (c) (equal? (hash-ref c 'code #f) (car codes))) concepts))
+  (cond [(not c) #f] [(null? (cdr codes)) c] [else (concept-at (hash-ref c 'concept '()) (cdr codes))]))
 ;; update-concept : concepts code-chain f -> concepts   f applied to the concept the chain names
 (define (update-concept concepts codes f)
   (for/list ([c (in-list concepts)])
@@ -137,6 +187,12 @@
   (define code (car codes))
   (define rest (cdr codes))
   (define existing (findf (lambda (c) (equal? (hash-ref c 'code) code)) concepts))
+  ;; an ancestor is a concept already defined (SUSHI: "Could not find bear in concept hierarchy to
+  ;; use as ancestor of sunbear"); it was made, with no display, where it was named
+  (when (and (pair? rest) (not existing))
+    (raise (exn:fail (format "concept `~a` is not defined, so it cannot be the parent of `~a`: define `* #~a` first"
+                             code (last rest) code)
+                     (current-continuation-marks))))
   (define base (or existing (hasheq 'code code)))
   (define updated
     (if (null? rest)

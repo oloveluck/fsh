@@ -6,6 +6,7 @@
 ;;; workspace do), and each problem the text quotes is what the checker reports.
 
 (require rackunit racket/runtime-path racket/file racket/list racket/string
+         (only-in fsh/project compile-project project-diagnostics)
          (only-in fsh/check check-fsh-project check-report-diagnostics check-report-examples)
          (only-in fsh/workspace guide)
          (only-in fhir/diagnostic diagnostic-severity diagnostic-message diagnostic-loc loc-line))
@@ -40,6 +41,17 @@
                                                               worked "\\1* status = #preliminary")))))
   (check-equal? (length (errors r)) 1)
   (check-regexp-match #rx"Observation.status: value does not match required pattern \"final\" [(]constrained by profile HbA1cObservation" (car (messages r))))
+
+(test-case "compiling says what an instance lacks, or contradicts, as the guide quotes it"
+  (define dir (make-temporary-directory "fsh-guide-~a"))
+  (define (compiled text)
+    (with-output-to-file (build-path dir "a.fsh") #:exists 'truncate (lambda () (display text)))
+    (map diagnostic-message (project-diagnostics (compile-project dir))))
+  (check-regexp-match #rx"`Questionnaire.status` is required [(]1 at least[)] and the instance gives it 0 times: add `[*] status = …`"
+                      (car (compiled "Instance: q\nInstanceOf: Questionnaire\n* title = \"x\"\n")))
+  (check-regexp-match #rx"the instance gives `Observation.status` the value \"amended\", and its profile assigns \"final\" there"
+                      (car (compiled "Profile: P\nParent: Observation\n* status = #final\n\nInstance: x\nInstanceOf: P\n* code = http://loinc.org#1-8\n* status = #amended\n")))
+  (delete-directory/files dir))
 
 (test-case "each common problem is reported as the guide quotes it"
   (define (one files rx)

@@ -32,14 +32,14 @@ SUSHI positions at the next entity.
 fsh-reference.rkt`; `tests/sushi-reference-test.rkt` holds what it found). SUSHI 3.21.1, run as a
 library, and this compiler over 2,802 whole FSH texts: SUSHI's 515 importer test inputs, the 22
 golden texts and the guide's blocks, and each changed in one rule line. A third of the published
-texts were read, the rest only counted. The same answer (an error, or the same resources) on
-2,355 texts, 84.0% (57.6% before the fixes it led to); the same verdict, error or not, on 2,453,
-87.5% (75.5%). This compiler reports an error on no text SUSHI accepts; SUSHI reports one on 349
-texts this compiler accepts (it was 664). Of the differences left in the texts read, 28 are an
-instance missing a required element (which `raco fsh check` reports and compiling does not), 37
-a quantity's `unit`, and 37 errors of SUSHI's this compiler does not make yet (a path's later
-step, a name defined nowhere, a value that does not fit its element); 183 of the 1,985 texts not
-read differ under no class.
+texts were read, the rest only counted; a second pass opened every held-out difference by cause.
+The same answer (an error, or the same resources) on 2,767 texts, 98.8% (84.0% after the first
+pass, 57.6% before any fix); the same verdict, error or not, on 2,770, 98.9% (87.5%, 75.5%). This
+compiler reports an error on no text SUSHI accepts; SUSHI reports one on 32 texts this compiler
+accepts (it was 664, then 349). Of the 35 differences left, 33 are named errors of SUSHI's this
+compiler does not make yet (a value of the wrong type in a profile's rule, a path's later step,
+`^contained` naming nothing, a slicing rule missing its parts) or two differences of what is
+written; 2 are SUSHI failing inside its own code.
 
 **The parser against the grammar** (`tests/descent-test.rkt`). FSH is read by a hand-written
 parser; the parser generated from the grammar (`parser/grammar.rkt`, ported from SUSHI's FSH.g4)

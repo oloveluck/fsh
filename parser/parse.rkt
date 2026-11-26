@@ -214,9 +214,12 @@
         [(or (not p) (string=? p "") (string=? p ".")) ctx]
         [(string=? ctx "") p]
         [else (string-append ctx "." p)]))
-;; a rule's path as context for the rules under it ([+] -> [=])
+;; a rule's path as context for the rules under it ([+] -> [=]); of `* a and b MS`, the last path
+;; (SUSHI's importer test "should apply the last path in a list when multiple paths")
 (define (context-path r)
-  (define p (rule-target-path r))
+  (define p (match r
+              [(rule-flag _ (? pair? more) _) (last more)]
+              [_ (rule-target-path r)]))
   (and p (string-replace p "[+]" "[=]")))
 (define (rule-codes r)
   (match r

@@ -154,8 +154,9 @@
   (define unit (hash-ref v 'unit #f))
   (and (only-keys? v '(value unit system code))
        (equal? (hash-ref v 'system #f) "http://unitsofmeasure.org")
-       (real? value) (string? code) (string? unit) (not (regexp-match? #rx"'" code))
-       (fsh-quantity value code (if (equal? unit code) #f unit))))
+       (real? value) (string? code) (or (not unit) (string? unit)) (not (regexp-match? #rx"'" code))
+       ;; a `unit` is written as the display, even one equal to the code: `40 'mg'` gives none
+       (fsh-quantity value code unit)))
 (define (reference-value v)
   (define ref (hash-ref v 'reference #f))
   (define display (hash-ref v 'display #f))
@@ -568,7 +569,8 @@
   (define (value-at p) (for/first ([r (in-list rules)] #:when (equal? (rule-assign-path r) p)) (rule-assign-value r)))
   (check-equal? (value-at "code") (fsh-code "http://loinc.org#4548-4" "Hemoglobin A1c"))
   (check-equal? (value-at "subject") (fsh-reference "Reference(Patient/ann)" #f))
-  (check-equal? (value-at "valueQuantity") (fsh-quantity 6.2 "%" #f))
+  ;; a `unit` is the display, even equal to the code (it compiles back only so)
+  (check-equal? (value-at "valueQuantity") (fsh-quantity 6.2 "%" "%"))
   (check-equal? (value-at "category[0]") (fsh-code "#laboratory" #f))
   (check-equal? (value-at "referenceRange[0].low") (fsh-quantity 4 "%" "percent"))
   ;; two codings, a text beside the coding, a Reference with a type: per leaf

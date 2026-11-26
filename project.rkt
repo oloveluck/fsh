@@ -13,10 +13,10 @@
 ;;; pack-project! : project out.tgz -> path   the FHIR NPM package (pack.rkt)
 ;;; `raco fsh` (cli.rkt) is a thin shell over these.
 
-(require racket/contract racket/list racket/file racket/path racket/match
+(require racket/contract racket/list racket/file racket/path racket/match racket/string
          (only-in fhir/sd/sd-index current-sd-packages)
          (only-in fhir/spec-package spec-package-path)
-         (only-in fhir/diagnostic diagnostic loc loc-source loc-line diagnostic-loc)
+         (only-in fhir/diagnostic diagnostic loc loc-source loc-line diagnostic-loc diagnostic-message)
          (only-in "compile.rkt" compile-doc/diagnostics entity-label emit-snapshot? canonical-base fsh-fhir-version instance-id)
          (only-in "context.rkt" fsh-config-status fsh-config-version)
          (only-in "yaml.rkt" yref yaml-boolean)
@@ -155,10 +155,19 @@
                       [current-sd-packages sd-packages])
          (compile-doc/diagnostics (map car located))))
      (define at (for/hash ([p (in-list located)]) (values (entity-label (car p)) (cdr p))))
+     ;; a diagnostic about a whole entity (an instance without an element its profile requires)
+     ;; carries no rule's place: it is at the entity's header
+     (define (placed d)
+       (cond [(diagnostic-loc d) d]
+             [(for/first ([(label l) (in-hash at)]
+                          #:when (string-prefix? (diagnostic-message d) (string-append label ": ")))
+                l)
+              => (lambda (l) (struct-copy diagnostic d [loc l]))]
+             [else d]))
      ;; rule-level diagnostics (an unknown element, …) first, then entities that failed outright
      (define (own-diagnostic? d) (let ([l (diagnostic-loc d)]) (not (and l (loc-source l) (for/or ([f (in-list ctx-files)]) (equal? (loc-source l) (path->string f)))))))
      (project cfg fhir-version files texts located (append out structuremaps)
-              (append (filter own-diagnostic? rule-diags)
+              (append (filter own-diagnostic? (map placed rule-diags))
                       (filter own-diagnostic? (duplicate-id-diagnostics located))
                       (for/list ([e (in-list errors)])
                         (diagnostic 'fsh 'compile 'error (format "~a: ~a" (car e) (exn-message (cdr e))) (hash-ref at (car e) #f)))

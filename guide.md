@@ -57,8 +57,8 @@ need not repeat what the profile fixes: a required element's fixed value is writ
 entry named by its slice gets the slice's (`* component[systolic].valueQuantity = 120 'mm[Hg]'`
 alone, the code from the profile) — fewer lines, and nothing to get wrong. `Id:` gives the resource
 id (and the canonical `<canonical>/StructureDefinition/<id>`); without it the name is used.
-A quantity is `120 'mm[Hg]'`, or `120 'mm[Hg]' "mmHg"` to say its `unit`; without the display the
-unit written is the UCUM code (SUSHI writes none). A Reference or Canonical target may pin a
+A quantity is `120 'mm[Hg]'` (its `code` and `system`, no `unit`, as SUSHI writes it), or
+`120 'mm[Hg]' "mmHg"` to give a `unit` as well. A Reference or Canonical target may pin a
 version, `Reference(USCorePatientProfile|7.0.0)`; several targets are joined with `or`.
 
 ## Worked example
@@ -147,6 +147,11 @@ uses its value sets, a VCL file is a value set beside it.
   its name, or a file missing from the directory).
 - An example with `minimum required = 2, but found 0`: the profile's cardinality (`component 2..*`)
   — the example must have the elements its profile requires.
+  Compiling alone (`raco fsh`, a `#lang fsh` module, a workspace) says it too, as SUSHI does, at the
+  instance: `` `Questionnaire.status` is required (1 at least) and the instance gives it 0 times: add
+  `* status = …` ``; and a value the profile assigns otherwise: `` the instance gives
+  `Observation.status` the value "amended", and its profile assigns "final" there ``. The instance is
+  still written. `raco fsh check` gives the validator's line instead, traced to the rules.
 - `valueString is not allowed in slice 'diastolic' (value[x]: Quantity)`: an entry of a slice
   uses a type the slice's `only` rule excludes. The error sits on the instance rule that wrote the
   entry and names the slice's rule in the profile.

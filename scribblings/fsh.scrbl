@@ -801,9 +801,6 @@ differential.}
 most resources come out identical to the published ones and a minority differ in details
 (@secref["tested"]). An R5-only resource used in an R4 project is accepted and left as it is; the
 IG Publisher would convert it.}
-@item{@bold{A quantity's unit.} @tt{* valueQuantity = 7.1 '%'} writes the UCUM code as the
-quantity's @tt{unit} too (@tt{"unit": "%"}). SUSHI writes a @tt{unit} only when the rule gives one
-(@tt{7.1 '%' "percent"}); write it that way when the two must agree.}
 @item{@bold{The decompiler writes plain FSH.} It does not gather repeated addresses into aliases or
 repeated rules into rule sets, and it writes a profile's fixed values as @tt{^} rules.}
 @item{@bold{Building a module is not checking it.} Requiring a @tt{#lang fsh} file compiles it and

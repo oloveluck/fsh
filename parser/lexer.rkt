@@ -12,7 +12,7 @@
 (require brag/support
          br-parser-tools/lex
          (prefix-in : br-parser-tools/lex-sre)
-         racket/string
+         racket/string racket/match
          racket/contract
          (only-in racket/list last)
          (only-in "ast.rkt" code-tok)
@@ -44,7 +44,7 @@
 ;; dropped, and the common indentation of the remaining lines removed (SUSHI's semantics)
 (define (trim-multiline s)
   (define body (substring s 3 (- (string-length s) 3)))
-  (define lines (regexp-split #rx"\r?\n" body))
+  (define lines (map multiline-unescape (regexp-split #rx"\r?\n" body)))
   (define (blank? l) (regexp-match? #px"^[ \t]*$" l))
   (define trimmed
     (let* ([ls (if (and (pair? lines) (pair? (cdr lines)) (blank? (car lines))) (cdr lines) lines)]
@@ -60,10 +60,26 @@
                        [else l]))
                "\n"))
 (define (unescape s)
-  (regexp-replace* #px"\\\\(.)" s
+  (regexp-replace* unescape-rx s
     ;; only the escapes FSH defines; any other `\x` is kept verbatim (markdown `\|` in descriptions)
     (lambda (all c) (case c [("n") "\n"] [("t") "\t"] [("r") "\r"]
-                          [("\"") "\""] [("\\") "\\"] [else all]))))
+                          [("\"") "\""] [("\\") "\\"] [else (or (unicode-escape c) all)]))))
+;; a `\uXXXX` escape, or two that are a surrogate pair (`\uD83C\uDC31`), as SUSHI reads them
+(define unescape-rx
+  #px"\\\\(u(?:[dD][89abAB][0-9A-Fa-f]{2}\\\\u[dD][c-fC-F][0-9A-Fa-f]{2}|[0-9A-Fa-f]{4})|.)")
+;; unicode-escape : string -> string | #f   "uXXXX" or "uHHHH\\uLLLL" as its character; a lone
+;; surrogate (no character) as #f, kept as written
+(define (unicode-escape c)
+  (define codes (map (lambda (h) (string->number h 16)) (regexp-match* #px"[0-9A-Fa-f]{4}" c)))
+  (match codes
+    [(list hi lo) (string (integer->char (+ #x10000 (* (- hi #xD800) #x400) (- lo #xDC00))))]
+    [(list n) #:when (not (<= #xD800 n #xDFFF)) (string (integer->char n))]
+    [_ #f]))
+;; multiline-unescape : string -> string   what SUSHI replaces in a triple-quoted string, line by
+;; line: `\uXXXX`, `\n`, `\r`, `\t` (not `\"` or `\\`)
+(define (multiline-unescape l)
+  (regexp-replace* #px"\\\\(u(?:[dD][89abAB][0-9A-Fa-f]{2}\\\\u[dD][c-fC-F][0-9A-Fa-f]{2}|[0-9A-Fa-f]{4})|n|r|t)" l
+    (lambda (all c) (case c [("n") "\n"] [("t") "\t"] [("r") "\r"] [else (or (unicode-escape c) all)]))))
 ;; trim surrounding whitespace and a trailing "(" (for RuleSet/insert references)
 (define (clean-ref s)
   (string-trim (regexp-replace #px"\\(\\s*$" (string-trim s) "")))

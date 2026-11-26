@@ -5,7 +5,7 @@
 (require racket/match
          racket/string
          racket/contract
-         (only-in racket/list make-list last remove-duplicates drop-right take)
+         (only-in racket/list make-list last remove-duplicates drop-right take append-map)
          "parser/ast.rkt"
          "parser/path.rkt"
          (only-in "resolve.rkt" element-fhir-type field-info)
@@ -21,6 +21,10 @@
  (contract-out
   ;; an Instance -> the resource JSON, given the aliases and the local profiles (name -> (parent . sd))
   [compile-instance (-> fsh-instance? hash? hash? hash?)]
+  ;; the required elements an instance lacks or has too few of: (list id min count) each
+  [missing-required (-> hash? hash? (listof list?))]
+  ;; where conflicting values are recorded while an instance compiles (a box, or #f)
+  [current-value-conflicts (parameter/c (or/c box? #f))]
   ;; the base resource type of an InstanceOf, through local profile chains
   [instance-base (->* (string? hash?) (exact-nonnegative-integer?) (or/c string? #f))]
   ;; a dependency package's profile by name, id or url (a constraint SD), when the SD index has it
@@ -47,6 +51,7 @@
   (define base (instance-base type-str profiles))
   (define t (string->symbol base))
   (define js (let* ([j (build-instance-json e t aliases)]
+                    [_ (record-conflicts! j type-str)]
                     [j (if (type-registered? (string->symbol type-str))
                            j
                            (assign-required j (profile-elements type-str) (slice-positions e aliases) (embedded-slice-positions e aliases)))]
@@ -60,6 +65,111 @@
     ;; InstanceOf a dependency's profile: SUSHI stamps that profile's canonical
     [(external-sd type-str) => (lambda (sd) (inject-meta-profile js (hash-ref sd 'url)))]
     [else js]))
+;; A Conflict is (list id written assigned): the instance writes `written` where its InstanceOf
+;; assigns `assigned` (a fixed[x] or pattern[x] value) at element `id`.
+(define current-value-conflicts (make-parameter #f))
+;; record-conflicts! : jsexpr string -> void   the instance as its rules wrote it (before the
+;; profile's own values are filled in), held to what its InstanceOf assigns (SUSHI's
+;; ValueAlreadyAssignedError): each value at an element with a fixed[x] or pattern[x] must hold
+;; that value — the same primitive, or an object containing it (lodash's isMatch). Only a profile
+;; (a base type assigns nothing) and ids without a slice.
+(define (record-conflicts! js type-str)
+  (define b (current-value-conflicts))
+  (when (and b (not (type-registered? (string->symbol type-str))))
+    (define found (value-conflicts js (profile-elements type-str)))
+    (set-box! b (append (unbox b) found))))
+;; value-conflicts : jsexpr elements -> (listof Conflict)
+(define (value-conflicts js elements)
+  (define type (hash-ref js 'resourceType #f))
+  (define (assigned e)
+    (for/first ([(k v) (in-hash e)]
+                #:when (regexp-match? #rx"^(fixed|pattern)[A-Z]" (symbol->string k)))
+      v))
+  (if (not (string? type))
+      '()
+      (sort
+       (for*/list ([(id e) (in-hash elements)]
+                   #:when (and (string? id) (string-prefix? id (string-append type "."))
+                               (not (regexp-match? #rx":" id)))
+                   [want (in-value (assigned e))]
+                   #:when want
+                   [steps (in-value (string-split (substring id (add1 (string-length type))) "."))]
+                   [v (in-list (values-at js steps))]
+                   #:unless (holds? v want))
+         (list id v want))
+       string<? #:key car)))
+;; values-at : jsexpr (listof step) -> (listof jsexpr)   every value at an element path; a choice
+;; step `value[x]` reads whichever `valueX` is there
+(define (values-at obj steps)
+  (define (items v) (cond [(list? v) v] [(eq? v 'absent) '()] [else (list v)]))
+  (cond
+    [(null? steps) (list obj)]
+    [(not (hash? obj)) '()]
+    [else
+     (define step (car steps))
+     (define here
+       (match (regexp-match #px"^(.*)\\[x\\]$" step)
+         [(list _ stem)
+          (for*/list ([(k v) (in-hash obj)]
+                      #:when (let ([ks (symbol->string k)])
+                               (and (> (string-length ks) (string-length stem)) (string-prefix? ks stem)
+                                    (char-upper-case? (string-ref ks (string-length stem)))))
+                      [x (in-list (items v))])
+            x)]
+         [_ (items (hash-ref obj (string->symbol step) 'absent))]))
+     (append-map (lambda (x) (values-at x (cdr steps))) here)]))
+;; holds? : jsexpr jsexpr -> boolean   `v` holds `want`: lodash's isMatch — an object holds every
+;; key of `want` with a value that holds it, a list holds each item of `want` in some item, numbers
+;; by value, anything else equal
+(define (holds? v want)
+  (cond
+    [(and (hash? want) (hash? v))
+     (for/and ([(k w) (in-hash want)]) (and (hash-has-key? v k) (holds? (hash-ref v k) w)))]
+    [(and (list? want) (list? v)) (for/and ([w (in-list want)]) (for/or ([x (in-list v)]) (holds? x w)))]
+    [(and (number? want) (number? v)) (= want v)]
+    [else (equal? v want)]))
+;; missing-required : jsexpr elements -> (listof (list id min count))   SUSHI's check of an
+;; instance (InstanceExporter.validateRequiredElements): an element its InstanceOf requires (min 1
+;; or more) that an occurrence of its parent lacks, or holds fewer times than the min. Elements are
+;; the InstanceOf's (profile-elements: the local chain over the base snapshot). Decided only for
+;; what the elements state: ids without a slice (a slice's entries are not told apart here) and
+;; parents the instance has; a choice `value[x]` is any `valueX`, a primitive also `_key`.
+(define (missing-required js elements)
+  (define type (hash-ref js 'resourceType #f))
+  (define (count-in parent step)
+    (define (n v) (cond [(eq? v 'absent) 0] [(list? v) (length v)] [else 1]))
+    (cond
+      [(regexp-match #px"^(.*)\\[x\\]$" step)
+       => (lambda (m)
+            (define stem (cadr m))
+            (for/sum ([(k v) (in-hash parent)])
+              (define ks (symbol->string k))
+              (if (and (> (string-length ks) (string-length stem)) (string-prefix? ks stem)
+                       (char-upper-case? (string-ref ks (string-length stem))))
+                  (n v) 0)))]
+      [else (max (n (hash-ref parent (string->symbol step) 'absent))
+                 (n (hash-ref parent (string->symbol (string-append "_" step)) 'absent)))]))
+  (define (parents-at obj steps)
+    (cond [(null? steps) (list obj)]
+          [else
+           (define v (if (hash? obj) (hash-ref obj (string->symbol (car steps)) #f) #f))
+           (append-map (lambda (x) (if (hash? x) (parents-at x (cdr steps)) '()))
+                       (cond [(list? v) v] [v (list v)] [else '()]))]))
+  (if (not (string? type))
+      '()
+      (sort
+       (for*/list ([(id e) (in-hash elements)]
+                   #:when (and (string? id) (string-prefix? id (string-append type "."))
+                               (not (regexp-match? #rx":" id))
+                               (exact-positive-integer? (hash-ref e 'min 0))
+                               (not (hash-ref e 'contentReference #f)))
+                   [steps (in-value (string-split (substring id (add1 (string-length type))) "."))]
+                   #:when (not (member (last steps) '("id" "extension" "modifierExtension")))
+                   [parent (in-value (parents-at js (drop-right steps 1)))]
+                   [count (in-value (for/list ([p (in-list parent)]) (count-in p (last steps))))]
+                   #:when (for/or ([c (in-list count)]) (< c (hash-ref e 'min))))
+         (list id (hash-ref e 'min) (apply min count)))
+       string<? #:key car)))
 ;; titled : jsexpr metadata -> jsexpr   a `Usage: #definition` Instance's `Title:` / `Description:`
 ;; land on the resource's title / description elements when it has them and the rules set none
 ;; (SUSHI). An example's do not: they describe the example to the guide's reader (the
@@ -428,7 +538,9 @@
      (define-values (usys ucode) (split-code u))
      (if usys
          (drop-false (hasheq 'value val 'unit d 'code ucode 'system usys))
-         (drop-false (hasheq 'value val 'unit (or d u) 'code u 'system "http://unitsofmeasure.org")))]
+         ;; the unit is the display alone (SUSHI): `40 'mg'` names its unit by its UCUM code, a
+         ;; human-readable `unit` is written only when the FSH gives one (`40 'mg' "milligram"`)
+         (drop-false (hasheq 'value val 'unit d 'code u 'system "http://unitsofmeasure.org")))]
     ;; `130 'mg' : 1 'dL'`: a Ratio of two Quantities; a part that is a bare number is its value
     [(_ (struct fsh-ratio (a b)))
      (define (part x) (if (number? x) (hasheq 'value x) (coerce x (vector 'type 'Quantity))))
@@ -790,8 +902,11 @@
   (check-equal? (coerce (fsh-code "Sys#completed" #f) (vector 'prim "code")) "completed")
   (check-equal? (coerce 2020 (vector 'prim "date")) "2020")
   (check-equal? (coerce 42 (vector 'prim "integer")) 42)
+  ;; a UCUM unit names the unit by its code; `unit` (human-readable) only from a display (SUSHI)
   (check-equal? (coerce (fsh-quantity 120 "mm[Hg]" #f) (vector 'type 'Quantity))
-                (hasheq 'value 120 'unit "mm[Hg]" 'code "mm[Hg]" 'system "http://unitsofmeasure.org"))
+                (hasheq 'value 120 'code "mm[Hg]" 'system "http://unitsofmeasure.org"))
+  (check-equal? (coerce (fsh-quantity 120 "mm[Hg]" "mmHg") (vector 'type 'Quantity))
+                (hasheq 'value 120 'unit "mmHg" 'code "mm[Hg]" 'system "http://unitsofmeasure.org"))
   (check-equal? (coerce (fsh-reference "Patient/1" "Ann") (vector 'type 'Reference)) (hasheq 'reference "Patient/1" 'display "Ann"))
   ;; a code into a Quantity is its system and code, the display the unit; a coded quantity unit likewise
   (check-equal? (coerce (fsh-code "http://snomed.info/sct#428673006" "tablet") (vector 'type 'Quantity))
@@ -799,7 +914,7 @@
   (check-equal? (coerce (fsh-quantity 1 "http://snomed.info/sct#428673006" "tablet") (vector 'type 'Quantity))
                 (hasheq 'value 1 'system "http://snomed.info/sct" 'code "428673006" 'unit "tablet"))
   (check-equal? (coerce (fsh-quantity 40 "mg" #f) (vector 'type 'Quantity))
-                (hasheq 'value 40 'unit "mg" 'code "mg" 'system "http://unitsofmeasure.org"))
+                (hasheq 'value 40 'code "mg" 'system "http://unitsofmeasure.org"))
   ;; `system|version#code`: the version is the coding's
   (check-equal? (coerce (fsh-code "http://terminology.hl7.org/CodeSystem/v2-0360|2.7#MD" "Doctor of Medicine") (vector 'type 'Coding))
                 (hasheq 'system "http://terminology.hl7.org/CodeSystem/v2-0360" 'version "2.7" 'code "MD" 'display "Doctor of Medicine"))

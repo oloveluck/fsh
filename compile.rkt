@@ -17,12 +17,12 @@
 ;;; terminology.rkt (value sets and code systems).
 (require racket/match
          racket/string
-         racket/contract
+         racket/contract (only-in json jsexpr->string)
          (only-in racket/list append-map last filter-map remove-duplicates)
          "parser/ast.rkt"
          "parser/path.rkt"
          (only-in "parser/parse.rkt" parse-fsh-doc)
-         (only-in fhir/diagnostic diagnostic attached-loc attach-loc!)
+         (only-in fhir/diagnostic diagnostic diagnostic? diagnostic-message attached-loc attach-loc!)
          (only-in fhir/model/registry type-registered?)
          (only-in fhir/suggest did-you-mean)
          (only-in fhir/serialize/jsexpr-util drop-false)
@@ -34,6 +34,10 @@
          "terminology.rkt")
 (provide (contract-out
           [canonical-base (parameter/c string?)]
+          ;; a diagnostic of an instance without an element its InstanceOf requires, or with a value
+          ;; it contradicts (`raco fsh check`, which validates the example and traces the same
+          ;; problem to its rule, leaves it out)
+          [required-element-diagnostic? (-> any/c boolean?)]
           [emit-snapshot? (parameter/c boolean?)]
           ;; the FHIR version stamped on generated StructureDefinitions/IGs ("5.0.0" by default; set
           ;; "4.0.1" — and register the R4 tower — to compile an R4 IG)
@@ -124,6 +128,9 @@
                                          unknown (did-you-mean unknown (parent-candidates))))))]
           [_ (void)])))
     (structure-rule-checks! e base rules)
+    (when (or (fsh-profile? e) (fsh-extension? e)) (profile-path-checks! e base rules))
+    (flag-rule-checks! e)
+    (when (or (fsh-profile? e) (fsh-extension? e)) (extension-value-checks! e rules))
     (define names (and base (type-registered? (string->symbol base)) (base-element-names base)))
     (when names
       (for ([r (in-list rules)])
@@ -134,6 +141,157 @@
           (when (and first (not (known-element? names first)))
             (rule-diagnostic! r (entity-label e) (format "`~a` is not an element of ~a~a" first base
                                                          (did-you-mean first (map (lambda (n) (regexp-replace #rx"\\[x\\]$" n "")) names))))))))))
+;; profile-path-checks! : entity base-type rules -> void   what SUSHI cannot find at a profile's path
+;; ("No element found at path …"):
+;;   - an index or soft index (`item[0]`, `item[+]`): a profile states an element of every entry,
+;;     not an entry — indexes belong to instances;
+;;   - a type-specific choice name of a type the choice does not have (`valueDecimal` on an
+;;     Observation, whose value[x] takes no decimal);
+;;   - a slice nothing declares (`component[systolic].code` with no `contains systolic`), decided
+;;     when the Parent is a base type (a Parent profile's slices are not read here); extension
+;;     slices are named by their Extension and left alone.
+(define (profile-path-checks! e base rules)
+  (define label (entity-label e))
+  (define parent-is-base?
+    (or (fsh-extension? e)
+        (and (fsh-profile? e)
+             (let ([p (resolve-alias (or (assoc-ref (fsh-profile-metadata e) 'parent) "DomainResource") (current-aliases))])
+               (and (not (hash-ref (current-profiles) p #f)) (equal? p base) (type-registered? (string->symbol p)))))))
+  (define declared   ; path -> slice names this entity's `contains` rules declare there
+    (for*/fold ([h (hash)]) ([r (in-list rules)] #:when (rule-contains? r) [it (in-list (rule-contains-items r))])
+      (hash-update h (rule-contains-path r) (lambda (l) (cons (contains-item-name it) l)) '())))
+  (define (bracket-text b)
+    (match (fsh-bracket-kind b) ['index (format "[~a]" (fsh-bracket-value b))] ['soft+ "[+]"] ['soft= "[=]"]
+      ['choice "[x]"] [_ (format "[~a]" (fsh-bracket-value b))]))
+  (for ([r (in-list rules)])
+    (define p (rule-path-of r))
+    (define steps (and (string? p) (not (member p '("" "."))) (not (regexp-match? #rx"^[.^]" p))
+                       (with-handlers ([exn:fail? (lambda (_) #f)]) (fsh-path-steps (parse-fsh-path p)))))
+    (when steps
+      (let loop ([steps steps] [before ""] [first? #t])
+        (unless (null? steps)
+          (define st (car steps))
+          (define name (fsh-step-name st))
+          (define here (if (string=? before "") name (string-append before "." name)))
+          (define brackets (fsh-step-brackets st))
+          (cond
+            [(for/or ([b (in-list brackets)]) (and (memq (fsh-bracket-kind b) '(index soft+ soft=)) b))
+             => (lambda (b)
+                  (rule-diagnostic! r label
+                                    (format "no element at `~a~a`: a profile constrains every entry of `~a`, not one of them (an index belongs to an instance)"
+                                            here (bracket-text b) here)))]
+            [(and first? (null? brackets) base (choice-type-name base name))
+             => (lambda (bad)
+                  (rule-diagnostic! r label
+                                    (format "no element `~a`: ~a's `~a[x]` takes no ~a~a"
+                                            name base (car bad) (cdr bad)
+                                            (let ([ts (element-type-codes base (string-append (car bad) "[x]"))])
+                                              (if (pair? ts) (format " (it takes ~a)" (string-join (filter string? ts) ", ")) ""))))
+                  (loop (cdr steps) (string-append before (if (string=? before "") "" ".") name) #f))]
+            [(and parent-is-base? (not (member name '("extension" "modifierExtension")))
+                  (for/or ([b (in-list brackets)])
+                    (and (eq? (fsh-bracket-kind b) 'slice) (string? (fsh-bracket-value b))
+                         (not (regexp-match? #rx"/" (fsh-bracket-value b)))
+                         (not (member (fsh-bracket-value b) (hash-ref declared here '())))
+                         (fsh-bracket-value b))))
+             => (lambda (slice)
+                  (rule-diagnostic! r label
+                                    (format "no slice `~a` of `~a`: declare it first, `* ~a contains ~a 0..1`" slice here here slice)))]
+            [else (loop (cdr steps) (string-append here (apply string-append (map bracket-text brackets))) #f)]))))))
+;; choice-type-name : base-type name -> (cons stem type) | #f   a type-specific choice name
+;; (`valueDecimal`) whose type the base's choice element (`value[x]`) does not take; #f when it does,
+;; when the name is no such name, or when the base's types cannot be read
+(define (choice-type-name base name)
+  (define m (regexp-match #px"^([a-z][A-Za-z0-9]*?)([A-Z][A-Za-z0-9]*)$" name))
+  (and m
+       (let* ([names (or (base-element-names base) '())])
+         (and (not (member name names))
+              (for/or ([split (in-range 1 (string-length name))])
+                (define stem (substring name 0 split))
+                (define type (substring name split))
+                (and (char-upper-case? (string-ref type 0))
+                     (member (string-append stem "[x]") names)
+                     (let ([ts (element-type-codes base (string-append stem "[x]"))])
+                       (and (list? ts) (pair? ts)
+                            (not (for/or ([t (in-list ts)])
+                                   (and (string? t) (string-ci=? t type))))
+                            (cons stem type)))))))))
+;; element-type-codes : base-type path -> (listof string) | #f   the type codes of the base's element
+(define (element-type-codes base path)
+  (define el (base-element-of base path))
+  (and (hash? el) (for/list ([t (in-list (hash-ref el 'type '()))]) (hash-ref t 'code #f))))
+;; extension-value-checks! : entity rules -> void   an extension has a value or extensions, not
+;; both (FHIR's ext-1; SUSHI: "Extension on X cannot have both a value and sub-extensions"). SUSHI's
+;; walk, rule by rule in order: at each step of a rule's path that is on an extension (the first
+;; step of an Extension's own rule, or a step after an `extension…` step), a rule on `extension…`
+;; there marks `value[x]` as to be left out, and one on `value…` marks `extension` the same way; a
+;; rule that meets the other's mark is the contradiction, unless it is a cardinality of max 0 (which
+;; only clears the mark). A step not on an extension ends the walk of that rule.
+(define (extension-value-checks! e rules)
+  (define label (entity-label e))
+  (for/fold ([marks (hash)]) ([r (in-list rules)])
+    (define p (rule-target-path r))
+    (define max0? (match r [(rule-card _ (? string? c) _) (regexp-match? #rx"[.][.]0$" c)] [_ #f]))
+    (define steps (if (and (string? p) (not (member p '("" ".")))) (path-steps p) '()))
+    (let loop ([i 0] [before '()] [marks marks])
+      (cond
+        [(>= i (length steps)) marks]
+        [else
+         (define step (list-ref steps i))
+         (define on-extension? (or (and (fsh-extension? e) (= i 0))
+                                   (and (pair? before) (string-prefix? (car before) "extension"))))
+         (define base (apply string-append (map (lambda (s) (string-append s ".")) (reverse before))))
+         (define (meet own other)
+           ;; own: the mark this rule's kind meets; other: the mark it sets
+           (define key (string-append base own))
+           (cond [max0? (if (hash-ref marks key #f) (hash-set marks key #f) marks)]
+                 [(hash-ref marks key #f)
+                  (rule-diagnostic! r label "an extension has a value or sub-extensions, not both: this rule gives it the one, an earlier rule the other (constrain the one not used to 0..0)")
+                  (hash-set marks key #f)]
+                 [else (hash-set marks (string-append base other) #t)]))
+         (cond
+           [(not on-extension?) marks]
+           [(string-prefix? step "extension") (loop (add1 i) (cons step before) (meet "extension" "value[x]"))]
+           [(string-prefix? step "value") (loop (add1 i) (cons step before) (meet "value[x]" "extension"))]
+           [else (loop (add1 i) (cons step before) marks)])])))
+  (void))
+;; path-steps : path -> (listof string)   a rule path's steps, split at dots outside brackets
+;; (`extension[http://x.org/y].value[x]` is two)
+(define (path-steps p)
+  (let loop ([cs (string->list p)] [depth 0] [cur '()] [acc '()])
+    (cond [(null? cs) (reverse (cons (list->string (reverse cur)) acc))]
+          [(and (char=? (car cs) #\.) (zero? depth)) (loop (cdr cs) depth '() (cons (list->string (reverse cur)) acc))]
+          [else (loop (cdr cs) (case (car cs) [(#\[) (add1 depth)] [(#\]) (max 0 (sub1 depth))] [else depth])
+                      (cons (car cs) cur) acc)])))
+;; flag-rule-checks! : entity -> void   what SUSHI's exporter refuses of flags and added elements:
+;;   - two standards statuses on one element (`TU N`: "Cannot apply multiple standards status");
+;;   - MustSupport in a logical model or a custom resource (a specialization: "The MustSupport
+;;     flag is not permitted … allowed only in profiles and extensions");
+;;   - an added element of several types whose name does not end in `[x]` (a choice element),
+;;     unless every type is a Reference, a Canonical or a CodeableReference (several targets).
+(define (flag-rule-checks! e)
+  (define label (entity-label e))
+  (define specialization? (or (fsh-logical? e) (fsh-resource? e)))
+  (for ([r (in-list (or (entity-rules e) '()))])
+    (define flags (match r
+                    [(rule-flag _ _ fl) fl] [(rule-card _ _ fl) fl]
+                    [(rule-add-element _ _ fl _ _ _) fl] [(rule-add-cr-element _ _ fl _ _ _) fl]
+                    [(rule-contains _ items) (append-map contains-item-flags items)]
+                    [_ '()]))
+    (when (> (length (filter (lambda (f) (memq f '(TU N D))) (remove-duplicates flags))) 1)
+      (rule-diagnostic! r label "an element has one standards status: give one of TU, N and D, not several"))
+    (when (and specialization? (memq 'MS flags))
+      (rule-diagnostic! r label
+                        (format "MustSupport (MS) is not permitted in ~a: it says what a system using a profile must support, so it belongs in profiles and extensions"
+                                (if (fsh-logical? e) "a logical model" "a custom resource"))))
+    (match r
+      [(rule-add-element (? string? p) _ _ (? list? types) _ _)
+       #:when (and (> (length types) 1) (not (regexp-match? #rx"\\[x\\]$" p))
+                   (not (for/or ([kind (in-list '("Reference(" "Canonical(" "CodeableReference("))])
+                          (andmap (lambda (t) (and (string? t) (string-prefix? t kind))) types))))
+       (rule-diagnostic! r label
+                         (format "`~a` has several types, so it is a choice element: name it `~a[x]`" p p))]
+      [_ (void)])))
 ;; structure-rule-checks! : entity base-type rules -> void   what SUSHI refuses in a profile's rules
 ;; and this compiler wrote without a word (found by running both over SUSHI's own test inputs,
 ;; fhir-examples' value experiment H part 3):
@@ -220,7 +378,8 @@
       #f))
 ;; compile-doc/errors : entities -> (values (listof jsexpr) (listof (cons entity-label exn)))
 ;; Like SUSHI, a failing entity is reported and the rest of the document still compiles.
-(define (compile-doc/errors entities)
+(define (compile-doc/errors entities0)
+  (define entities (map sanitized-id entities0))
   (define aliases (alias-table entities))
   (define rulesets (ruleset-table entities))
   (define param-rulesets (param-ruleset-table entities))
@@ -280,11 +439,55 @@
                (attempt e (lambda () (compile-entity x aliases profiles invariants))))]))))
   ;; Mapping entities inject into their Source StructureDefinition (SUSHI-style) — a post-pass,
   ;; their own `insert`s expanded first (a Mapping's rules may come from a RuleSet)
+  ;; a Mapping's Source is a definition of the document (SUSHI: "Unable to find source"); one with
+  ;; no Source, or one nothing defines, was dropped without a word
+  (define structure-names
+    (for*/list ([e (in-list entities)] #:when (or (fsh-profile? e) (fsh-extension? e) (fsh-logical? e) (fsh-resource? e))
+                [k (in-list (list (entity-name e) (assoc-ref (entity-metadata e) 'id)))] #:when k)
+      k))
   (define mappings (for/list ([m (in-list entities)] #:when (fsh-mapping? m))
-                     (attempt m (lambda () (expand-entity-inserts m rulesets param-rulesets)))))
+                     (attempt m (lambda ()
+                                  (define src (assoc-ref (fsh-mapping-metadata m) 'source))
+                                  (unless (and src (member (resolve-alias src aliases) structure-names))
+                                    (raise (exn:fail (if src
+                                                         (format "mapping ~a: its Source `~a` is no profile, extension or logical model of this project" (entity-name m) src)
+                                                         (format "mapping ~a has no Source: say which definition it maps with `Source:`" (entity-name m)))
+                                                     (current-continuation-marks))))
+                                  (expand-entity-inserts m rulesets param-rulesets)))))
   (values (for/fold ([sds (filter values (map car outcomes))]) ([m (in-list (filter values (map car mappings)))])
             (apply-mapping sds m))
           (filter values (map cdr (append outcomes mappings)))))
+
+;; sanitized-id : entity -> entity   SUSHI's `validateId` for a definition (not an instance): an id
+;; (its `Id:`, else its name) that is no FHIR id but a valid FHIR name is written with `-` for each
+;; `_`, with a warning — `ValueSet: SimpleVS` with `Id: SimpleVS_ID` is ValueSet/SimpleVS-ID. A
+;; `^id` caret rule leaves the id as it states (SUSHI: findAssignmentByPath 'id').
+(define (sanitized-id e)
+  (define m (entity-metadata e))
+  (define id (and (or (fsh-profile? e) (fsh-extension? e) (fsh-logical? e) (fsh-resource? e)
+                      (fsh-valueset? e) (fsh-codesystem? e))
+                  (let ([v (or (assoc-ref m 'id) (entity-name e))]) (and (string? v) v))))
+  (define sanitized (and id (regexp-replace* #rx"_" id "-")))
+  (cond
+    [(and id (not (fhir-id? id)) (regexp-match? #px"^[A-Z][A-Za-z0-9_]{0,254}$" id)
+          (> (string-length sanitized) 0) (fhir-id? (substring sanitized 0 (min 64 (string-length sanitized))))
+          (not (for/or ([r (in-list (or (entity-rules e) '()))])
+                 (match r [(rule-caret (or #f "" ".") "id" _) #t] [_ #f]))))
+     (define new-id (substring sanitized 0 (min 64 (string-length sanitized))))
+     (rule-diagnostic! e (entity-label e)
+                       (format "`~a` is a FHIR name but not a FHIR id (an id has no `_` and at most 64 characters): it is written as `~a`. Give the id with `Id:` to say it yourself"
+                               id new-id)
+                       #:severity 'warning)
+     (with-metadata e (cons (cons 'id new-id) (filter (lambda (kv) (not (eq? (car kv) 'id))) m)))]
+    [else e]))
+(define (fhir-id? s) (regexp-match? #px"^[A-Za-z0-9.-]{1,64}$" s))
+;; with-metadata : entity metadata -> entity   the entity with its keyword lines replaced
+(define (with-metadata e m)
+  (match e
+    [(fsh-profile n _ r) (fsh-profile n m r)] [(fsh-extension n _ r) (fsh-extension n m r)]
+    [(fsh-logical n _ r) (fsh-logical n m r)] [(fsh-resource n _ r) (fsh-resource n m r)]
+    [(fsh-valueset n _ r) (fsh-valueset n m r)] [(fsh-codesystem n _ r) (fsh-codesystem n m r)]
+    [_ e]))
 
 ;; ---- a document's tables: what its entities declare, by the names rules use for them --------------
 ;; alias-table : entities -> (hash name -> value)
@@ -400,6 +603,13 @@
    (lambda (r0)
      ;; inside a RuleSet the grammar reads `* insert X` as a code-insert with no codes: the same rule
      (define r (match r0 [(rule-code-insert '() ref) (rule-insert #f ref)] [_ r0]))
+     ;; an insert under a concept (`* #cookie insert MyRuleSet`) names a RuleSet like any insert
+     (match r
+       [(rule-code-insert (? pair?) ref)
+        (define name (if (pair? ref) (car ref) ref))
+        (when (and (string? name) (not (hash-ref rulesets name #f)) (not (hash-ref param-rulesets name #f)))
+          (unknown-ruleset! r name))]
+       [_ (void)])
      (cond
        ;; plain `insert RuleSet` — ref is the ruleset name string
        [(and (rule-insert? r) (string? (rule-insert-ref r)))
@@ -515,10 +725,38 @@
     (raise (exn:fail (format "`~a` is not a FHIR id: an id is letters, digits, `-` and `.`, at most 64 characters. Give the ~a one with `Id:`"
                              text (if (fsh-instance? e) "instance" "definition"))
                      (current-continuation-marks)))))
+;; required-element-format : the message of an element an instance lacks (path, min, count, plural, rule)
+(define required-element-format
+  "`~a` is required (~a at least) and the instance gives it ~a time~a: add `* ~a = …`")
+;; required-element-diagnostic? : any -> boolean   a diagnostic with that message, or of a value
+;; that contradicts the profile (both what validating the example says again, at its rule)
+(define (required-element-diagnostic? d)
+  (and (diagnostic? d)
+       (regexp-match? #rx"` is required [(][0-9]+ at least[)] and the instance gives it |, and its profile assigns .* there$" (diagnostic-message d))))
 (define (compile-entity e [aliases (hash)] [profiles (hash)] [invariants (hash)])
   (check-id! e)
   (cond
-    [(fsh-instance? e)   (check-instance-of! e aliases profiles) (compile-instance e aliases profiles)]
+    [(fsh-instance? e)
+     (check-instance-of! e aliases profiles)
+     (define conflicts (box '()))
+     (define js (parameterize ([current-value-conflicts conflicts]) (compile-instance e aliases profiles)))
+     ;; a value that contradicts what the InstanceOf assigns there (SUSHI: "Cannot assign X to this
+     ;; element; a different Y is already assigned"), an error at the instance
+     (when (current-rule-diagnostics)
+       (for ([c (in-list (unbox conflicts))])
+         (rule-diagnostic! e (entity-label e)
+                           (format "the instance gives `~a` the value ~a, and its profile assigns ~a there"
+                                   (car c) (jsexpr->string (cadr c)) (jsexpr->string (caddr c))))))
+     ;; an element its InstanceOf requires that the instance does not give (SUSHI: "Element X has
+     ;; minimum cardinality N but occurs K time(s)"), an error at the instance; it is still written
+     (define of (resolve-alias (assoc-ref (fsh-instance-metadata e) 'instanceOf) aliases))
+     (when (and (current-rule-diagnostics) (sd-index-available?) (string? of))
+       (for ([m (in-list (missing-required js (profile-elements of)))])
+         (rule-diagnostic! e (entity-label e)
+                           (format required-element-format
+                                   (car m) (cadr m) (caddr m) (if (= (caddr m) 1) "" "s")
+                                   (regexp-replace #rx"^[^.]+[.]" (regexp-replace #rx"\\[x\\]$" (car m) "") "")))))
+     js]
     [(fsh-valueset? e)   (compile-valueset e aliases)]
     [(fsh-codesystem? e) (compile-codesystem e aliases)]
     [(fsh-invariant? e)  (compile-invariant e)]
@@ -528,7 +766,7 @@
 
 ;; ---- living examples ------------------------------------------------------------------------
 (module+ test
-  (require rackunit (only-in fhir/r5/schemas) (only-in fhir/diagnostic diagnostic-severity diagnostic-message diagnostic->string))
+  (require rackunit (only-in fhir/r5/schemas) (only-in fhir/diagnostic diagnostic-severity diagnostic->string))
   ;; parameter values: `\)` and `\,` are the characters; an argument is inserted verbatim
   (check-equal? (unescape-param "Aortic structure (body structure\\)") "Aortic structure (body structure)")
   (check-equal? (param-arg '(parameter "Canonical(TG263CS\\),")) "Canonical(TG263CS)")   ; the escaped paren survives

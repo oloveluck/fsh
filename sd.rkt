@@ -631,9 +631,19 @@
                (define el (at prefix))
                (define codes (and el (hash-ref el 'type '())))
                (and (list? codes) (= 1 (length codes))
-                    (let ([c (hash-ref (car codes) 'code #f)])
+                    (let ([c (fhir-type-code (car codes))])
                       (and (string? c)
                            (base-element c (string-join (cons c (drop segs n)) ".") (sub1 fuel))))))))))
+;; fhir-type-code : ElementDefinition.type -> string | #f   its code; for a FHIRPath System type (a
+;; primitive's `id`, `value`: `http://hl7.org/fhirpath/System.String`) the FHIR type its
+;; `structuredefinition-fhir-type` extension names (`string`), so a path can go on below it
+(define (fhir-type-code t)
+  (define c (hash-ref t 'code #f))
+  (cond [(and (string? c) (string-prefix? c "http://hl7.org/fhirpath/System."))
+         (for/or ([x (in-list (let ([l (hash-ref t 'extension '())]) (if (list? l) l '())))])
+           (and (hash? x) (regexp-match? #rx"structuredefinition-fhir-type$" (hash-ref x 'url ""))
+                (let ([v (or (hash-ref x 'valueUrl #f) (hash-ref x 'valueUri #f))]) (and (string? v) v))))]
+        [else c]))
 (define (base-max base-type path) (let ([e (base-element base-type path)]) (and e (hash-ref e 'max #f))))
 ;; base-type-codes : base-type element-path -> (listof type code) | #f   from the base snapshot
 (define (base-type-codes base-type path)

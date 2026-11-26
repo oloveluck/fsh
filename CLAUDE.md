@@ -873,3 +873,47 @@ anything), so it runs on CI and not in a root container — reproduced here as a
 (`setpriv --reuid=65534`, with a readable copy of the add-on directory as `PLTADDONDIR`): before,
 the error above for every name; after, `#f` for the closed folder's name and the next folder's
 definition found.
+
+## Held to SUSHI, second pass (2026-11-26)
+fhir-examples' protocol entry "H part 3, second pass", stated first: the causes part 3 named
+fixed, the held-out texts opened by cause, the two open classes decided. Over the same 2,802
+texts: the same answer as SUSHI on 2,355 -> **2,767 (98.8%)**, the same verdict on 2,453 ->
+**2,770 (98.9%)**, and still no text on which this compiler alone errs. Of the 35 left, 33 are
+named classes (below) and 2 are SUSHI failing in its own code. Each fix has a case in
+`tests/sushi-reference-test.rkt` (76); every corpus floor held or rose (IPS 109, mCODE 345,
+Genomics 136 exact).
+- **Strings as SUSHI reads them** (parser/lexer.rkt): `\uXXXX` and surrogate pairs; in a `"""`
+  string `\n`, `\r`, `\t` and `\u` (not `\"`, `\\`) line by line (`multiline-unescape`).
+- **The context of an indented rule** is the LAST path of a rule with several (`* a and b MS`;
+  parse.rkt `context-path`); an added element's types joined with `or` keep their `or` out of
+  the short (grammar.rkt, descent.rkt).
+- **An id SUSHI would make from a name** (`sanitized-id`, compile.rkt): a valid name with an
+  invalid id has `_` written `-` (not for instances, not with an `^id` rule).
+- **Rule checks SUSHI makes** (compile.rkt): several standards statuses on one element; MS in a
+  logical model or custom resource; several types that are not all Reference, Canonical or
+  CodeableReference on a path not ending `[x]`; an Extension given a value and sub-extensions; a
+  profile's path with an index, a choice member the element does not have, or an undeclared
+  slice (`profile-path-checks!`); a RuleSet inserted under a concept, a Mapping's Source that
+  nothing defines; a value set of excludes alone; a caret on a concept the value set or code
+  system does not list; a code system concept whose ancestor is not defined (terminology.rkt).
+  A FHIRPath System type in a base element (`structuredefinition-fhir-type`) is followed (sd.rkt).
+- **A quantity's `unit` as SUSHI writes it**: only from a display (`7.1 '%' "percent"`); `7.1
+  '%'` is `value`, `code`, `system` (instance.rkt; the decompiler reads such a quantity back
+  with its unit as the display). Decided earlier the other way and kept in the manual's Limits;
+  followed now (70 texts). cql's guide recipe reads `Coalesce(unit, code)`, fhir-mcp's
+  change-rules test expects no unit.
+- **An instance without an element its InstanceOf requires** is an error at the instance
+  (instance.rkt `missing-required`, SUSHI's validateRequiredElements: every element with min ≥ 1
+  under a parent the instance has, ids without a slice, `value[x]` any member, a primitive's
+  `_key` too, a JSON `false` a value); **and a value that contradicts what the profile assigns**
+  (`record-conflicts!`, `value-conflicts`, `holds?`: SUSHI's ValueAlreadyAssignedError — the value
+  as the rules wrote it, before the profile's own values are filled in, must hold the fixed or
+  pattern value as lodash's isMatch decides). Both are compile diagnostics (`raco fsh`, a `#lang
+  fsh` module, a workspace) placed at the instance's header (project.rkt `placed`); the instance
+  is still written. `raco fsh check` leaves them out (`required-element-diagnostic?`): the
+  validator reports the same, traced to the rules.
+Left, named (33 texts): a value of the wrong type in a profile or caret rule (a time with a zone,
+a number into an Address or integer, `only` a type the element does not allow, a slicing rule
+missing its parts: 21); a path's later step that is no element (6); `^contained` naming an
+instance nothing defines (2); what is written for a complex extension or a concept with a rule
+removed (3); a cardinality outside the base's (1).

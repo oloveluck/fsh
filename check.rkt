@@ -26,7 +26,7 @@
          (only-in "ig-config.rkt" parse-ig-config)
          (only-in "project.rkt" compile-project pack-project! project-artifacts project-diagnostics project-located
                   project-sd-packages project-config project-texts project-maps project-missing)
-         (only-in "compile.rkt" rule-path-of instance-id)
+         (only-in "compile.rkt" rule-path-of instance-id required-element-diagnostic?)
          (only-in "parser/ast.rkt" fsh-instance? fsh-instance-name fsh-instance-metadata fsh-instance-rules
                   fsh-profile? fsh-profile-name fsh-profile-metadata fsh-profile-rules
                   rule-assign? rule-assign-path rule-path? rule-path-path
@@ -54,7 +54,8 @@
                            #:files [files #f])
   (define p (compile-project dir #:canonical canonical #:fhir-version fhir-version #:packages packages #:context context
                              #:files files))
-  (define compile-diags (project-diagnostics p))
+  ;; an instance without an element its profile requires: the validator says so, traced to the rules
+  (define compile-diags (filter (lambda (d) (not (required-element-diagnostic? d))) (project-diagnostics p)))
   (define-values (examples invalid validation-diags) (validate-examples p required))
   (define map-diags (check-maps p examples))
   (define server-diags (if capability (server-gaps p capability) '()))

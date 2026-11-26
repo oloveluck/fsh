@@ -80,7 +80,7 @@ codeInsertRule:     /STAR CODE* /KW_INSERT (RULESET_REFERENCE | paramRuleSetRef)
 ; short is optional here and fsh/lint reports it (an elementType is never a flag keyword, so a
 ; RuleSet's `* name 1..1 MS` stays a cardRule)
 addCRElementRule:   /STAR path CARD flag* KW_CONTENTREFERENCE (SEQUENCE | CODE) (STRING (STRING | MULTILINE_STRING)?)?
-addElementRule:     /STAR path CARD flag* elementType (KW_OR elementType)* (STRING (STRING | MULTILINE_STRING)?)?
+addElementRule:     /STAR path CARD flag* elementType (/KW_OR elementType)* (STRING (STRING | MULTILINE_STRING)?)?
 elementType:        SEQUENCE | NUMBER | referenceType | canonical | codeableReferenceType
 pathRule:           /STAR path
 
