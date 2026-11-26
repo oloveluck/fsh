@@ -51,6 +51,10 @@
                       (car (compiled "Instance: q\nInstanceOf: Questionnaire\n* title = \"x\"\n")))
   (check-regexp-match #rx"the instance gives `Observation.status` the value \"amended\", and its profile assigns \"final\" there"
                       (car (compiled "Profile: P\nParent: Observation\n* status = #final\n\nInstance: x\nInstanceOf: P\n* code = http://loinc.org#1-8\n* status = #amended\n")))
+  (check-regexp-match #rx"Cannot assign \"changed\": it is no date"
+                      (car (compiled "Instance: p\nInstanceOf: Patient\n* birthDate = \"changed\"\n")))
+  (check-regexp-match #rx"Cannot assign the number 64: it is no Address"
+                      (car (compiled "Profile: P\nParent: Observation\n* ^extension[0].valueAddress = 64\n")))
   (delete-directory/files dir))
 
 (test-case "each common problem is reported as the guide quotes it"

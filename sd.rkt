@@ -33,6 +33,10 @@
   [valueset-url (-> string? string?)]
   ;; a type named in an `only` rule that nothing defines (#f when it is defined, or cannot be judged)
   [unknown-only-type (-> string? (or/c string? #f))]
+  ;; the type code an `only` type names (`Reference(Patient)` -> "Reference", a profile -> its base)
+  [only-type-code (-> string? (or/c string? #f))]
+  ;; the canonical of an Extension named by name, id or url (#f when nothing defines one)
+  [context-extension-url (-> string? (or/c string? #f))]
   ;; the base type's own element at a plain path, or #f
   [base-element-of (-> string? any/c (or/c hash? #f))]
   ;; the names a Parent, InstanceOf or type may be: for suggestions
@@ -815,6 +819,17 @@
              [(and (sd-index-available?) (resolve-canonical-raw "StructureDefinition" n))
               => (lambda (sd) (hasheq 'code (hash-ref sd 'type) 'profile (list (pinned (hash-ref sd 'url)))))]
              [else (hasheq 'code n)])]))
+;; only-type-code : type-text -> string | #f   the code the type is written with in the differential
+(define (only-type-code t)
+  ;; nothing for a type nothing defines (reported apart) or a url the packages do not resolve
+  (define-values (n _v) (aliased+versioned t))
+  (and (not (unknown-only-type t))
+       (or (regexp-match? #px"^(Reference|Canonical|CodeableReference)\\s*\\(" t)
+           (not (regexp-match? #px"^https?:|^urn:" n))
+           (core-type-name n)
+           (and (sd-index-available?) (resolve-canonical-raw "StructureDefinition" n)))
+       (with-handlers ([exn:fail? (lambda (_) #f)])
+         (let ([c (hash-ref (type->jsexpr t) 'code #f)]) (and (string? c) c)))))
 ;; unknown-only-type : type-text -> string | #f   the name of a type in an `only` rule that nothing
 ;; defines — no FHIR type, no profile, extension or logical model of the project, no definition of
 ;; its packages — else #f; a url is not judged (a dependency may not be installed), nor anything
@@ -915,11 +930,17 @@
       (lambda (sn)
         (define slice-el (hash-ref elems (string-append "Extension.extension:" sn) (hash)))
         (define typed? (for/or ([t (in-list (hash-ref slice-el 'type '()))]) (pair? (hash-ref t 'profile '()))))
+        ;; … its nested extensions forbidden only when it says something of its value, as at the top
+        (define slice-valued? (for/or ([k (in-list keys)])
+                                (string-prefix? k (format "Extension.extension:~a.value" sn))))
         (if typed? '()
-            (list (lambda (es os) (upd es os (format "Extension.extension:~a.extension" sn)
-                                       "Extension.extension.extension" #f (lambda (h) (hash-set h 'max "0"))))
-                  (lambda (es os) (upd es os (format "Extension.extension:~a.url" sn)
-                                       "Extension.extension.url" #f (lambda (h) (hash-set h 'fixedUri sn)))))))
+            (append
+             (if slice-valued?
+                 (list (lambda (es os) (upd es os (format "Extension.extension:~a.extension" sn)
+                                            "Extension.extension.extension" #f (lambda (h) (hash-set h 'max "0")))))
+                 '())
+             (list (lambda (es os) (upd es os (format "Extension.extension:~a.url" sn)
+                                        "Extension.extension.url" #f (lambda (h) (hash-set h 'fixedUri sn))))))))
       slice-names)
      ;; a complex extension carries no value
      (if complex?

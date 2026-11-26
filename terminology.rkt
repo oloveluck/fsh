@@ -156,7 +156,7 @@
             'url (string-append (canonical-base) "/CodeSystem/" id)
             'version (fsh-config-version) 'name (fsh-codesystem-name e) 'status (or (fsh-config-status) "active")
             'title (assoc-ref meta 'title) 'description (assoc-ref meta 'description)
-            'content "complete" 'concept (and (pair? concepts) (apply-concept-carets concepts (fsh-codesystem-rules e)))
+            'content "complete" 'concept (let ([cs (apply-concept-carets concepts (fsh-codesystem-rules e))]) (and (pair? cs) cs))
             'count (and (pair? concepts) (count-concepts concepts))))
    (fsh-codesystem-rules e)))
 ;; apply-concept-carets : concepts rules -> concepts   a caret on a concept (`* #a ^property[0].code =

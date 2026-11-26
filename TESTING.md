@@ -33,13 +33,12 @@ fsh-reference.rkt`; `tests/sushi-reference-test.rkt` holds what it found). SUSHI
 library, and this compiler over 2,802 whole FSH texts: SUSHI's 515 importer test inputs, the 22
 golden texts and the guide's blocks, and each changed in one rule line. A third of the published
 texts were read, the rest only counted; a second pass opened every held-out difference by cause.
-The same answer (an error, or the same resources) on 2,767 texts, 98.8% (84.0% after the first
-pass, 57.6% before any fix); the same verdict, error or not, on 2,770, 98.9% (87.5%, 75.5%). This
-compiler reports an error on no text SUSHI accepts; SUSHI reports one on 32 texts this compiler
-accepts (it was 664, then 349). Of the 35 differences left, 33 are named errors of SUSHI's this
-compiler does not make yet (a value of the wrong type in a profile's rule, a path's later step,
-`^contained` naming nothing, a slicing rule missing its parts) or two differences of what is
-written; 2 are SUSHI failing inside its own code.
+The same answer (an error, or the same resources) on 2,799 texts, 99.9% (98.8% after the second
+pass, 84.0% after the first, 57.6% before any fix); the same verdict, error or not, on 2,799 (75.5% first). This
+compiler reports an error on no text SUSHI accepts. Of the 3 differences left, 2 are SUSHI
+failing inside its own code and 1 a SUSHI quirk (a flag on `value[x] 0..0` in an Extension with
+sub-extensions). Every text has now been read: the figure describes the set, it tests nothing held
+out.
 
 **The parser against the grammar** (`tests/descent-test.rkt`). FSH is read by a hand-written
 parser; the parser generated from the grammar (`parser/grammar.rkt`, ported from SUSHI's FSH.g4)

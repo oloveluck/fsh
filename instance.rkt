@@ -9,7 +9,9 @@
          "parser/ast.rkt"
          "parser/path.rkt"
          (only-in "resolve.rkt" element-fhir-type field-info)
-         (only-in fhir/model/registry type-schema-of)
+         (only-in fhir/model/registry type-schema-of constructor-of)
+         (only-in fhir/result/result ok?)
+         (only-in fhir/primitives/temporal calendar-problem)
          (only-in fhir/model/schema type-schema-parent)
          (only-in fhir/model/registry type-registered?)
          (only-in fhir/model/schema ftype-tag ftype-type-name ftype-prim-code)
@@ -23,8 +25,13 @@
   [compile-instance (-> fsh-instance? hash? hash? hash?)]
   ;; the required elements an instance lacks or has too few of: (list id min count) each
   [missing-required (-> hash? hash? (listof list?))]
+  ;; the elements an instance holds more of than its InstanceOf allows: (list id max count) each
+  [excess-elements (-> hash? hash? (listof list?))]
   ;; where conflicting values are recorded while an instance compiles (a box, or #f)
   [current-value-conflicts (parameter/c (or/c box? #f))]
+  ;; where an instance's values its types cannot hold are recorded (a box of messages), or #f:
+  ;; raise (profiles and carets)
+  [current-value-problems (parameter/c (or/c box? #f))]
   ;; the base resource type of an InstanceOf, through local profile chains
   [instance-base (->* (string? hash?) (exact-nonnegative-integer?) (or/c string? #f))]
   ;; a dependency package's profile by name, id or url (a constraint SD), when the SD index has it
@@ -68,6 +75,7 @@
 ;; A Conflict is (list id written assigned): the instance writes `written` where its InstanceOf
 ;; assigns `assigned` (a fixed[x] or pattern[x] value) at element `id`.
 (define current-value-conflicts (make-parameter #f))
+(define current-value-problems (make-parameter #f))
 ;; record-conflicts! : jsexpr string -> void   the instance as its rules wrote it (before the
 ;; profile's own values are filled in), held to what its InstanceOf assigns (SUSHI's
 ;; ValueAlreadyAssignedError): each value at an element with a fixed[x] or pattern[x] must hold
@@ -135,41 +143,60 @@
 ;; what the elements state: ids without a slice (a slice's entries are not told apart here) and
 ;; parents the instance has; a choice `value[x]` is any `valueX`, a primitive also `_key`.
 (define (missing-required js elements)
+  (element-counts js elements
+                  (lambda (e) (exact-positive-integer? (hash-ref e 'min 0)))
+                  (lambda (e counts) (and (for/or ([c (in-list counts)]) (< c (hash-ref e 'min)))
+                                          (list (hash-ref e 'min) (apply min counts))))))
+;; excess-elements : jsexpr elements -> (listof (list id max count))   an element its InstanceOf
+;; allows `max` of (a number) that an occurrence of its parent holds more of: SUSHI finds no element
+;; at the path (`component[1]` where the profile says `component 1..1`)
+(define (excess-elements js elements)
+  (element-counts js elements
+                  (lambda (e) (let ([m (hash-ref e 'max #f)]) (and (string? m) (string->number m))))
+                  (lambda (e counts) (let ([m (string->number (hash-ref e 'max))])
+                                       (and (for/or ([c (in-list counts)]) (> c m))
+                                            (list m (apply max counts)))))))
+;; element-counts : jsexpr elements (element -> any) (element counts -> (list a b)|#f) -> (listof (list id a b))
+;; the elements (ids without a slice, no contentReference, not id/extension/modifierExtension)
+;; `relevant?` keeps, under parents the instance has, whose counts there `judge` finds wanting
+(define (element-counts js elements relevant? judge)
   (define type (hash-ref js 'resourceType #f))
-  (define (count-in parent step)
-    (define (n v) (cond [(eq? v 'absent) 0] [(list? v) (length v)] [else 1]))
-    (cond
-      [(regexp-match #px"^(.*)\\[x\\]$" step)
-       => (lambda (m)
-            (define stem (cadr m))
-            (for/sum ([(k v) (in-hash parent)])
-              (define ks (symbol->string k))
-              (if (and (> (string-length ks) (string-length stem)) (string-prefix? ks stem)
-                       (char-upper-case? (string-ref ks (string-length stem))))
-                  (n v) 0)))]
-      [else (max (n (hash-ref parent (string->symbol step) 'absent))
-                 (n (hash-ref parent (string->symbol (string-append "_" step)) 'absent)))]))
-  (define (parents-at obj steps)
-    (cond [(null? steps) (list obj)]
-          [else
-           (define v (if (hash? obj) (hash-ref obj (string->symbol (car steps)) #f) #f))
-           (append-map (lambda (x) (if (hash? x) (parents-at x (cdr steps)) '()))
-                       (cond [(list? v) v] [v (list v)] [else '()]))]))
   (if (not (string? type))
       '()
       (sort
        (for*/list ([(id e) (in-hash elements)]
                    #:when (and (string? id) (string-prefix? id (string-append type "."))
                                (not (regexp-match? #rx":" id))
-                               (exact-positive-integer? (hash-ref e 'min 0))
+                               (relevant? e)
                                (not (hash-ref e 'contentReference #f)))
                    [steps (in-value (string-split (substring id (add1 (string-length type))) "."))]
                    #:when (not (member (last steps) '("id" "extension" "modifierExtension")))
                    [parent (in-value (parents-at js (drop-right steps 1)))]
-                   [count (in-value (for/list ([p (in-list parent)]) (count-in p (last steps))))]
-                   #:when (for/or ([c (in-list count)]) (< c (hash-ref e 'min))))
-         (list id (hash-ref e 'min) (apply min count)))
+                   #:when (pair? parent)
+                   [verdict (in-value (judge e (for/list ([p (in-list parent)]) (count-in p (last steps)))))]
+                   #:when verdict)
+         (cons id verdict))
        string<? #:key car)))
+;; count-in : object step -> natural   how many values the object holds at a step; a choice
+;; `value[x]` is any `valueX`, a primitive also its `_key`, a JSON false a value
+(define (count-in parent step)
+  (define (n v) (cond [(eq? v 'absent) 0] [(list? v) (length v)] [else 1]))
+  (match (regexp-match #px"^(.*)\\[x\\]$" step)
+    [(list _ stem)
+     (for/sum ([(k v) (in-hash parent)])
+       (define ks (symbol->string k))
+       (if (and (> (string-length ks) (string-length stem)) (string-prefix? ks stem)
+                (char-upper-case? (string-ref ks (string-length stem))))
+           (n v) 0))]
+    [_ (max (n (hash-ref parent (string->symbol step) 'absent))
+            (n (hash-ref parent (string->symbol (string-append "_" step)) 'absent)))]))
+;; parents-at : jsexpr steps -> (listof object)   every object at a path
+(define (parents-at obj steps)
+  (cond [(null? steps) (list obj)]
+        [else
+         (define v (if (hash? obj) (hash-ref obj (string->symbol (car steps)) #f) #f))
+         (append-map (lambda (x) (if (hash? x) (parents-at x (cdr steps)) '()))
+                     (cond [(list? v) v] [v (list v)] [else '()]))]))
 ;; titled : jsexpr metadata -> jsexpr   a `Usage: #definition` Instance's `Title:` / `Description:`
 ;; land on the resource's title / description elements when it has them and the rules set none
 ;; (SUSHI). An example's do not: they describe the example to the guide's reader (the
@@ -508,7 +535,46 @@
                   (if (and (string? rt) (type-registered? (string->symbol rt))) (string->symbol rt) 'object))]
     [else 'object]))
 ;; coerce an FSH value to jsexpr given the target ftype
+;; coerce : FSH-value ftype -> jsexpr   the value as the element holds it, refused (SUSHI:
+;; "Cannot assign … Value does not match element type") when it cannot be one: a number, boolean
+;; or text assigned to a complex type, or a primitive its type does not read (`0.45` into an
+;; integer, a time with a zone, `"changed"` into a date)
 (define (coerce v ftype)
+  (define tag (ftype-tag ftype))
+  ;; `12E4` is read as a decimal; into an integer type it is the integer 120000 (SUSHI)
+  (define out (let ([o (coerce/unchecked v ftype)])
+                (if (and (eq? tag 'prim) (member (ftype-prim-code ftype) '("integer" "positiveInt" "unsignedInt" "integer64"))
+                         (real? o) (inexact? o) (integer? o))
+                    (inexact->exact o)
+                    o)))
+  (define (refuse what type [why #f])
+    (define message (format "Cannot assign ~a: it is no ~a~a" what type (if why (format " (~a)" why) "")))
+    (define b (current-value-problems))
+    (if b
+        (set-box! b (append (unbox b) (list message)))   ; an instance: said at it, the value kept
+        (raise (exn:fail message (current-continuation-marks)))))
+  (cond
+    ;; a resource named by an instance nothing defines (`^contained = myResource`)
+    [(and (eq? tag 'resource) (or (string? v) (number? v)) (equal? out v))
+     (refuse (format "`~a`" v) "resource" "no instance of that name is defined")
+     out]
+    [(and (eq? tag 'type) (or (boolean? out) (number? out) (string? out))
+          (symbol? (ftype-type-name ftype)) (not (memq (ftype-type-name ftype) '(Resource DomainResource))))
+     (refuse (format "the ~a ~a" (cond [(boolean? out) "boolean"] [(number? out) "number"] [else "text"]) (value-text out))
+             (ftype-type-name ftype))
+     out]
+    [(and (eq? tag 'prim) (or (boolean? out) (number? out) (string? out)) (ftype-prim-code ftype))
+     (define code (ftype-prim-code ftype))
+     (define ctor (constructor-of (string->symbol code)))
+     (define input (if (and (equal? code "decimal") (number? out)) (number->string out) out))
+     (when (and ctor (not (equal? out ""))           ; SUSHI writes an empty text (mCODE's `^comment = ""`)
+                (not (with-handlers ([exn:fail? (lambda (_) #f)]) (ok? (ctor input)))))
+       (refuse (value-text out) code (and (string? out) (member code '("date" "dateTime" "instant")) (calendar-problem out))))
+     out]
+    [else out]))
+;; value-text : jsexpr -> string   a plain value as a message quotes it
+(define (value-text v) (if (string? v) (format "\"~a\"" v) (format "~a" (if (boolean? v) (if v "true" "false") v))))
+(define (coerce/unchecked v ftype)
   (define tag (ftype-tag ftype))
   (match* (tag v)
     ;; `System#code` on a code-typed primitive keeps only the code (`* status = MedReqStatus#completed`)
@@ -543,7 +609,7 @@
          (drop-false (hasheq 'value val 'unit d 'code u 'system "http://unitsofmeasure.org")))]
     ;; `130 'mg' : 1 'dL'`: a Ratio of two Quantities; a part that is a bare number is its value
     [(_ (struct fsh-ratio (a b)))
-     (define (part x) (if (number? x) (hasheq 'value x) (coerce x (vector 'type 'Quantity))))
+     (define (part x) (if (number? x) (hasheq 'value x) (coerce/unchecked x (vector 'type 'Quantity))))
      (hasheq 'numerator (part a) 'denominator (part b))]
     [(_ (struct fsh-reference (t d))) (drop-false (hasheq 'reference t 'display d))]
     [(_ (struct fsh-canonical (t))) t]

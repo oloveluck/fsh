@@ -14,7 +14,7 @@ fsh/base
 #:whole-body-readers? #t
 
 (require (only-in fsh/parser/parse parse-fsh-doc/located)
-         (only-in fsh/compile compile-doc/diagnostics)
+         (only-in fsh/compile compile-doc/diagnostics required-element-diagnostic?)
          (only-in fsh/base with-config)
          (only-in fhir/diagnostic raise-diagnostic diagnostic-severity)
          (only-in racket/port port->string))
@@ -33,12 +33,16 @@ fsh/base
     (datum->syntax #f (list 'fsh-entity (car p) (cdr p)))))
 
 ;; check! : source entities -> void   the first rule-level error, raised at its rule. Only the rule
-;; checks: what another file defines (a Parent, a RuleSet) is not this file's mistake
+;; checks: what another file defines (a Parent, a RuleSet) is not this file's mistake, and what an
+;; example's values are against its profile (a required element, a value it contradicts) is
+;; `raco fsh check`'s to say: building a module is not checking it
 (define (check! src entities)
   (define rule-ds
     (with-handlers ([exn:fail? (lambda (_) '())])            ; a compile that cannot run decides nothing
       (with-config src (lambda () (let-values ([(_out _errors ds) (compile-doc/diagnostics entities)]) ds)))))
-  (define first-error (for/first ([d (in-list rule-ds)] #:when (eq? (diagnostic-severity d) 'error)) d))
+  (define first-error (for/first ([d (in-list rule-ds)]
+                                  #:when (and (eq? (diagnostic-severity d) 'error) (not (required-element-diagnostic? d))))
+                        d))
   (when first-error (raise-diagnostic first-error)))
 
 (define (fsh-read in)

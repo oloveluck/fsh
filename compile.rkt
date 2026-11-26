@@ -17,7 +17,7 @@
 ;;; terminology.rkt (value sets and code systems).
 (require racket/match
          racket/string
-         racket/contract (only-in json jsexpr->string)
+         racket/contract racket/set (only-in json jsexpr->string)
          (only-in racket/list append-map last filter-map remove-duplicates)
          "parser/ast.rkt"
          "parser/path.rkt"
@@ -128,8 +128,8 @@
                                          unknown (did-you-mean unknown (parent-candidates))))))]
           [_ (void)])))
     (structure-rule-checks! e base rules)
-    (when (or (fsh-profile? e) (fsh-extension? e)) (profile-path-checks! e base rules))
-    (flag-rule-checks! e)
+    (when (or (fsh-profile? e) (fsh-extension? e)) (profile-path-checks! e base rules) (only-type-checks! e base rules))
+    (flag-rule-checks! e) (added-element-checks! e)
     (when (or (fsh-profile? e) (fsh-extension? e)) (extension-value-checks! e rules))
     (define names (and base (type-registered? (string->symbol base)) (base-element-names base)))
     (when names
@@ -159,7 +159,8 @@
                (and (not (hash-ref (current-profiles) p #f)) (equal? p base) (type-registered? (string->symbol p)))))))
   (define declared   ; path -> slice names this entity's `contains` rules declare there
     (for*/fold ([h (hash)]) ([r (in-list rules)] #:when (rule-contains? r) [it (in-list (rule-contains-items r))])
-      (hash-update h (rule-contains-path r) (lambda (l) (cons (contains-item-name it) l)) '())))
+      (hash-update h (rule-contains-path r)
+                   (lambda (l) (append (filter string? (list (contains-item-name it) (contains-item-named-as it))) l)) '())))
   (define (bracket-text b)
     (match (fsh-bracket-kind b) ['index (format "[~a]" (fsh-bracket-value b))] ['soft+ "[+]"] ['soft= "[=]"]
       ['choice "[x]"] [_ (format "[~a]" (fsh-bracket-value b))]))
@@ -188,16 +189,48 @@
                                             (let ([ts (element-type-codes base (string-append (car bad) "[x]"))])
                                               (if (pair? ts) (format " (it takes ~a)" (string-join (filter string? ts) ", ")) ""))))
                   (loop (cdr steps) (string-append before (if (string=? before "") "" ".") name) #f))]
-            [(and parent-is-base? (not (member name '("extension" "modifierExtension")))
+            [(and parent-is-base?
                   (for/or ([b (in-list brackets)])
                     (and (eq? (fsh-bracket-kind b) 'slice) (string? (fsh-bracket-value b))
                          (not (regexp-match? #rx"/" (fsh-bracket-value b)))
                          (not (member (fsh-bracket-value b) (hash-ref declared here '())))
+                         ;; an extension slice may be named by its Extension (name, id, url, alias)
+                         (or (not (member name '("extension" "modifierExtension")))
+                             (and (not (regexp-match? #rx":" (resolve-alias (fsh-bracket-value b) (current-aliases))))
+                                  (sd-index-available?)
+                                  (not (context-extension-url (resolve-alias (fsh-bracket-value b) (current-aliases))))))
                          (fsh-bracket-value b))))
              => (lambda (slice)
                   (rule-diagnostic! r label
                                     (format "no slice `~a` of `~a`: declare it first, `* ~a contains ~a 0..1`" slice here here slice)))]
             [else (loop (cdr steps) (string-append here (apply string-append (map bracket-text brackets))) #f)]))))))
+;; only-type-checks! : entity base rules -> void   an `only` type the base element does not take
+;; (SUSHI: "The type X does not match any of the allowed types: A or B"): `value[x] only Coding`
+;; where Observation's value takes CodeableConcept, `performer only CodeableReference(…)` where it
+;; takes Reference. A type allows itself and what is built on it (SimpleQuantity, Age: Quantity; a
+;; resource where Resource is taken). Decided only where the base element's types can be read.
+(define (only-type-checks! e base rules)
+  (for ([r (in-list rules)] #:when (rule-only? r))
+    (define p (rule-only-path r))
+    (define codes (and (string? p) (not (regexp-match? #rx"[\\[]" (regexp-replace* #rx"\\[x\\]" p "")))
+                       (element-type-codes base p)))
+    (when (and (pair? codes) (andmap string? codes))
+      (for ([t (in-list (rule-only-types r))] #:when (string? t))
+        (define code (only-type-code t))
+        (when (and code (not (regexp-match? #rx"^https?:" code))
+                   (not (for/or ([a (in-list (type-lineage code))]) (member a codes))))
+          (rule-diagnostic! r (entity-label e)
+                            (format "the type `~a` does not match any of the allowed types of `~a`: ~a"
+                                    t p (string-join codes " or "))))))))
+;; type-lineage : code -> (listof code)   the type and the types it is built on (its definition's
+;; baseDefinition, up the chain), as far as the packages say
+(define (type-lineage code)
+  (let loop ([c code] [seen '()] [fuel 8])
+    (cond [(or (not c) (<= fuel 0) (member c seen)) (reverse seen)]
+          [else
+           (define sd (and (sd-index-available?) (resolve-sd-raw c)))
+           (define base (and (hash? sd) (hash-ref sd 'baseDefinition #f)))
+           (loop (and (string? base) (last (string-split base "/"))) (cons c seen) (sub1 fuel))])))
 ;; choice-type-name : base-type name -> (cons stem type) | #f   a type-specific choice name
 ;; (`valueDecimal`) whose type the base's choice element (`value[x]`) does not take; #f when it does,
 ;; when the name is no such name, or when the base's types cannot be read
@@ -292,6 +325,49 @@
        (rule-diagnostic! r label
                          (format "`~a` has several types, so it is a choice element: name it `~a[x]`" p p))]
       [_ (void)])))
+;; slicing-checks! : entity sd -> void   a slicing the profile writes where its base has none must
+;; be whole (SUSHI: "^slicing.rules: Missing required value", "Invalid value: #changed"): each
+;; discriminator a `type` of FHIR's codes and a `path`, and the slicing its `rules`. Decided only
+;; for a profile of a base type, at an element the base does not slice.
+(define (slicing-checks! e sd)
+  (define parent (and (fsh-profile? e) (resolve-alias (or (assoc-ref (fsh-profile-metadata e) 'parent) "") (current-aliases))))
+  (when (and (current-rule-diagnostics) (hash? sd) parent (type-registered? (string->symbol parent))
+             (not (hash-ref (current-profiles) parent #f)))
+    (for ([el (in-list (hash-ref (hash-ref sd 'differential (hash)) 'element '()))])
+      (define slicing (hash-ref el 'slicing #f))
+      (define id (hash-ref el 'id ""))
+      (define path (let ([m (regexp-match #px"^[^.]+[.](.*)$" id)]) (and m (cadr m))))
+      (when (and (hash? slicing) path (not (regexp-match? #rx":" id))
+                 (let ([b (base-element-of parent path)]) (and (hash? b) (not (hash-ref b 'slicing #f)))))
+        (define (problem fmt . args) (rule-diagnostic! e (entity-label e) (apply format (string-append id " ^slicing" fmt) args)))
+        (for ([d (in-list (let ([ds (hash-ref slicing 'discriminator '())]) (if (list? ds) ds '())))] [i (in-naturals)])
+          (define t (and (hash? d) (hash-ref d 'type #f)))
+          (cond [(not t) (problem ".discriminator[~a].type: Missing required value" i)]
+                [(not (member t '("value" "exists" "pattern" "type" "profile" "position")))
+                 (problem ".discriminator[~a].type: Invalid value: #~a. Value must be one of #value, #exists, #pattern, #type, #profile, #position" i t)])
+          (unless (and (hash? d) (hash-ref d 'path #f))
+            (problem ".discriminator[~a].path: Missing required value" i)))
+        (define rules (hash-ref slicing 'rules #f))
+        (cond [(not rules) (problem ".rules: Missing required value")]
+              [(not (member rules '("closed" "open" "openAtEnd")))
+               (problem ".rules: Invalid value: #~a. Value must be one of #closed, #open, #openAtEnd" rules)])))))
+;; added-element-checks! : entity -> void   an element a logical model or custom resource adds
+;; under a parent it never added (`* 35.79 1..1 boolean` with no `* 35`; SUSHI: "The element or
+;; path you referenced does not exist"). Decided only for a model with no Parent of its own (a
+;; Parent's elements are not read here), in the order the rules are written.
+(define (added-element-checks! e)
+  (when (and (or (fsh-logical? e) (fsh-resource? e))
+             (let ([p (assoc-ref (entity-metadata e) 'parent)]) (or (not p) (member p '("Base" "Element" "DomainResource" "Resource")))))
+    (for/fold ([added (set)]) ([r (in-list (or (entity-rules e) '()))])
+      (match r
+        [(or (rule-add-element (? string? p) _ _ _ _ _) (rule-add-cr-element (? string? p) _ _ _ _ _))
+         (define parent (let ([m (regexp-match #px"^(.*)[.][^.]+$" (regexp-replace* #rx"\\[x\\]" p ""))]) (and m (cadr m))))
+         (when (and parent (not (set-member? added parent)))
+           (rule-diagnostic! r (entity-label e)
+                             (format "no element `~a` to add `~a` under: add `* ~a` first" parent p parent)))
+         (set-add added (regexp-replace* #rx"\\[x\\]" p ""))]
+        [_ added]))
+    (void)))
 ;; structure-rule-checks! : entity base-type rules -> void   what SUSHI refuses in a profile's rules
 ;; and this compiler wrote without a word (found by running both over SUSHI's own test inputs,
 ;; fhir-examples' value experiment H part 3):
@@ -732,14 +808,18 @@
 ;; that contradicts the profile (both what validating the example says again, at its rule)
 (define (required-element-diagnostic? d)
   (and (diagnostic? d)
-       (regexp-match? #rx"` is required [(][0-9]+ at least[)] and the instance gives it |, and its profile assigns .* there$" (diagnostic-message d))))
+       (regexp-match? #rx"` is required [(][0-9]+ at least[)] and the instance gives it |` allows [0-9]+, and the instance gives it |, and its profile assigns .* there$|^instance: [^:]+: Cannot assign " (diagnostic-message d))))
 (define (compile-entity e [aliases (hash)] [profiles (hash)] [invariants (hash)])
   (check-id! e)
   (cond
     [(fsh-instance? e)
      (check-instance-of! e aliases profiles)
      (define conflicts (box '()))
-     (define js (parameterize ([current-value-conflicts conflicts]) (compile-instance e aliases profiles)))
+     (define problems (box '()))
+     (define js (parameterize ([current-value-conflicts conflicts]
+                               [current-value-problems problems])
+                  (compile-instance e aliases profiles)))
+     (for ([m (in-list (unbox problems))]) (rule-diagnostic! e (entity-label e) m))
      ;; a value that contradicts what the InstanceOf assigns there (SUSHI: "Cannot assign X to this
      ;; element; a different Y is already assigned"), an error at the instance
      (when (current-rule-diagnostics)
@@ -751,16 +831,24 @@
      ;; minimum cardinality N but occurs K time(s)"), an error at the instance; it is still written
      (define of (resolve-alias (assoc-ref (fsh-instance-metadata e) 'instanceOf) aliases))
      (when (and (current-rule-diagnostics) (sd-index-available?) (string? of))
-       (for ([m (in-list (missing-required js (profile-elements of)))])
+       (define elements (profile-elements of))
+       (for ([m (in-list (missing-required js elements))])
          (rule-diagnostic! e (entity-label e)
                            (format required-element-format
                                    (car m) (cadr m) (caddr m) (if (= (caddr m) 1) "" "s")
-                                   (regexp-replace #rx"^[^.]+[.]" (regexp-replace #rx"\\[x\\]$" (car m) "") "")))))
+                                   (regexp-replace #rx"^[^.]+[.]" (regexp-replace #rx"\\[x\\]$" (car m) "") ""))))
+       ;; … and more of one than it allows (SUSHI: no element at `component[1]` under `component 1..1`)
+       (for ([m (in-list (excess-elements js elements))])
+         (rule-diagnostic! e (entity-label e)
+                           (format "`~a` allows ~a, and the instance gives it ~a" (car m) (cadr m) (caddr m)))))
      js]
     [(fsh-valueset? e)   (compile-valueset e aliases)]
     [(fsh-codesystem? e) (compile-codesystem e aliases)]
     [(fsh-invariant? e)  (compile-invariant e)]
-    [(or (fsh-profile? e) (fsh-extension? e)) (compile-profile e invariants)]
+    [(or (fsh-profile? e) (fsh-extension? e))
+     (define sd (compile-profile e invariants))
+     (slicing-checks! e sd)
+     sd]
     [(or (fsh-logical? e) (fsh-resource? e)) (compile-logical-resource e)]
     [else #f]))
 

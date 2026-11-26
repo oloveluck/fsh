@@ -917,3 +917,33 @@ a number into an Address or integer, `only` a type the element does not allow, a
 missing its parts: 21); a path's later step that is no element (6); `^contained` naming an
 instance nothing defines (2); what is written for a complex extension or a concept with a rule
 removed (3); a cardinality outside the base's (1).
+
+## Held to SUSHI, third pass (2026-11-26)
+What the second pass named, closed (fhir-examples RESULTS.md, "Third pass"; every text had been
+read, so these numbers describe the set): the same answer as SUSHI on **2,799 of 2,802**, the
+same verdict on 2,799, none on which this compiler alone errs; the 3 left are SUSHI's own
+failures (2) and one SUSHI quirk (a flag on `value[x] 0..0` in an Extension with sub-extensions).
+- **A value its element cannot hold** (instance.rkt `coerce`, now checking what `coerce/unchecked`
+  makes; it serves instances, carets and profile assignments): a number, boolean or text into a
+  complex type, a primitive its type's constructor (`constructor-of`) refuses (with the calendar's
+  reason for a date), a resource named by an instance nothing defines (`^contained = x`). A
+  profile or caret raises; an instance records it (`current-value-problems`) and is still written.
+  An empty text is taken (mCODE's `^comment = ""`, as SUSHI); `12E4` into an integer is 120000.
+- **`only` a type the base element does not take** (compile.rkt `only-type-checks!`,
+  `type-lineage`: a type allows itself and what is built on it; sd.rkt `only-type-code` answers
+  only for a type it can resolve, so an unknown one is said once, by `unknown-only-type`).
+- **An instance list longer than its profile allows** (instance.rkt `excess-elements`, beside
+  `missing-required`, both on `element-counts`); a logical model's element under a parent it
+  never added (`added-element-checks!`); a caret on a concept of a code system with no concepts
+  (terminology.rkt: the caret pass always runs); a slicing without a discriminator's type or path
+  or its rules, or with codes FHIR lacks (`slicing-checks!`, for a profile of a base type at an
+  element the base does not slice); an `extension[x]` slice neither declared nor naming an
+  Extension (`profile-path-checks!`; `contains <url> named <slice>` declares the slice name).
+- **Written as SUSHI writes**: a sub-extension that says nothing of its value gets no
+  `extension 0..0` (sd.rkt `add-extension-scaffold`); a list's unset entries are `null`, not
+  `false` (caret.rkt `array-set-pad`).
+- `raco fsh check` and a `#lang fsh` build leave an instance's value findings to the validator
+  (`required-element-diagnostic?` covers them: "Cannot assign", "allows N", the required and
+  contradicting ones).
+Corpus floors held (IPS 109, mCODE 345, Plan-Net 104, HRex 46, Genomics 136; GoFSH 117/348;
+importer 514/515; golden 22/22); tests 786 -> 831.

@@ -155,5 +155,45 @@
   (check-equal? (length (errors (string-append p "* status = #amended\n* code = http://loinc.org#1234-5\n"))) 2)
   (check-regexp-match #rx"gives `Observation.status` the value \"amended\", and its profile assigns \"final\" there"
                       (car (errors (string-append p "* status = #amended\n")))))
+;; third pass: what the second left named
+;; a value its element cannot hold, in a profile, a caret or an instance (an instance's is said at
+;; it, the value kept); an empty text and `12E4` into an integer are taken, as SUSHI takes them
+(check-regexp-match #rx"Cannot assign \"12:30:01.999-05:00\": it is no time" (car (errors "Profile: P\nParent: Observation\n* valueTime = 12:30:01.999-05:00\n")))
+(check-regexp-match #rx"Cannot assign the number 64: it is no Address" (car (errors "Profile: P\nParent: Observation\n* ^extension[0].valueAddress = 0064\n")))
+(check-regexp-match #rx"Cannot assign 0.45: it is no integer" (car (errors "CodeSystem: Z\n* #a \"A\"\n* #a ^extension[0].valueInteger = 0.4500\n")))
+(check-regexp-match #rx"Cannot assign \"changed\": it is no date" (car (errors "Instance: p\nInstanceOf: Patient\n* birthDate = \"changed\"\n")))
+(check-equal? (errors "Profile: P\nParent: Observation\n* valueInteger = 12E4\n* ^comment = \"\"\n") '())
+;; `^contained` naming an instance nothing defines; a resource named by one that is
+(check-regexp-match #rx"Cannot assign `myResource`: it is no resource [(]no instance of that name is defined[)]"
+                    (car (errors "Profile: P\nParent: Observation\n* ^contained = myResource\n")))
+;; an `only` type the base element does not take; one built on a type it takes
+(check-regexp-match #rx"the type `Coding` does not match any of the allowed types of `value\\[x\\]`"
+                    (car (errors "Profile: P\nParent: Observation\n* value[x] only Coding\n")))
+(check-regexp-match #rx"the type `CodeableReference[(]Practitioner[)]` does not match any of the allowed types of `performer`: Reference"
+                    (car (errors "Profile: P\nParent: Observation\n* performer only CodeableReference(Practitioner)\n")))
+(check-equal? (errors "Profile: P\nParent: Observation\n* value[x] only Quantity or SimpleQuantity\n* contained only Patient\n") '())
+;; an instance list longer than its profile allows (SUSHI: no element at `component[1]`)
+(check-regexp-match #rx"`Observation.component` allows 1, and the instance gives it 2"
+                    (car (errors (string-append "Profile: P\nParent: Observation\n* component 1..1\n\nInstance: o\nInstanceOf: P\n"
+                                                "* status = #final\n* code = http://loinc.org#1-8\n"
+                                                "* component[0].code = http://loinc.org#2-6\n* component[1].code = http://loinc.org#3-4\n"))))
+;; a logical model's element under a parent it never added; a caret on a concept a code system
+;; with no concepts lacks; a slicing without its parts; an Extension's slice it never declared
+(check-regexp-match #rx"no element `35` to add `35.79` under" (car (errors "Logical: L\n* 35.79 1..1 boolean \"s\"\n")))
+(check-equal? (errors "Logical: L\n* 35 0..* BackboneElement \"s\"\n* 35.79 1..1 boolean \"s\"\n") '())
+(check-regexp-match #rx"is not in the code system" (car (errors "CodeSystem: Z\n* #a ^property[0].valueString = \"x\"\n")))
+(check-regexp-match #rx"Observation.component \\^slicing.rules: Missing required value"
+                    (car (errors "Profile: P\nParent: Observation\n* component ^slicing.discriminator[0].type = #pattern\n* component ^slicing.discriminator[0].path = \"code\"\n")))
+(check-regexp-match #rx"discriminator\\[0\\].type: Invalid value: #changed"
+                    (car (errors "Profile: P\nParent: Observation\n* component ^slicing.discriminator[0].type = #changed\n* component ^slicing.discriminator[0].path = \"code\"\n* component ^slicing.rules = #open\n")))
+(check-regexp-match #rx"no slice `channel` of `extension`" (car (errors "Extension: E\n* extension[channel].value[x] only code\n* value[x] 0..0\n")))
+(check-equal? (errors "Profile: P\nParent: Patient\n* extension contains http://hl7.org/fhir/StructureDefinition/patient-birthPlace named bp 0..1\n* extension[bp].valueAddress.city = \"x\"\n") '())
+;; a sub-extension that says nothing of its value: its url alone (no `extension 0..0`), and a
+;; list's unset entries are null, not false
+(let ([sd (car (resources "Extension: E\n* extension contains a 0..1 and b 0..1\n* extension[a].value[x] only code\n* value[x] 0..0\n"))])
+  (check-not-false (element sd "Extension.extension:a.extension"))
+  (check-false (element sd "Extension.extension:b.extension")))
+(let ([cs (car (resources "CodeSystem: Z\n* #a \"A\"\n* #a ^extension[1].valueBoolean = true\n"))])
+  (check-equal? (car (hash-ref (car (hash-ref cs 'concept)) 'extension)) 'null))
 
 (delete-directory/files work)

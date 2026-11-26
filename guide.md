@@ -152,6 +152,9 @@ uses its value sets, a VCL file is a value set beside it.
   `* status = …` ``; and a value the profile assigns otherwise: `` the instance gives
   `Observation.status` the value "amended", and its profile assigns "final" there ``. The instance is
   still written. `raco fsh check` gives the validator's line instead, traced to the rules.
+- `` Cannot assign "changed": it is no date `` (or `the number 64: it is no Address`, `0.45: it is
+  no integer`): a value its element cannot hold, as SUSHI refuses it. In a profile or a caret rule
+  the definition is not compiled; in an instance it is said at the instance.
 - `valueString is not allowed in slice 'diastolic' (value[x]: Quantity)`: an entry of a slice
   uses a type the slice's `only` rule excludes. The error sits on the instance rule that wrote the
   entry and names the slice's rule in the profile.

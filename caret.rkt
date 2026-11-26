@@ -43,12 +43,14 @@
 
 ;; array-ref-or : any index -> element | #f   (non-list or out-of-range -> #f)
 (define (array-ref-or lst i)
-  (if (and (list? lst) (< i (length lst))) (list-ref lst i) #f))
+  (define v (if (and (list? lst) (< i (length lst))) (list-ref lst i) #f))
+  (if (eq? v 'null) #f v))
 
-;; array-set-pad : any index value -> list   set index i, padding a short/absent list with #f
+;; array-set-pad : any index value -> list   set index i, padding a short/absent list with JSON
+;; null, as SUSHI writes a list's unset entries (`^extension[1]` with no `[0]`; it wrote `false`)
 (define (array-set-pad lst i v)
   (define xs (if (list? lst) lst '()))
-  (define padded (append xs (make-list (max 0 (- (add1 i) (length xs))) #f)))
+  (define padded (append xs (make-list (max 0 (- (add1 i) (length xs))) 'null)))
   (list-set padded i v))
 
 ;; set `value` at the caret path in `js`, building intermediate objects/arrays
@@ -150,7 +152,7 @@
   (check-equal? (array-ref-or '(a b c) 1) 'b)
   (check-equal? (array-ref-or '(a) 3)     #f)
   (check-equal? (array-ref-or #f 0)       #f)
-  (check-equal? (array-set-pad '() 2 'x)  (list #f #f 'x))   ; pads with #f
+  (check-equal? (array-set-pad '() 2 'x)  (list 'null 'null 'x))   ; pads with JSON null
   (check-equal? (array-set-pad '(a b) 0 'z) (list 'z 'b))
   ;; round-trip a caret path through an object + array
   (check-equal? (caret-ref (caret-set (hasheq) "^a.b[1].c" "v") "^a.b[1].c") "v")
